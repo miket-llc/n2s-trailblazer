@@ -35,4 +35,4 @@ Artifacts appear under `runs/<run_id>/ingest/`.
 ### Implementation Details
 - API base: https://ellucian.atlassian.net/wiki/api/v2
 - Auth: Basic (email + API token)
-- Use v2 for spaces/pages/attachments; use v1 CQL endpoint for search until v2 adds it.
+- Use v2 for spaces/pages/attachments; use v1 CQL for search until v2 adds it.
