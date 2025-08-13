@@ -35,22 +35,26 @@ class ConfluenceClient:
         nxt = (data.get("_links") or {}).get("next")
         if nxt:
             # v2 returns absolute or relative; normalize
-            return (
-                nxt
-                if nxt.startswith("http")
-                else urljoin(self.api_base + "/", nxt.lstrip("/"))
-            )
+            if nxt.startswith("http"):
+                return nxt
+            else:
+                # Handle relative URLs properly - nxt should be like "/wiki/api/v2/pages?..."
+                # Don't double-add /wiki since it's already in the relative path
+                base_without_wiki = self.api_base.replace("/wiki", "")
+                return urljoin(base_without_wiki + "/", nxt.lstrip("/"))
+
         # fallback: Link header
         link = resp.headers.get("Link", "")
         # very simple parse
         for part in link.split(","):
             if 'rel="next"' in part:
                 url = part.split(";")[0].strip().strip("<>")
-                return (
-                    url
-                    if url.startswith("http")
-                    else urljoin(self.api_base + "/", url.lstrip("/"))
-                )
+                if url.startswith("http"):
+                    return url
+                else:
+                    # Handle relative URLs properly
+                    base_without_wiki = self.api_base.replace("/wiki", "")
+                    return urljoin(base_without_wiki + "/", url.lstrip("/"))
         return None
 
     def _paginate(

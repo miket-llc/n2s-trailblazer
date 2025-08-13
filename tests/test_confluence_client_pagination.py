@@ -58,11 +58,11 @@ def test_paginate_with_links_next(mock_http_client):
     assert first_call[0][0] == "/api/v2/pages"
     assert first_call[1]["params"] == {"limit": 2}
 
-    # Second call should use cursor URL without params
+    # Second call should use cursor URL without params (fixed to remove double /wiki)
     second_call = mock_http_client.get.call_args_list[1]
     assert (
         second_call[0][0]
-        == "https://example.atlassian.net/wiki/api/v2/pages?cursor=next1"
+        == "https://example.atlassian.net/api/v2/pages?cursor=next1"
     )
     assert second_call[1]["params"] is None
 
@@ -109,11 +109,11 @@ def test_paginate_with_link_header(mock_http_client):
     # Check calls
     assert mock_http_client.get.call_count == 2
 
-    # Second call should use the URL from Link header
+    # Second call should use the URL from Link header (fixed to remove double /wiki)
     second_call = mock_http_client.get.call_args_list[1]
     assert (
         second_call[0][0]
-        == "https://example.atlassian.net/wiki/api/v2/pages?cursor=abc123"
+        == "https://example.atlassian.net/api/v2/pages?cursor=abc123"
     )
 
 

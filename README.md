@@ -52,10 +52,43 @@ trailblazer ingest confluence --space DEV --progress --progress-every 5
 trailblazer ingest confluence --space DEV --auto-since
 # → reads state/confluence/DEV_state.json for last highwater mark
 
+# Allow empty results (useful for automated scripts)
+trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z --allow-empty
+# → exits 0 even if no pages found (default: exits 4 on empty)
+
 # List all spaces with structured output
 trailblazer confluence spaces
 # → displays table and writes runs/<run_id>/ingest/spaces.json
 ```
+
+**Ingest exit codes:**
+
+- `0` - Success (pages >= 1 processed)
+- `2` - Configuration/authentication failure
+- `3` - Remote API/network failure
+- `4` - Empty result when `--allow-empty` not set
+
+**Examples:**
+
+```bash
+# Fail if no pages found (default behavior)
+trailblazer ingest confluence --space NONEXISTENT
+# → exits 4
+
+# Success even with no pages
+trailblazer ingest confluence --space NONEXISTENT --allow-empty  
+# → exits 0 with warning log
+```
+
+**Space Key Resolution:**
+
+The ingest process automatically resolves `space_key` for each page using a three-tier strategy:
+
+1. **Memoized cache**: Previously resolved space_id → space_key mappings
+1. **API lookup**: GET `/wiki/api/v2/spaces/{id}` to fetch the space key
+1. **URL fallback**: Regex extraction from page URL pattern `/spaces/([A-Z0-9]+)/pages/`
+
+If all methods fail, `space_key` is set to `"__unknown__"` and tracked in `summary.json`. The ingest warns if any pages could not be mapped and includes `space_key_unknown_count` in metrics.
 
 ### 2. Normalize to Markdown
 

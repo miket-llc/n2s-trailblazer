@@ -81,29 +81,81 @@ def ingest_confluence_cmd(
     progress_every: int = typer.Option(
         1, "--progress-every", help="Progress output every N pages"
     ),
+    allow_empty: bool = typer.Option(
+        False, "--allow-empty", help="Allow zero pages without error"
+    ),
 ) -> None:
     from ..core.artifacts import new_run_id, phase_dir
     from ..pipeline.steps.ingest.confluence import ingest_confluence
 
     rid = new_run_id()
     out = str(phase_dir(rid, "ingest"))
-    dt = (
-        datetime.fromisoformat(since.replace("Z", "+00:00")) if since else None
-    )
-    metrics = ingest_confluence(
-        outdir=out,
-        space_keys=space or None,
-        space_ids=space_id or None,
-        since=dt,
-        auto_since=auto_since,
-        body_format=body_format,
-        max_pages=max_pages,
-        progress=progress,
-        progress_every=progress_every,
-        run_id=rid,
-    )
-    log.info("cli.ingest.confluence.done", run_id=rid, **metrics)
-    typer.echo(rid)
+
+    try:
+        dt = (
+            datetime.fromisoformat(since.replace("Z", "+00:00"))
+            if since
+            else None
+        )
+        metrics = ingest_confluence(
+            outdir=out,
+            space_keys=space or None,
+            space_ids=space_id or None,
+            since=dt,
+            auto_since=auto_since,
+            body_format=body_format,
+            max_pages=max_pages,
+            progress=progress,
+            progress_every=progress_every,
+            run_id=rid,
+        )
+
+        # Check for empty results
+        pages_processed = metrics.get("pages", 0)
+        if pages_processed == 0:
+            if allow_empty:
+                log.warning(
+                    "cli.ingest.confluence.empty_allowed",
+                    run_id=rid,
+                    message="No pages processed but --allow-empty set",
+                )
+            else:
+                log.error(
+                    "cli.ingest.confluence.empty_not_allowed",
+                    run_id=rid,
+                    message="No pages processed and --allow-empty not set",
+                )
+                raise typer.Exit(4)  # Empty result when not allowed
+
+        log.info("cli.ingest.confluence.done", run_id=rid, **metrics)
+        typer.echo(rid)
+
+    except ValueError as e:
+        # Configuration/parameter error
+        log.error("cli.ingest.confluence.config_error", error=str(e))
+        typer.echo(f"❌ Configuration error: {e}", err=True)
+        raise typer.Exit(2)
+    except Exception as e:
+        # Check if it's an auth/API error or other remote failure
+        error_str = str(e).lower()
+        if any(
+            keyword in error_str
+            for keyword in ["auth", "unauthorized", "forbidden", "401", "403"]
+        ):
+            log.error("cli.ingest.confluence.auth_error", error=str(e))
+            typer.echo(f"❌ Authentication error: {e}", err=True)
+            raise typer.Exit(2)
+        elif any(
+            keyword in error_str
+            for keyword in ["connection", "timeout", "network", "api", "http"]
+        ):
+            log.error("cli.ingest.confluence.api_error", error=str(e))
+            typer.echo(f"❌ API/Network error: {e}", err=True)
+            raise typer.Exit(3)
+        else:
+            log.error("cli.ingest.confluence.unknown_error", error=str(e))
+            typer.echo(f"❌ Unexpected error: {e}", err=True)
+            raise typer.Exit(1)
 
 
 @confluence_app.command("spaces")

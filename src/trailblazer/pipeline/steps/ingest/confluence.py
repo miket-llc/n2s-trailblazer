@@ -2,6 +2,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import json
 import csv
+import re
 from typing import Dict, List, Optional, Tuple, Set, Any
 from ....adapters.confluence_api import ConfluenceClient
 from ....core.models import Page, Attachment
@@ -82,20 +83,37 @@ def _map_attachment(site_base: str, att: Dict) -> Attachment:
 
 
 def _map_page(
-    site_base: str, space_key_by_id: Dict[str, str], obj: Dict
+    site_base: str,
+    space_key_by_id: Dict[str, str],
+    obj: Dict,
+    client: Optional[ConfluenceClient] = None,
+    space_key_unknown_count: Optional[Dict[str, int]] = None,
 ) -> Page:
     version = obj.get("version") or {}
+    space_id = (
+        str(obj.get("spaceId")) if obj.get("spaceId") is not None else None
+    )
+    page_url = _page_url(site_base, obj)
+
+    # Resolve space_key using the new logic
+    space_key: Optional[str]
+    if space_id and client and space_key_unknown_count is not None:
+        space_key = _resolve_space_key(
+            client,
+            space_key_by_id,
+            space_id,
+            page_url,
+            space_key_unknown_count,
+        )
+    else:
+        # Fallback to old logic for backward compatibility
+        space_key = space_key_by_id.get(space_id) if space_id else None
+
     page = Page(
         id=str(obj.get("id")),
         title=obj.get("title") or "",
-        space_id=(
-            str(obj.get("spaceId")) if obj.get("spaceId") is not None else None
-        ),
-        space_key=(
-            space_key_by_id.get(str(obj.get("spaceId")))
-            if obj.get("spaceId")
-            else None
-        ),
+        space_id=space_id,
+        space_key=space_key,
         version=version.get("number"),
         updated_at=(
             datetime.fromisoformat(version["createdAt"].replace("Z", "+00:00"))
@@ -108,7 +126,7 @@ def _map_page(
             else None
         ),
         body_html=_body_html_from_v2(obj),
-        url=_page_url(site_base, obj),
+        url=page_url,
         attachments=[],
         metadata={"raw_links": obj.get("_links", {})},
     )
@@ -140,6 +158,69 @@ def _resolve_space_map(
                 space_id_list.append(sid)
 
     return space_id_list, space_key_by_id
+
+
+def _resolve_space_key(
+    client: ConfluenceClient,
+    space_key_cache: Dict[str, str],
+    space_id: Optional[str],
+    page_url: Optional[str],
+    space_key_unknown_count: Dict[str, int],
+) -> str:
+    """
+    Resolve space_key for a page using memoized cache, API lookup, URL fallback.
+    Returns "__unknown__" as last resort and increments counter.
+    """
+    if not space_id:
+        space_key_unknown_count["__missing_space_id__"] = (
+            space_key_unknown_count.get("__missing_space_id__", 0) + 1
+        )
+        return "__unknown__"
+
+    # Check cache first
+    if space_id in space_key_cache:
+        return space_key_cache[space_id]
+
+    # Try API lookup
+    try:
+        # Add a method to ConfluenceClient to get space by ID
+        r = client._client.get(f"/api/v2/spaces/{space_id}")
+        if r.status_code == 200:
+            space_data = r.json()
+            space_key = space_data.get("key")
+            if space_key:
+                space_key_cache[space_id] = space_key
+                return space_key
+    except Exception as e:
+        log.debug(
+            "space_key_api_lookup_failed", space_id=space_id, error=str(e)
+        )
+
+    # Fallback to URL parsing
+    if page_url:
+        match = re.search(r"/spaces/([A-Z0-9]+)/pages/", page_url)
+        if match:
+            space_key = match.group(1)
+            space_key_cache[space_id] = space_key
+            log.debug(
+                "space_key_from_url",
+                space_id=space_id,
+                space_key=space_key,
+                url=page_url,
+            )
+            return space_key
+
+    # Last resort
+    space_key_unknown_count[space_id] = (
+        space_key_unknown_count.get(space_id, 0) + 1
+    )
+    # Log warning once per space_id
+    if space_key_unknown_count[space_id] == 1:
+        log.warning(
+            "space_key_resolution_failed", space_id=space_id, url=page_url
+        )
+
+    return "__unknown__"
 
 
 def _cql_for_since(space_keys: List[str], since: datetime) -> str:
@@ -262,6 +343,9 @@ def ingest_confluence(
     attachments_data = []  # For CSV export
     space_stats: Dict[str, Dict] = {}  # space_key -> stats
     last_highwater: Optional[datetime] = None
+    space_key_unknown_count: Dict[
+        str, int
+    ] = {}  # Track failed space_key resolutions
 
     # Open CSV writers
     with (
@@ -318,7 +402,7 @@ def ingest_confluence(
             )
 
             # Track seen IDs
-            space_key = p.space_key or "unknown"
+            space_key = p.space_key or "__unknown__"
             if space_key not in seen_page_ids:
                 seen_page_ids[space_key] = set()
             seen_page_ids[space_key].add(p.id)
@@ -408,7 +492,13 @@ def ingest_confluence(
         if candidate_ids is not None:
             for pid in candidate_ids:
                 obj = client.get_page_by_id(pid, body_format=body_format)
-                page = _map_page(site_base, space_key_by_id, obj)
+                page = _map_page(
+                    site_base,
+                    space_key_by_id,
+                    obj,
+                    client,
+                    space_key_unknown_count,
+                )
                 # attachments
                 for att in client.get_attachments_for_page(page.id):
                     page.attachments.append(_map_attachment(site_base, att))
@@ -425,7 +515,13 @@ def ingest_confluence(
                 for obj in client.get_pages(
                     space_id=sid, body_format=body_format
                 ):
-                    page = _map_page(site_base, space_key_by_id, obj)
+                    page = _map_page(
+                        site_base,
+                        space_key_by_id,
+                        obj,
+                        client,
+                        space_key_unknown_count,
+                    )
                     for att in client.get_attachments_for_page(page.id):
                         page.attachments.append(
                             _map_attachment(site_base, att)
@@ -479,14 +575,20 @@ def ingest_confluence(
     completed_at = datetime.now(timezone.utc)
 
     # Create summary.json with per-space stats
+    total_unknown_count = sum(space_key_unknown_count.values())
     summary_data: Dict[str, Any] = {
         "run_id": run_id,
         "started_at": _iso(started_at),
         "completed_at": _iso(completed_at),
         "total_pages": written_pages,
         "total_attachments": written_attachments,
+        "space_key_unknown_count": total_unknown_count,
         "spaces": {},
     }
+
+    # Add warnings if needed
+    if total_unknown_count > 0:
+        summary_data["warnings"] = ["space_key_unknown_detected"]
 
     for space_key, stats in space_stats.items():
         avg_chars = (
@@ -501,6 +603,12 @@ def ingest_confluence(
 
     with open(summary_json_path, "w") as f:
         json.dump(summary_data, f, indent=2, sort_keys=True)
+
+    # Print console warning if space_key resolution failed
+    if total_unknown_count > 0:
+        print(
+            f"⚠️  Warning: Failed to resolve space_key for {total_unknown_count} pages. Check summary.json for details."
+        )
 
     # Update state files with auto-since
     if auto_since and last_highwater and (space_keys or space_ids):
@@ -533,6 +641,7 @@ def ingest_confluence(
         "attachments": written_attachments,
         "since": _iso(effective_since),
         "body_format": body_format,
+        "space_key_unknown_count": total_unknown_count,
     }
     metrics_path.write_text(
         json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8"
