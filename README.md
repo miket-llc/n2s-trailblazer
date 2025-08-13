@@ -1,6 +1,8 @@
 # Trailblazer
 
-**AI-powered knowledge base builder:** ingests Navigate-to-SaaS and Ellucian documentation (Confluence + official docs), organizes everything into a typed graph with embeddings, and makes it easy to query and generate the docs we need.
+**AI-powered knowledge base builder:** ingests Navigate-to-SaaS and Ellucian 
+documentation (Confluence + official docs), organizes everything into a typed 
+graph with embeddings, and makes it easy to query and generate the docs we need.
 
 ## Quick start
 
