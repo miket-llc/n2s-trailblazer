@@ -1,4 +1,4 @@
-PROMPT 000 (Rev A) — Scaffold the Trailblazer Python Monorepo (Confluence v2 + Basic Auth)
+# PROMPT 000 (Rev A) — Scaffold the Trailblazer Python Monorepo (Confluence v2 + Basic Auth)
 Save this prompt file as: prompts/000_scaffold_python_monorepo.md
 
 You are: a senior platform engineer setting up the Trailblazer Python monorepo for RAG + doc generation. We've learned: CLI-first, explicit phases (no numeric modules), idempotent steps, persisted artifacts, clean interfaces. Confluence integration must use Cloud v2 endpoints and Basic auth (email + API token). Use v1 only where v2 lacks an equivalent (CQL search).

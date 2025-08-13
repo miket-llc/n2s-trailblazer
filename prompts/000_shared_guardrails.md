@@ -21,7 +21,8 @@ Only commit/push if all three succeed.
 Never hand-fix lint/format. Use the Make targets above.
 
 **Markdown files:** markdownlint runs automatically via pre-commit hooks (line
-length ≤80 chars, proper headings). Fix manually or use `--fix` flag if needed.
+length ≤80 chars, start with # heading). Fix manually or use `--fix` flag if
+needed. **Always start .md files with a top-level heading.**
 
 Proof-of-work in your reply: paste the exact commands you ran and the last
 ~10 lines of their output (no screenshots).

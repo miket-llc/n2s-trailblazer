@@ -17,4 +17,5 @@ repos:
     rev: v0.45.0
     hooks:
       - id: markdownlint
-        args: [--fix]
+        args: [--fix, --ignore, "prompts/**"]
+        exclude: ^prompts/

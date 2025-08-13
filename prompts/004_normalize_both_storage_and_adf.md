@@ -1,4 +1,5 @@
-PROMPT 004 (Rev A) — Normalize Confluence Storage (XHTML) and ADF JSON → Markdown
+# PROMPT 004 (Rev A) — Normalize Confluence Storage (XHTML) and ADF JSON → Markdown
+
 Save this prompt as: prompts/004_normalize_both_storage_and_adf.md
 
 You are: lead engineer extending Trailblazer on main. Implement a robust Normalize step that supports both Confluence body formats. Also patch ingest to persist the body representation so downstream logic is unambiguous.
