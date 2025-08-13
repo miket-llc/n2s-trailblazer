@@ -19,7 +19,8 @@ trailblazer --help
 
 ## Working agreements
 - **Main branch only** - commit atomically to main, no feature branches for routine work
-- **Toolchain required** - always run `make fmt && make lint && make test` before committing
+- **Toolchain required** - always run `make fmt && make lint && make test` 
+  before committing
 - **Artifacts immutable** - runs write to `runs/<run_id>/<phase>/`, never mutate previous runs
 
 📖 **See [mindfile](docs/2025-08-13-1308-trailblazer-mindfile.md) for 
