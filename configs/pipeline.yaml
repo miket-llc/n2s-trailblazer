@@ -1,0 +1,15 @@
+phases:
+  - ingest
+  - normalize
+  - enrich
+  - classify
+  - embed
+  - retrieve
+  - compose
+  - create
+  - audit
+
+defaults:
+  ingest:
+    since: null   # ISO timestamp for deltas
+    spaces: []    # space keys or ids (strings); keys auto-resolve to ids

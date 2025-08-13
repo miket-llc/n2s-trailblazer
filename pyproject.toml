@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "n2s-trailblazer"
+version = "0.1.0"
+description = "Trailblazer monorepo (Python) for N2S RAG + doc generation"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Mike Thompson" }]
+dependencies = [
+  "typer[all]>=0.12.0",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.2.1",
+  "httpx>=0.27.0",
+  "tenacity>=8.2.3",
+  "structlog>=24.1.0",
+  "rich>=13.7.0",
+  "markdownify>=0.12.0",
+  "beautifulsoup4>=4.12.0",
+  "SQLAlchemy>=2.0.25",
+  "psycopg[binary]>=3.1.18",
+  "pgvector>=0.2.5"
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.4.0",
+  "black>=24.3.0",
+  "mypy>=1.9.0",
+  "pytest>=8.1.0",
+  "pre-commit>=3.7.0"
+]
+
+[project.scripts]
+trailblazer = "trailblazer.cli.main:app"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E","F","I","B","UP","ANN","C90"]
+ignore = ["ANN101","ANN102"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+warn_redundant_casts = true
+strict_optional = true
