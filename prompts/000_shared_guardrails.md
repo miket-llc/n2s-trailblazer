@@ -1,5 +1,8 @@
+# Shared Guardrails
+
 PREAMBLE — Shared Guardrails (paste at the top of every prompt)
-Save once as prompts/000_shared_guardrails.md and also paste at the top when you run this prompt.
+Save once as prompts/000_shared_guardrails.md and also paste at the top when
+you run this prompt.
 
 Trailblazer Prompt Guardrails (read first)
 
@@ -17,10 +20,15 @@ Only commit/push if all three succeed.
 
 Never hand-fix lint/format. Use the Make targets above.
 
-Proof-of-work in your reply: paste the exact commands you ran and the last ~10 lines of their output (no screenshots).
+**Markdown files:** markdownlint runs automatically via pre-commit hooks (line
+length ≤80 chars, proper headings). Fix manually or use `--fix` flag if needed.
+
+Proof-of-work in your reply: paste the exact commands you ran and the last
+~10 lines of their output (no screenshots).
 
 Secrets: never commit real credentials. Examples must use placeholders.
 
-Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
+Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since
+is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/<run_id>/<phase>/…; never mutate previous runs.
+Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.

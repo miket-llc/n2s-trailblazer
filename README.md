@@ -18,12 +18,14 @@ trailblazer --help
 ```
 
 ## Working agreements
-- **Main branch only** - commit atomically to main, no feature branches for routine work
-- **Toolchain required** - always run `make fmt && make lint && make test` 
+- **Main branch only** - commit atomically to main, no feature branches for
+  routine work
+- **Toolchain required** - always run `make fmt && make lint && make test`
   before committing
-- **Artifacts immutable** - runs write to `runs/<run_id>/<phase>/`, never mutate previous runs
+- **Artifacts immutable** - runs write to `runs/<run_id>/<phase>/`, never mutate
+  previous runs
 
-📖 **See [mindfile](docs/2025-08-13-1308-trailblazer-mindfile.md) for 
+📖 **See [mindfile](docs/2025-08-13-1308-trailblazer-mindfile.md) for
 comprehensive architecture, contracts, and development guidelines.**
 
 ## Usage
@@ -36,7 +38,8 @@ Create `.env` from `configs/dev.env.example` and set:
 
 ```bash
 # Small test ingest
-trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z --max-pages 10
+trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z \
+  --max-pages 10
 # → outputs to runs/<run_id>/ingest/
 ```
 
@@ -59,7 +62,11 @@ trailblazer run --phases ingest normalize --dry-run
 
 ## Technical details
 
-- **Pipeline:** ingest → normalize (Storage & ADF) → enrich/classify → embed → retrieve → compose/create → audit
-- **API:** Confluence Cloud v2 (`/wiki/api/v2`) with Basic auth; v1 CQL for delta filtering
-- **Data:** NDJSON artifacts with deterministic transforms; PostgreSQL + pgvector (planned)
-- **Auth:** Store `CONFLUENCE_EMAIL` + `CONFLUENCE_API_TOKEN` in local `.env` only
+- **Pipeline:** ingest → normalize (Storage & ADF) → enrich/classify → embed →
+  retrieve → compose/create → audit
+- **API:** Confluence Cloud v2 (`/wiki/api/v2`) with Basic auth; v1 CQL for
+  delta filtering
+- **Data:** NDJSON artifacts with deterministic transforms; PostgreSQL +
+  pgvector (planned)
+- **Auth:** Store `CONFLUENCE_EMAIL` + `CONFLUENCE_API_TOKEN` in local `.env`
+  only
