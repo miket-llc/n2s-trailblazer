@@ -47,12 +47,14 @@ def config(
 
 @ingest_app.command("confluence")
 def ingest_confluence_cmd(
-    spaces: List[str] = typer.Option(
-        [], "--space", help="Space keys (e.g., DEV, DOCS)"
+    space: List[str] = typer.Option(
+        [], "--space", help="Confluence space keys"
     ),
-    space_ids: List[str] = typer.Option([], "--space-id", help="Space IDs"),
+    space_id: List[str] = typer.Option(
+        [], "--space-id", help="Confluence space ids"
+    ),
     since: Optional[str] = typer.Option(
-        None, help="ISO timestamp (e.g., 2025-08-01T00:00:00Z)"
+        None, help='ISO timestamp, e.g. "2025-08-01T00:00:00Z"'
     ),
     body_format: str = typer.Option(
         "storage", help="storage or atlas_doc_format"
@@ -61,20 +63,22 @@ def ingest_confluence_cmd(
         None, help="Stop after N pages (debug)"
     ),
 ) -> None:
-    """Ingest pages from Confluence Cloud using v2 API."""
     from ..core.artifacts import new_run_id, phase_dir
     from ..pipeline.steps.ingest.confluence import ingest_confluence
 
     rid = new_run_id()
-    outdir = str(phase_dir(rid, "ingest"))
+    out = str(phase_dir(rid, "ingest"))
     dt = (
         datetime.fromisoformat(since.replace("Z", "+00:00")) if since else None
     )
-
     metrics = ingest_confluence(
-        outdir, spaces or None, space_ids or None, dt, body_format, max_pages
+        outdir=out,
+        space_keys=space or None,
+        space_ids=space_id or None,
+        since=dt,
+        body_format=body_format,
+        max_pages=max_pages,
     )
-
     log.info("cli.ingest.confluence.done", run_id=rid, **metrics)
     typer.echo(rid)
 

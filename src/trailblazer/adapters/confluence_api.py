@@ -2,10 +2,10 @@ from typing import Dict, Iterable, Optional, List, Any
 import httpx
 from httpx import BasicAuth
 from tenacity import retry, wait_exponential, stop_after_attempt
+from urllib.parse import urljoin
 from ..core.config import SETTINGS
-from ..core.logging import log
 
-V2_PREFIX = "/wiki/api/v2"  # Confluence Cloud API path
+V2_PREFIX = "/api/v2"
 
 
 class ConfluenceClient:
@@ -15,16 +15,13 @@ class ConfluenceClient:
         email: Optional[str] = None,
         token: Optional[str] = None,
     ):
-        # For Confluence Cloud API, use the base domain
-        base = (base_url or SETTINGS.CONFLUENCE_BASE_URL).rstrip("/")
-        if base.endswith("/wiki"):
-            # Use base domain for API calls
-            api_base = base.replace("/wiki", "")
-        else:
-            api_base = base
-        self.base_url = base  # Keep original for web UI links
+        base = (base_url or SETTINGS.CONFLUENCE_BASE_URL or "").rstrip("/")
+        if not base.endswith("/wiki"):
+            base = base + "/wiki"
+        self.site_base = base  # e.g. https://ellucian.atlassian.net/wiki
+        self.api_base = self.site_base  # httpx base_url
         self._client = httpx.Client(
-            base_url=api_base,  # API calls go to domain root
+            base_url=self.api_base,
             timeout=30.0,
             auth=BasicAuth(
                 email or SETTINGS.CONFLUENCE_EMAIL or "",
@@ -33,59 +30,52 @@ class ConfluenceClient:
             headers={"Accept": "application/json"},
         )
 
-    # -------- Helper methods --------
+    # ---------- pagination helper ----------
+    def _next_link(self, resp: httpx.Response, data: Dict) -> Optional[str]:
+        nxt = (data.get("_links") or {}).get("next")
+        if nxt:
+            # v2 returns absolute or relative; normalize
+            return (
+                nxt
+                if nxt.startswith("http")
+                else urljoin(self.api_base + "/", nxt.lstrip("/"))
+            )
+        # fallback: Link header
+        link = resp.headers.get("Link", "")
+        # very simple parse
+        for part in link.split(","):
+            if 'rel="next"' in part:
+                url = part.split(";")[0].strip().strip("<>")
+                return (
+                    url
+                    if url.startswith("http")
+                    else urljoin(self.api_base + "/", url.lstrip("/"))
+                )
+        return None
 
-    def _paginate(self, url: str, params: Dict[str, Any]) -> Iterable[Dict]:
-        """
-        Helper for cursor pagination. Follows _links.next or Link header.
-        """
-        current_url = url
-        while current_url:
-            # Only use params on first request, subsequent have cursor
-            request_params = params if "cursor=" not in current_url else None
-            r = self._client.get(current_url, params=request_params)
+    def _paginate(
+        self, url: str, params: Optional[Dict] = None
+    ) -> Iterable[Dict]:
+        first = True
+        while True:
+            r = self._client.get(url, params=params if first else None)
             r.raise_for_status()
             data = r.json()
+            yield from data.get("results", [])
+            nxt = self._next_link(r, data)
+            if not nxt:
+                break
+            url, params, first = nxt, None, False
 
-            # Yield all results from this page
-            for item in data.get("results", []):
-                yield item
-
-            # Get next URL from _links.next or Link header
-            current_url = data.get("_links", {}).get("next")
-            if not current_url:
-                # Try Link header as fallback
-                link_header = r.headers.get("Link", "")
-                if 'rel="next"' in link_header:
-                    # Parse Link header
-                    for link in link_header.split(","):
-                        if 'rel="next"' in link:
-                            current_url = (
-                                link.split(";")[0].strip().strip("<>")
-                            )
-                            break
-
-    # -------- v2 endpoints (cursor pagination) --------
-
+    # ---------- v2 ----------
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
     def get_spaces(
         self, keys: Optional[List[str]] = None, limit: int = 100
     ) -> Iterable[Dict]:
-        """
-        GET /wiki/api/v2/spaces?keys=KEY1,KEY2&limit=100
-        Yields space objects; follow Link/_links.next for pagination.
-        """
-        log.info("confluence.get_spaces.start", keys=keys, limit=limit)
-        count = 0
         params: Dict[str, Any] = {"limit": limit}
         if keys:
             params["keys"] = ",".join(keys)
-
-        for item in self._paginate(f"{V2_PREFIX}/spaces", params):
-            yield item
-            count += 1
-
-        log.info("confluence.get_spaces.done", count=count)
+        yield from self._paginate(f"{V2_PREFIX}/spaces", params)
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
     def get_pages(
@@ -94,37 +84,20 @@ class ConfluenceClient:
         body_format: Optional[str] = None,
         limit: int = 100,
     ) -> Iterable[Dict]:
-        """
-        GET /wiki/api/v2/pages?space-id=<id>&body-format=storage|..&limit=100
-        """
-        log.info(
-            "confluence.get_pages.start",
-            space_id=space_id,
-            body_format=body_format,
-            limit=limit,
-        )
-        count = 0
         params: Dict[str, Any] = {"limit": limit}
         if space_id:
             params["space-id"] = space_id
-        params["body-format"] = body_format or SETTINGS.CONFLUENCE_BODY_FORMAT
-
-        for item in self._paginate(f"{V2_PREFIX}/pages", params):
-            yield item
-            count += 1
-
-        log.info("confluence.get_pages.done", space_id=space_id, count=count)
+        if body_format:
+            params["body-format"] = body_format
+        yield from self._paginate(f"{V2_PREFIX}/pages", params)
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
     def get_page_by_id(
         self, page_id: str, body_format: Optional[str] = None
     ) -> Dict:
-        """
-        GET /wiki/api/v2/pages/{id}?body-format=...
-        """
-        params: Dict[str, Any] = {
-            "body-format": (body_format or SETTINGS.CONFLUENCE_BODY_FORMAT)
-        }
+        params: Dict[str, Any] = {}
+        if body_format:
+            params["body-format"] = body_format
         r = self._client.get(f"{V2_PREFIX}/pages/{page_id}", params=params)
         r.raise_for_status()
         return r.json()
@@ -133,24 +106,12 @@ class ConfluenceClient:
     def get_attachments_for_page(
         self, page_id: str, limit: int = 100
     ) -> Iterable[Dict]:
-        """
-        GET /wiki/api/v2/pages/{id}/attachments?limit=...
-        """
-        count = 0
         params: Dict[str, Any] = {"limit": limit}
-
-        for item in self._paginate(
+        yield from self._paginate(
             f"{V2_PREFIX}/pages/{page_id}/attachments", params
-        ):
-            yield item
-            count += 1
-
-        log.debug(
-            "confluence.get_attachments.done", page_id=page_id, count=count
         )
 
-    # -------- v1 CQL search (until v2 offers equivalent) --------
-
+    # ---------- v1 CQL (delta prefilter only) ----------
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
     def search_cql(
         self,
@@ -159,18 +120,19 @@ class ConfluenceClient:
         limit: int = 50,
         expand: Optional[str] = None,
     ) -> Dict:
-        """
-        GET /wiki/rest/api/content/search?cql=...&start=...&limit=...
-        Note: server-side caps may apply when expanding bodies.
-        """
-        url = "/rest/api/content/search"
-        params: Dict[str, Any] = {
-            "cql": cql,
-            "start": start,
-            "limit": limit,
-        }
+        params: Dict[str, Any] = {"cql": cql, "start": start, "limit": limit}
         if expand:
             params["expand"] = expand
-        r = self._client.get(url, params=params)
+        r = self._client.get("/rest/api/content/search", params=params)
         r.raise_for_status()
         return r.json()
+
+    # helpers
+    def absolute(self, rel_or_abs: Optional[str]) -> Optional[str]:
+        if not rel_or_abs:
+            return None
+        return (
+            rel_or_abs
+            if rel_or_abs.startswith("http")
+            else urljoin(self.site_base + "/", rel_or_abs.lstrip("/"))
+        )
