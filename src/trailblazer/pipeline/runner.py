@@ -40,4 +40,10 @@ def _execute_phase(phase: str, out: str) -> None:
         from .steps.normalize.html_to_md import normalize_from_ingest
 
         normalize_from_ingest(outdir=out)
+    elif phase == "embed":
+        from .steps.embed.loader import load_normalized_to_db
+
+        # Extract run_id from output path (runs/<run_id>/embed)
+        run_id = out.split("/")[-2]
+        load_normalized_to_db(run_id=run_id, provider_name="dummy")
     # other phases: placeholders

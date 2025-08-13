@@ -8,8 +8,12 @@ from ..pipeline.runner import run as run_pipeline
 app = typer.Typer(add_completion=False, help="Trailblazer CLI")
 ingest_app = typer.Typer(help="Ingestion commands")
 normalize_app = typer.Typer(help="Normalization commands")
+db_app = typer.Typer(help="Database commands")
+embed_app = typer.Typer(help="Embedding commands")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(normalize_app, name="normalize")
+app.add_typer(db_app, name="db")
+app.add_typer(embed_app, name="embed")
 
 
 @app.callback()
@@ -118,6 +122,91 @@ def normalize_from_ingest_cmd(
     )
     log.info("cli.normalize.from_ingest.done", run_id=rid, **metrics)
     typer.echo(f"Normalized to: {out}")
+
+
+@db_app.command("init")
+def db_init_cmd() -> None:
+    """Initialize database schema (safe if tables already exist)."""
+    from ..db.engine import create_tables, get_db_url
+
+    db_url = get_db_url()
+    typer.echo(f"Initializing database: {db_url}")
+
+    try:
+        create_tables()
+        typer.echo("✅ Database schema initialized successfully")
+    except Exception as e:
+        typer.echo(f"❌ Error initializing database: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@embed_app.command("load")
+def embed_load_cmd(
+    run_id: Optional[str] = typer.Option(
+        None,
+        "--run-id",
+        help="Run ID to load (uses runs/<RUN_ID>/normalize/normalized.ndjson)",
+    ),
+    input_file: Optional[str] = typer.Option(
+        None,
+        "--input",
+        help="Input NDJSON file to load (overrides --run-id)",
+    ),
+    provider: str = typer.Option(
+        "dummy",
+        "--provider",
+        help="Embedding provider (dummy, openai, sentencetransformers)",
+    ),
+    batch_size: int = typer.Option(
+        128, "--batch", help="Batch size for embedding generation"
+    ),
+    max_docs: Optional[int] = typer.Option(
+        None, "--max-docs", help="Maximum number of documents to process"
+    ),
+    max_chunks: Optional[int] = typer.Option(
+        None, "--max-chunks", help="Maximum number of chunks to process"
+    ),
+) -> None:
+    """Load normalized documents to database with embeddings."""
+    from ..db.engine import get_db_url
+    from ..pipeline.steps.embed.loader import load_normalized_to_db
+
+    if not run_id and not input_file:
+        raise typer.BadParameter("Either --run-id or --input must be provided")
+
+    db_url = get_db_url()
+    typer.echo(f"Loading to database: {db_url}")
+    typer.echo(f"Provider: {provider}")
+
+    try:
+        metrics = load_normalized_to_db(
+            run_id=run_id,
+            input_file=input_file,
+            provider_name=provider,
+            batch_size=batch_size,
+            max_docs=max_docs,
+            max_chunks=max_chunks,
+        )
+
+        # Display summary
+        typer.echo("\n📊 Summary:")
+        typer.echo(
+            f"  Documents: {metrics['docs_processed']} processed, {metrics['docs_upserted']} upserted"
+        )
+        typer.echo(
+            f"  Chunks: {metrics['chunks_processed']} processed, {metrics['chunks_upserted']} upserted"
+        )
+        typer.echo(
+            f"  Embeddings: {metrics['embeddings_processed']} processed, {metrics['embeddings_upserted']} upserted"
+        )
+        typer.echo(
+            f"  Provider: {metrics['provider']} (dim={metrics['dimension']})"
+        )
+        typer.echo(f"  Duration: {metrics['duration_seconds']:.2f}s")
+
+    except Exception as e:
+        typer.echo(f"❌ Error loading embeddings: {e}", err=True)
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

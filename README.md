@@ -55,11 +55,35 @@ trailblazer normalize from-ingest --run-id <RUN_ID>
 # → outputs to runs/<RUN_ID>/normalize/normalized.ndjson
 ```
 
-### 3. Full pipeline
+### 3. Embed & Graph v0
+
+Chunk normalized documents and generate embeddings for retrieval:
 
 ```bash
-# Run multiple phases in sequence
-trailblazer run --phases ingest normalize --dry-run
+# Initialize database schema
+trailblazer db init
+
+# Load documents with embeddings (default: dummy provider, offline)
+trailblazer embed load --run-id <RUN_ID> --provider dummy --batch 128
+
+# Or load from custom file
+trailblazer embed load --input normalized.ndjson --provider dummy
+```
+
+**Environment variables for embed & graph:**
+
+- `DB_URL` - Database URL (default: `sqlite:///./.trailblazer.db`)
+- `EMBED_PROVIDER` - Embedding provider: `dummy` (default, offline), `openai`, `sentencetransformers`
+- `OPENAI_API_KEY` - Required for OpenAI embeddings
+- `SENTENCE_TRANSFORMER_MODEL` - Local model name for sentence-transformers
+
+**Note:** Tests and default provider are offline. PostgreSQL + pgvector recommended for real retrieval scale.
+
+### 4. Full pipeline
+
+```bash
+# Run multiple phases in sequence (includes embed phase)
+trailblazer run --phases normalize embed --dry-run
 ```
 
 ## Technical details
@@ -69,7 +93,7 @@ trailblazer run --phases ingest normalize --dry-run
 - **API:** Confluence Cloud v2 (`/wiki/api/v2`) with Basic auth; v1 CQL for
   delta filtering
 - **Data:** NDJSON artifacts with deterministic transforms; PostgreSQL +
-  pgvector (planned)
+  pgvector for embeddings/retrieval
 - **Auth:** Store `CONFLUENCE_EMAIL` + `CONFLUENCE_API_TOKEN` in local `.env`
   only
 
