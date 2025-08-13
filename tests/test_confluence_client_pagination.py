@@ -72,8 +72,7 @@ def test_paginate_with_link_header(mock_http_client):
     }
     # Use Link header instead
     response1.headers = {
-        "Link": '</api/v2/pages?cursor=abc123>; rel="next", '
-        '</api/v2/pages?cursor=prev>; rel="prev"'
+        "Link": '</api/v2/pages?cursor=abc123>; rel="next", </api/v2/pages?cursor=prev>; rel="prev"'
     }
 
     response2 = Mock()

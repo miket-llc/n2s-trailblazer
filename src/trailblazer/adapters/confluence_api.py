@@ -5,7 +5,7 @@ from tenacity import retry, wait_exponential, stop_after_attempt
 from ..core.config import SETTINGS
 from ..core.logging import log
 
-V2_PREFIX = "/api/v2"  # appended to CONFLUENCE_BASE_URL path
+V2_PREFIX = "/wiki/api/v2"  # Confluence Cloud API path
 
 
 class ConfluenceClient:
@@ -15,13 +15,16 @@ class ConfluenceClient:
         email: Optional[str] = None,
         token: Optional[str] = None,
     ):
+        # For Confluence Cloud API, use the base domain
         base = (base_url or SETTINGS.CONFLUENCE_BASE_URL).rstrip("/")
-        if not base.endswith("/wiki"):
-            # normalize to include /wiki for Cloud
-            base = base + "/wiki"
-        self.base_url = base  # e.g., https://ellucian.atlassian.net/wiki
+        if base.endswith("/wiki"):
+            # Use base domain for API calls
+            api_base = base.replace("/wiki", "")
+        else:
+            api_base = base
+        self.base_url = base  # Keep original for web UI links
         self._client = httpx.Client(
-            base_url=self.base_url,
+            base_url=api_base,  # API calls go to domain root
             timeout=30.0,
             auth=BasicAuth(
                 email or SETTINGS.CONFLUENCE_EMAIL or "",
@@ -82,13 +85,19 @@ class ConfluenceClient:
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
     def get_pages(
-        self, space_id: Optional[str] = None, body_format: Optional[str] = None, limit: int = 100
+        self,
+        space_id: Optional[str] = None,
+        body_format: Optional[str] = None,
+        limit: int = 100,
     ) -> Iterable[Dict]:
         """
-        GET /wiki/api/v2/pages?space-id=<id>&body-format=storage|atlas_doc_format&limit=100
+        GET /wiki/api/v2/pages?space-id=<id>&body-format=storage|..&limit=100
         """
         log.info(
-            "confluence.get_pages.start", space_id=space_id, body_format=body_format, limit=limit
+            "confluence.get_pages.start",
+            space_id=space_id,
+            body_format=body_format,
+            limit=limit,
         )
         count = 0
         params: Dict[str, Any] = {"limit": limit}
@@ -130,14 +139,22 @@ class ConfluenceClient:
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
     def search_cql(
-        self, cql: str, start: int = 0, limit: int = 50, expand: Optional[str] = None
+        self,
+        cql: str,
+        start: int = 0,
+        limit: int = 50,
+        expand: Optional[str] = None,
     ) -> Dict:
         """
         GET /wiki/rest/api/content/search?cql=...&start=...&limit=...
         Note: server-side caps may apply when expanding bodies.
         """
         url = "/rest/api/content/search"
-        params: Dict[str, Any] = {"cql": cql, "start": start, "limit": limit}
+        params: Dict[str, Any] = {
+            "cql": cql,
+            "start": start,
+            "limit": limit,
+        }
         if expand:
             params["expand"] = expand
         r = self._client.get(url, params=params)
