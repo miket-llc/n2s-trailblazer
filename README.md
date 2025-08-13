@@ -1,7 +1,7 @@
 # Trailblazer
 
-**AI-powered knowledge base builder:** ingests Navigate-to-SaaS and Ellucian 
-documentation (Confluence + official docs), organizes everything into a typed 
+**AI-powered knowledge base builder:** ingests Navigate-to-SaaS and Ellucian
+documentation (Confluence + official docs), organizes everything into a typed
 graph with embeddings, and makes it easy to query and generate the docs we need.
 
 ## Quick start
@@ -22,7 +22,8 @@ trailblazer --help
 - **Toolchain required** - always run `make fmt && make lint && make test` before committing
 - **Artifacts immutable** - runs write to `runs/<run_id>/<phase>/`, never mutate previous runs
 
-📖 **See [mindfile](docs/2025-08-13-1308-trailblazer-mindfile.md) for comprehensive architecture, contracts, and development guidelines.**
+📖 **See [mindfile](docs/2025-08-13-1308-trailblazer-mindfile.md) for 
+comprehensive architecture, contracts, and development guidelines.**
 
 ## Usage
 
