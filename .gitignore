@@ -13,6 +13,7 @@ __pycache__/
 data/
 runs/
 logs/
+state/
 dist/
 build/
 .coverage

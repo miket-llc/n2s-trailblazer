@@ -1,7 +1,7 @@
 .PHONY: setup lint test fmt md check-md ci
 
 setup:
-	python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]" && pre-commit install
+	python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]" && pre-commit install
 
 fmt:
 	ruff check . --fix
