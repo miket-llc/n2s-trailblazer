@@ -93,7 +93,7 @@ def _adf_block(
         inner = "".join(
             [_adf_inline(c) for c in node.get("content", [])]
         ).strip()
-        return f"{'#'*level} {inner}".strip()
+        return f"{'#' * level} {inner}".strip()
     elif t == "blockquote":
         inner = _adf_blocks(node.get("content", []))
         return (

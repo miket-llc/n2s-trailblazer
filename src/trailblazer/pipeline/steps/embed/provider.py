@@ -138,8 +138,15 @@ class SentenceTransformerEmbedder(EmbeddingProvider):
     """Sentence Transformers local model embedder."""
 
     def __init__(self, model_name: Optional[str] = None):
+<<<<<<< HEAD
         self.model_name = model_name or os.getenv(
             "SENTENCE_TRANSFORMER_MODEL", "all-MiniLM-L6-v2"
+=======
+        self.model_name: str = (
+            model_name
+            or os.getenv("SENTENCE_TRANSFORMER_MODEL", "all-MiniLM-L6-v2")
+            or "all-MiniLM-L6-v2"
+>>>>>>> 6f9ade6 (feat(embed): complete embed & graph v0 implementation)
         )
         self._model = None
         self._dim = None
@@ -206,7 +213,7 @@ def get_embedding_provider(
         dim = int(os.getenv("OPENAI_EMBED_DIM", "1536"))
         return OpenAIEmbedder(model=model, dim=dim)
     elif provider_name == "sentencetransformers":
-        model = os.getenv("SENTENCE_TRANSFORMER_MODEL")  # Can be None
-        return SentenceTransformerEmbedder(model_name=model)  # type: ignore[arg-type]
+        st_model: Optional[str] = os.getenv("SENTENCE_TRANSFORMER_MODEL")
+        return SentenceTransformerEmbedder(model_name=st_model)
     else:
         raise ValueError(f"Unknown embedding provider: {provider_name}")
