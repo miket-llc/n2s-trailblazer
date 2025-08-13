@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import uuid
 
@@ -7,7 +7,7 @@ RUNS = ROOT / "runs"
 
 
 def new_run_id() -> str:
-    return f"{datetime.utcnow().strftime('%Y-%m-%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
+    return f"{datetime.now(timezone.utc).strftime('%Y-%m-%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
 
 
 def phase_dir(run_id: str, phase: str) -> Path:

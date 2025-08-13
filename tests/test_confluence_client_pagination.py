@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock
-from src.trailblazer.adapters.confluence_api import ConfluenceClient
+from trailblazer.adapters.confluence_api import ConfluenceClient
 
 
 @pytest.fixture
@@ -12,7 +12,11 @@ def mock_http_client():
 def test_paginate_with_links_next(mock_http_client):
     """Test pagination using _links.next."""
 
-    client = ConfluenceClient()
+    client = ConfluenceClient(
+        base_url="https://example.atlassian.net/wiki",
+        email="test@example.com",
+        token="dummy",
+    )
     client._client = mock_http_client
 
     # Mock responses for pagination
@@ -56,14 +60,21 @@ def test_paginate_with_links_next(mock_http_client):
 
     # Second call should use cursor URL without params
     second_call = mock_http_client.get.call_args_list[1]
-    assert second_call[0][0] == "/api/v2/pages?cursor=next1"
+    assert (
+        second_call[0][0]
+        == "https://example.atlassian.net/wiki/api/v2/pages?cursor=next1"
+    )
     assert second_call[1]["params"] is None
 
 
 def test_paginate_with_link_header(mock_http_client):
     """Test pagination using Link header as fallback."""
 
-    client = ConfluenceClient()
+    client = ConfluenceClient(
+        base_url="https://example.atlassian.net/wiki",
+        email="test@example.com",
+        token="dummy",
+    )
     client._client = mock_http_client
 
     # Mock responses for pagination
@@ -100,13 +111,20 @@ def test_paginate_with_link_header(mock_http_client):
 
     # Second call should use the URL from Link header
     second_call = mock_http_client.get.call_args_list[1]
-    assert second_call[0][0] == "/api/v2/pages?cursor=abc123"
+    assert (
+        second_call[0][0]
+        == "https://example.atlassian.net/wiki/api/v2/pages?cursor=abc123"
+    )
 
 
 def test_paginate_single_page(mock_http_client):
     """Test pagination with only one page (no next links)."""
 
-    client = ConfluenceClient()
+    client = ConfluenceClient(
+        base_url="https://example.atlassian.net/wiki",
+        email="test@example.com",
+        token="dummy",
+    )
     client._client = mock_http_client
 
     response = Mock()
@@ -132,7 +150,11 @@ def test_paginate_single_page(mock_http_client):
 def test_paginate_empty_results(mock_http_client):
     """Test pagination with empty results."""
 
-    client = ConfluenceClient()
+    client = ConfluenceClient(
+        base_url="https://example.atlassian.net/wiki",
+        email="test@example.com",
+        token="dummy",
+    )
     client._client = mock_http_client
 
     response = Mock()
@@ -152,7 +174,11 @@ def test_paginate_empty_results(mock_http_client):
 def test_get_spaces_integration():
     """Integration test for get_spaces using pagination."""
 
-    client = ConfluenceClient()
+    client = ConfluenceClient(
+        base_url="https://example.atlassian.net/wiki",
+        email="test@example.com",
+        token="dummy",
+    )
     mock_client = Mock()
     client._client = mock_client
 
