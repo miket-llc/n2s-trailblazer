@@ -27,9 +27,30 @@ def _run_db_preflight_check() -> None:
     This is used as a preflight check for commands that require database access.
     """
     from ..db.engine import check_db_health
+    import os
 
     try:
         health_info = check_db_health()
+
+        # Require PostgreSQL for production (unless in test mode)
+        if health_info["dialect"] != "postgresql":
+            if os.getenv("TB_TESTING") == "1":
+                # Allow non-PostgreSQL in test mode
+                return
+            else:
+                typer.echo(
+                    "❌ Database preflight failed: PostgreSQL required for production",
+                    err=True,
+                )
+                typer.echo(
+                    f"Current database: {health_info['dialect']}",
+                    err=True,
+                )
+                typer.echo(
+                    "Use 'make db.up' then 'trailblazer db doctor' to get started",
+                    err=True,
+                )
+                raise typer.Exit(1)
 
         # For PostgreSQL, require pgvector
         if (
@@ -41,14 +62,17 @@ def _run_db_preflight_check() -> None:
                 err=True,
             )
             typer.echo(
-                "Run 'trailblazer db check' for details or 'trailblazer db init' to initialize",
+                "Use 'make db.up' then 'trailblazer db doctor' to get started",
                 err=True,
             )
             raise typer.Exit(1)
 
     except Exception as e:
         typer.echo(f"❌ Database preflight failed: {e}", err=True)
-        typer.echo("Run 'trailblazer db check' for details", err=True)
+        typer.echo(
+            "Use 'make db.up' then 'trailblazer db doctor' to get started",
+            err=True,
+        )
         raise typer.Exit(1)
 
 
@@ -116,9 +140,30 @@ def ingest_confluence_cmd(
     allow_empty: bool = typer.Option(
         False, "--allow-empty", help="Allow zero pages without error"
     ),
+    log_format: str = typer.Option(
+        "auto", "--log-format", help="Logging format: json|plain|auto"
+    ),
+    quiet_pretty: bool = typer.Option(
+        False, "--quiet-pretty", help="Suppress banners but keep progress bars"
+    ),
 ) -> None:
     from ..core.artifacts import new_run_id, phase_dir
     from ..pipeline.steps.ingest.confluence import ingest_confluence
+    from ..core.logging import setup_logging, LogFormat
+    from typing import cast
+    from ..core.progress import init_progress
+
+    # Setup logging first
+    setup_logging(
+        format_type=cast(LogFormat, log_format)
+        if log_format in ("json", "plain", "auto")
+        else "auto"
+    )
+
+    # Initialize progress renderer
+    progress_renderer = init_progress(
+        enabled=progress, quiet_pretty=quiet_pretty
+    )
 
     rid = new_run_id()
     out = str(phase_dir(rid, "ingest"))
@@ -129,6 +174,23 @@ def ingest_confluence_cmd(
             if since
             else None
         )
+
+        # Determine since mode for banner
+        since_mode = "none"
+        if auto_since:
+            since_mode = "auto-since"
+        elif since:
+            since_mode = f"since {since}"
+
+        # Show start banner
+        num_spaces = len(space or []) + len(space_id or [])
+        progress_renderer.start_banner(
+            run_id=rid,
+            spaces=num_spaces,
+            since_mode=since_mode,
+            max_pages=max_pages,
+        )
+
         metrics = ingest_confluence(
             outdir=out,
             space_keys=space or None,
@@ -160,6 +222,8 @@ def ingest_confluence_cmd(
                 raise typer.Exit(4)  # Empty result when not allowed
 
         log.info("cli.ingest.confluence.done", run_id=rid, **metrics)
+
+        # Print run_id to stdout (for scripting)
         typer.echo(rid)
 
     except ValueError as e:
@@ -385,6 +449,114 @@ def db_check_cmd() -> None:
 
     except Exception as e:
         typer.echo(f"❌ Database check failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@db_app.command("doctor")
+def db_doctor_cmd() -> None:
+    """Comprehensive database diagnosis and health check."""
+    from ..db.engine import check_db_health, get_db_url
+
+    try:
+        # Show parsed DB URL (with masked credentials)
+        db_url = get_db_url()
+        parsed_url = urlparse(db_url)
+        if parsed_url.password:
+            safe_url = db_url.replace(parsed_url.password, "***")
+        else:
+            safe_url = db_url
+
+        typer.echo("🏥 Database Doctor - Comprehensive Health Check")
+        typer.echo("=" * 50)
+        typer.echo(f"📊 Parsed DB URL: {safe_url}")
+        typer.echo(f"🔧 Dialect: {parsed_url.scheme}")
+        typer.echo(f"🌐 Host: {parsed_url.hostname or 'localhost'}")
+        typer.echo(
+            f"🗃️  Database: {parsed_url.path.lstrip('/') if parsed_url.path else 'default'}"
+        )
+
+        # Attempt connection and check health
+        typer.echo("\n🔗 Testing connection...")
+        health_info = check_db_health()
+
+        typer.echo("✅ Connection successful!")
+        typer.echo(f"   Engine: {health_info['dialect']}")
+        typer.echo(f"   Host: {health_info['host']}")
+        typer.echo(f"   Database: {health_info['database']}")
+
+        # Check PostgreSQL specifics
+        if health_info["dialect"] == "postgresql":
+            typer.echo("\n🐘 PostgreSQL-specific checks:")
+            if health_info["pgvector"]:
+                typer.echo("   ✅ pgvector extension: available")
+
+                # Check embedding dimensions by querying existing data
+                from ..db.engine import get_session
+
+                with get_session() as session:
+                    from sqlalchemy import text
+
+                    try:
+                        result = session.execute(
+                            text(
+                                "SELECT DISTINCT dim FROM chunk_embeddings LIMIT 5"
+                            )
+                        )
+                        dims = [row[0] for row in result]
+                        if dims:
+                            typer.echo(
+                                f"   📏 Embedding dimensions found: {dims}"
+                            )
+                        else:
+                            typer.echo(
+                                "   📏 No embeddings found (empty database)"
+                            )
+                    except Exception as e:
+                        typer.echo(f"   📏 Could not check embeddings: {e}")
+            else:
+                typer.echo("   ❌ pgvector extension: NOT available")
+                typer.echo("      Run 'trailblazer db init' or manually:")
+                typer.echo(
+                    "      psql -d your_db -c 'CREATE EXTENSION vector;'"
+                )
+                raise typer.Exit(1)
+        else:
+            # Non-PostgreSQL database
+            if health_info["dialect"] == "sqlite":
+                # Only allow SQLite in test mode
+                import os
+
+                if os.getenv("TB_TESTING") != "1":
+                    typer.echo("\n❌ SQLite detected in production mode!")
+                    typer.echo(
+                        "   SQLite is only allowed for tests (TB_TESTING=1)"
+                    )
+                    typer.echo("   For production, use PostgreSQL:")
+                    typer.echo(
+                        "   Run 'make db.up' then 'trailblazer db doctor'"
+                    )
+                    raise typer.Exit(1)
+                else:
+                    typer.echo("\n⚠️  SQLite mode (testing only)")
+            else:
+                typer.echo(
+                    f"\n⚠️  Non-PostgreSQL database: {health_info['dialect']}"
+                )
+                typer.echo(
+                    "   For optimal performance, PostgreSQL + pgvector is recommended"
+                )
+
+        # Final summary
+        typer.echo("\n🎉 Database health check completed successfully!")
+        typer.echo("   Ready for embed/ask operations")
+
+    except Exception as e:
+        typer.echo(f"\n❌ Database doctor failed: {e}", err=True)
+        typer.echo("💡 Troubleshooting:")
+        typer.echo("   1. Check TRAILBLAZER_DB_URL in your .env file")
+        typer.echo("   2. Ensure PostgreSQL is running: make db.up")
+        typer.echo("   3. Initialize database: trailblazer db init")
+        typer.echo("   4. Verify pgvector extension is installed")
         raise typer.Exit(1)
 
 

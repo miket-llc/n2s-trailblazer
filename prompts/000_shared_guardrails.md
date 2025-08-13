@@ -35,6 +35,18 @@ Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is 
 
 Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
 
+## Console UX Policy
+
+Default to pretty, human-readable progress when attached to a TTY; default to JSON only in CI or when stdout is redirected.
+
+Never intermix pretty output and JSON on the same stream. JSON → stdout; pretty/status/progress → stderr.
+
+Always print the run_id at start/end of every command and write a final one-line summary.
+
+Throttle progress updates; no more than 1 line per --progress-every N pages.
+
+Keep the structured event names stable: confluence.space, confluence.page, confluence.attachments.
+
 ## Database Non-Negotiables (Global)
 
 - Ingest is DB-free: importing or running any ingest CLI/step MUST NOT connect to, import, or initialize the DB.
@@ -42,3 +54,15 @@ Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
 - Single source of truth: DB_URL MUST be provided in `.env` and used by a single engine factory. No hardcoded defaults that silently fall back to SQLite in dev/prod.
 - Preflight required: `trailblazer db check` MUST pass (connectivity + pgvector present) before `embed load` or `ask` run (unless tests explicitly opt-in to SQLite).
 - Secrets hygiene: Never print DB credentials in logs; log the host/database name only.
+
+## DB policy
+
+PostgreSQL + pgvector is the required default for any embed/retrieve/ask.
+
+SQLite is tests-only (unit/integration) and must be explicit in tests.
+
+Ingest/normalize must not require a DB.
+
+No silent fallback to SQLite in runtime code paths. Fail fast with an actionable message if Postgres isn't configured.
+
+Provide a single place to diagnose: trailblazer db doctor.

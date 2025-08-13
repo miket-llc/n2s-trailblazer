@@ -64,9 +64,9 @@ def test_db_check_with_postgres_missing_pgvector():
 
 
 def test_sqlite_gating_without_env_var():
-    """Test that SQLite usage fails without ALLOW_SQLITE_FOR_TESTS=1."""
+    """Test that SQLite usage fails without TB_TESTING=1."""
     # Remove the environment variable if it exists
-    old_val = os.environ.pop("ALLOW_SQLITE_FOR_TESTS", None)
+    old_val = os.environ.pop("TB_TESTING", None)
 
     try:
         with tempfile.NamedTemporaryFile(suffix=".db") as f:
@@ -75,6 +75,12 @@ def test_sqlite_gating_without_env_var():
             with patch(
                 "trailblazer.db.engine.get_db_url", return_value=db_url
             ):
+                # Clear any cached engine to force fresh evaluation
+                import trailblazer.db.engine
+
+                trailblazer.db.engine._engine = None
+                trailblazer.db.engine._session_factory = None
+
                 from trailblazer.db.engine import get_engine
 
                 with pytest.raises(
@@ -84,13 +90,13 @@ def test_sqlite_gating_without_env_var():
     finally:
         # Restore the environment variable
         if old_val is not None:
-            os.environ["ALLOW_SQLITE_FOR_TESTS"] = old_val
+            os.environ["TB_TESTING"] = old_val
 
 
 def test_sqlite_gating_with_env_var():
-    """Test that SQLite usage works with ALLOW_SQLITE_FOR_TESTS=1."""
+    """Test that SQLite usage works with TB_TESTING=1."""
     # Ensure the environment variable is set
-    os.environ["ALLOW_SQLITE_FOR_TESTS"] = "1"
+    os.environ["TB_TESTING"] = "1"
 
     try:
         with tempfile.NamedTemporaryFile(suffix=".db") as f:
@@ -99,6 +105,12 @@ def test_sqlite_gating_with_env_var():
             with patch(
                 "trailblazer.db.engine.get_db_url", return_value=db_url
             ):
+                # Clear any cached engine to force fresh evaluation
+                import trailblazer.db.engine
+
+                trailblazer.db.engine._engine = None
+                trailblazer.db.engine._session_factory = None
+
                 from trailblazer.db.engine import get_engine
 
                 # This should not raise an exception
@@ -118,8 +130,9 @@ def test_embed_load_requires_postgres_without_test_env():
         with patch(
             "trailblazer.db.engine.get_engine",
             side_effect=ValueError(
-                "SQLite is only allowed for tests. Set ALLOW_SQLITE_FOR_TESTS=1 for tests, "
-                "or configure TRAILBLAZER_DB_URL with PostgreSQL for production use."
+                "SQLite is only allowed for tests. Set TB_TESTING=1 for tests, "
+                "or configure TRAILBLAZER_DB_URL with PostgreSQL for production use. "
+                "Run 'make db.up' then 'trailblazer db doctor' to get started."
             ),
         ):
             runner = CliRunner()
@@ -148,8 +161,9 @@ def test_ask_requires_postgres_without_test_env():
         with patch(
             "trailblazer.db.engine.get_engine",
             side_effect=ValueError(
-                "SQLite is only allowed for tests. Set ALLOW_SQLITE_FOR_TESTS=1 for tests, "
-                "or configure TRAILBLAZER_DB_URL with PostgreSQL for production use."
+                "SQLite is only allowed for tests. Set TB_TESTING=1 for tests, "
+                "or configure TRAILBLAZER_DB_URL with PostgreSQL for production use. "
+                "Run 'make db.up' then 'trailblazer db doctor' to get started."
             ),
         ):
             runner = CliRunner()

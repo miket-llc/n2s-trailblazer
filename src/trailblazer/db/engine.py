@@ -48,11 +48,13 @@ def get_db_url() -> str:
     db_url = SETTINGS.TRAILBLAZER_DB_URL
     if not db_url:
         # Check if we're in a test environment
-        if os.getenv("ALLOW_SQLITE_FOR_TESTS") == "1":
+        if os.getenv("TB_TESTING") == "1":
             return "sqlite:///./.trailblazer.db"
         raise ValueError(
-            "DB_URL is required. Set TRAILBLAZER_DB_URL in your .env file. "
-            "For tests, set ALLOW_SQLITE_FOR_TESTS=1."
+            "TRAILBLAZER_DB_URL is required for production use. "
+            "Set TRAILBLAZER_DB_URL to a PostgreSQL URL in your .env file. "
+            "Run 'make db.up' then 'trailblazer db doctor' to get started. "
+            "For tests, set TB_TESTING=1."
         )
     return db_url
 
@@ -68,13 +70,11 @@ def get_engine():
         db_url = get_db_url()
 
         # Check if SQLite is being used without test permission
-        if (
-            db_url.startswith("sqlite")
-            and os.getenv("ALLOW_SQLITE_FOR_TESTS") != "1"
-        ):
+        if db_url.startswith("sqlite") and os.getenv("TB_TESTING") != "1":
             raise ValueError(
-                "SQLite is only allowed for tests. Set ALLOW_SQLITE_FOR_TESTS=1 for tests, "
-                "or configure TRAILBLAZER_DB_URL with PostgreSQL for production use."
+                "SQLite is only allowed for tests. Set TB_TESTING=1 for tests, "
+                "or configure TRAILBLAZER_DB_URL with PostgreSQL for production use. "
+                "Run 'make db.up' then 'trailblazer db doctor' to get started."
             )
 
         _engine = create_engine(db_url, future=True)

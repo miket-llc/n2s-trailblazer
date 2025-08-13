@@ -7,8 +7,8 @@ import pytest
 @pytest.fixture(autouse=True)
 def enable_sqlite_for_tests():
     """Enable SQLite for all tests by setting the environment variable."""
-    os.environ["ALLOW_SQLITE_FOR_TESTS"] = "1"
+    os.environ["TB_TESTING"] = "1"
     yield
     # Clean up after test (optional)
-    if "ALLOW_SQLITE_FOR_TESTS" in os.environ:
-        del os.environ["ALLOW_SQLITE_FOR_TESTS"]
+    if "TB_TESTING" in os.environ:
+        del os.environ["TB_TESTING"]

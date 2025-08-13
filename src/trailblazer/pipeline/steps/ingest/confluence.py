@@ -260,16 +260,69 @@ def ingest_confluence(
     attachments_csv_path = outdir_path / "attachments.csv"
     summary_json_path = outdir_path / "summary.json"
 
+    # Progress checkpoint file
+    progress_json_path = outdir_path / "progress.json"
+    final_summary_path = outdir_path / "final_summary.txt"
+
     started_at = datetime.now(timezone.utc)
 
     client = ConfluenceClient()
     site_base = client.site_base
+
+    # Import progress system
+    from ....core.progress import get_progress
+
+    progress_renderer = get_progress()
 
     # Resolve spaces
     space_id_list, space_key_by_id = _resolve_space_map(
         client, space_keys, space_ids
     )
     num_spaces = len(space_id_list) if (space_id_list or space_keys) else 0
+
+    # Show spaces table if we have space info
+    if space_id_list:
+        spaces_info = []
+        for space_id in space_id_list:
+            try:
+                # Get space details for the table
+                r = client._client.get(f"/api/v2/spaces/{space_id}")
+                if r.status_code == 200:
+                    space_data = r.json()
+                    spaces_info.append(
+                        {
+                            "id": space_id,
+                            "key": space_data.get("key", ""),
+                            "name": space_data.get("name", ""),
+                        }
+                    )
+            except Exception:
+                # Fallback if API call fails
+                spaces_info.append(
+                    {
+                        "id": space_id,
+                        "key": space_key_by_id.get(space_id, ""),
+                        "name": "",
+                    }
+                )
+        progress_renderer.spaces_table(spaces_info)
+
+    # Check for previous progress checkpoint
+    if auto_since and progress_json_path.exists():
+        try:
+            with open(progress_json_path) as f:
+                progress_data = json.load(f)
+                last_page_id = progress_data.get("last_page_id", "")
+                last_timestamp = progress_data.get("timestamp", "")
+                if last_page_id and last_timestamp:
+                    progress_renderer.resume_indicator(
+                        last_page_id, last_timestamp
+                    )
+        except Exception as e:
+            log.warning(
+                "ingest.confluence.progress_resume.failed",
+                error=str(e),
+            )
 
     # Handle auto-since
     effective_since = since
@@ -479,15 +532,36 @@ def ingest_confluence(
                     filenames=filenames,
                 )
 
-            # Progress output
-            if progress and written_pages % progress_every == 0:
-                updated_str = _iso(p.updated_at) if p.updated_at else "unknown"
-                print(
-                    f'{space_key} | p={p.id} | "{p.title}" | att={len(p.attachments)} | {updated_str}'
-                )
+            # Progress output via renderer
+            progress_renderer.progress_update(
+                space_key=space_key,
+                page_id=p.id,
+                title=p.title,
+                attachments=len(p.attachments),
+                updated_at=_iso(p.updated_at) if p.updated_at else None,
+                throttle_every=progress_every,
+            )
 
             written_pages += 1
             written_attachments += len(p.attachments)
+
+            # Write progress checkpoint every progress_every pages
+            if written_pages % progress_every == 0:
+                checkpoint_data = {
+                    "last_page_id": p.id,
+                    "pages_processed": written_pages,
+                    "attachments_processed": written_attachments,
+                    "timestamp": _iso(datetime.now(timezone.utc)),
+                    "progress_checkpoints": written_pages // progress_every,
+                }
+                try:
+                    with open(progress_json_path, "w") as f:
+                        json.dump(checkpoint_data, f, indent=2, sort_keys=True)
+                except Exception as e:
+                    log.warning(
+                        "ingest.confluence.checkpoint_write.failed",
+                        error=str(e),
+                    )
 
         if candidate_ids is not None:
             for pid in candidate_ids:
@@ -573,6 +647,14 @@ def ingest_confluence(
             json.dump(sorted(list(page_ids)), f, indent=2, sort_keys=True)
 
     completed_at = datetime.now(timezone.utc)
+    elapsed_seconds = (completed_at - started_at).total_seconds()
+
+    # Show finish banner
+    progress_renderer.finish_banner(
+        run_id=run_id or "unknown",
+        space_stats=space_stats,
+        elapsed=elapsed_seconds,
+    )
 
     # Create summary.json with per-space stats
     total_unknown_count = sum(space_key_unknown_count.values())
@@ -580,9 +662,13 @@ def ingest_confluence(
         "run_id": run_id,
         "started_at": _iso(started_at),
         "completed_at": _iso(completed_at),
+        "elapsed_seconds": round(elapsed_seconds, 2),
         "total_pages": written_pages,
         "total_attachments": written_attachments,
         "space_key_unknown_count": total_unknown_count,
+        "progress_checkpoints": written_pages // progress_every
+        if progress_every > 0
+        else 0,
         "spaces": {},
     }
 
@@ -603,6 +689,15 @@ def ingest_confluence(
 
     with open(summary_json_path, "w") as f:
         json.dump(summary_data, f, indent=2, sort_keys=True)
+
+    # Write final one-line summary for humans
+    final_summary = progress_renderer.one_line_summary(
+        run_id=run_id or "unknown",
+        pages=written_pages,
+        attachments=written_attachments,
+        elapsed=elapsed_seconds,
+    )
+    final_summary_path.write_text(final_summary + "\n", encoding="utf-8")
 
     # Print console warning if space_key resolution failed
     if total_unknown_count > 0:

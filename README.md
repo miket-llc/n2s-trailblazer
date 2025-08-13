@@ -100,11 +100,25 @@ trailblazer normalize from-ingest --run-id <RUN_ID>
 # → outputs to runs/<RUN_ID>/normalize/normalized.ndjson
 ```
 
-### 3. Database (Postgres-first)
+### 3. Database (Postgres required)
 
-Trailblazer uses a Postgres-first database strategy with pgvector for embeddings. SQLite is only supported for tests.
+Trailblazer requires PostgreSQL + pgvector for production use. SQLite is only allowed for tests.
 
-**Setup PostgreSQL:**
+**Quick Setup with Docker:**
+
+```bash
+# Start PostgreSQL with pgvector (easiest option)
+make db.up
+
+# Wait for database to be ready
+make db.wait
+
+# Initialize database schema and verify health
+trailblazer db init
+trailblazer db doctor
+```
+
+**Manual PostgreSQL Setup:**
 
 ```bash
 # Install PostgreSQL and pgvector extension
@@ -124,27 +138,27 @@ Set `TRAILBLAZER_DB_URL` in your `.env` file:
 
 ```bash
 # PostgreSQL (required for production)
-TRAILBLAZER_DB_URL=postgresql+psycopg2://trailblazer:trailblazer@localhost:5432/trailblazer
+TRAILBLAZER_DB_URL=postgresql+psycopg2://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer
 
-# For tests only - SQLite is automatically enabled in test environment
-# ALLOW_SQLITE_FOR_TESTS=1  # Only needed if you manually want to use SQLite in tests
+# SQLite is automatically enabled in test environment (TB_TESTING=1)
 ```
 
 **Database Commands:**
 
 ```bash
-# Check database connectivity and pgvector availability
+# Comprehensive database health check (recommended)
+trailblazer db doctor
+
+# Basic connectivity check
 trailblazer db check
 
 # Initialize database schema (creates tables and pgvector extension if possible)
 trailblazer db init
-```
 
-If you see pgvector errors, manually enable the extension:
-
-```sql
--- Connect to your database
-psql -d trailblazer -c "CREATE EXTENSION IF NOT EXISTS vector;"
+# Docker database management
+make db.up    # Start PostgreSQL container
+make db.down  # Stop PostgreSQL container
+make db.wait  # Wait for database readiness
 ```
 
 ### 4. Embed & Graph v0
@@ -152,7 +166,10 @@ psql -d trailblazer -c "CREATE EXTENSION IF NOT EXISTS vector;"
 Chunk normalized documents and generate embeddings for retrieval:
 
 ```bash
-# Load documents with embeddings (requires database setup above)
+# Ensure PostgreSQL is ready first
+make db.up && trailblazer db init && trailblazer db doctor
+
+# Load documents with embeddings (requires PostgreSQL + pgvector)
 trailblazer embed load --run-id <RUN_ID> --provider dummy --batch 128
 
 # Or load from custom file
@@ -165,7 +182,7 @@ trailblazer embed load --input normalized.ndjson --provider dummy
 - `OPENAI_API_KEY` - Required for OpenAI embeddings
 - `SENTENCE_TRANSFORMER_MODEL` - Local model name for sentence-transformers
 
-**Note:** Commands like `embed load` and `ask` run a database preflight check and will fail if PostgreSQL + pgvector is not available (unless in test environment).
+**Note:** PostgreSQL + pgvector is required for production. Commands like `embed load` and `ask` will fail fast if PostgreSQL is not configured (SQLite is only allowed for tests with TB_TESTING=1).
 
 ### 5. Ask (dense retrieval)
 
@@ -206,6 +223,66 @@ trailblazer ask "SAML configuration steps" \
 
 ### 5. Observability & Operations
 
+**Console UX & Progress Tracking:**
+
+Trailblazer automatically detects TTY vs CI/redirect environments and separates JSON logs from pretty output:
+
+```bash
+# Interactive TTY: pretty progress to stderr, JSON logs to stdout
+trailblazer ingest confluence --space DEV --progress --progress-every 10
+
+# CI/redirected: JSON-only mode automatically
+trailblazer ingest confluence --space DEV > ingest.log 2> progress.log
+
+# Force specific log format
+trailblazer ingest confluence --space DEV --log-format json   # Always JSON
+trailblazer ingest confluence --space DEV --log-format plain  # Always pretty
+
+# Quiet mode for long runs (suppress banners, keep progress)
+trailblazer ingest confluence --space DEV --progress --quiet-pretty
+```
+
+**Progress & Resume Features:**
+
+```bash
+# Progress checkpoints saved every N pages 
+trailblazer ingest confluence --space DEV --progress --progress-every 50
+# → writes progress.json with last page, counts, timestamps
+
+# Auto-resume from checkpoints
+trailblazer ingest confluence --space DEV --auto-since
+# → shows "Resuming from page 12345" if previous progress.json exists
+
+# Separate stdout/stderr for automation
+trailblazer ingest confluence --space DEV 2>/dev/null  # Only run_id to stdout
+trailblazer ingest confluence --space DEV 1>/dev/null  # Only progress to stderr
+```
+
+**Start/Finish Banners & Summaries:**
+
+```
+🚀 Starting ingest run: 2025-01-15_1400_c3d4
+   Spaces targeted: 2
+   Mode: auto-since
+   Max pages: 1000
+
+📋 Spaces to ingest:
+   ID       | KEY      | NAME
+   ---------|----------|----------------------------------
+   12345678 | DEV      | Development Space
+   87654321 | PROD     | Production Space
+
+DEV | p=98765 | "Setting up SSO Configuration" | att=3 | 2025-01-15T14:25:30Z (12.5/s)
+PROD | p=43210 | "User Management Guide" | att=1 | 2025-01-15T14:25:35Z (12.3/s)
+
+✅ Completed ingest run: 2025-01-15_1400_c3d4
+   Elapsed: 45.2s
+   Total: 150 pages, 75 attachments
+   Per space:
+     DEV: 100 pages, 50 attachments
+     PROD: 50 pages, 25 attachments
+```
+
 **Diff-deletions:** Track page deletions between runs:
 
 ```bash
@@ -227,11 +304,13 @@ trailblazer ops prune-runs --keep 10 --min-age-days 30 --no-dry-run
 # → writes prune_report.json to logs/ directory
 ```
 
-**Observable artifacts from enhanced ingest:**
+**Enhanced artifacts from observable ingest:**
 
 - `pages.csv` - Page metadata with sort-stable columns
 - `attachments.csv` - All attachments with download URLs
-- `summary.json` - Per-space statistics (pages, attachments, empty bodies, avg chars)
+- `summary.json` - Per-space statistics with elapsed time and progress checkpoints
+- `progress.json` - Rolling checkpoint file with last processed page and counts
+- `final_summary.txt` - One-line human summary for reports
 - `<SPACE>_seen_page_ids.json` - Page IDs seen this run (for diff-deletions)
 - Structured logs: `confluence.space`, `confluence.page`, `confluence.attachments` events
 
