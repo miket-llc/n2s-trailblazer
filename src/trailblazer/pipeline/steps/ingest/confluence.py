@@ -25,6 +25,39 @@ def _body_html_from_v2(page_obj: Dict) -> Optional[str]:
     return None
 
 
+def _detect_body_repr(obj: dict) -> str:
+    body = obj.get("body") or {}
+    if "storage" in body:
+        return "storage"
+    if "atlas_doc_format" in body:
+        return "adf"
+    return "unknown"
+
+
+def _extract_body_storage(obj: dict) -> str | None:
+    body = obj.get("body") or {}
+    storage = body.get("storage") or {}
+    val = storage.get("value")
+    return val if isinstance(val, str) else None
+
+
+def _extract_body_adf(obj: dict) -> dict | None:
+    body = obj.get("body") or {}
+    adf = body.get("atlas_doc_format") or {}
+    val = adf.get("value")
+    # v2 may return already-parsed JSON or a stringified JSON; handle both
+    if isinstance(val, dict):
+        return val
+    if isinstance(val, str):
+        try:
+            import json
+
+            return json.loads(val)
+        except Exception:
+            return None
+    return None
+
+
 def _page_url(site_base: str, page_obj: Dict) -> Optional[str]:
     webui = (page_obj.get("_links") or {}).get("webui")
     if not webui:
@@ -169,10 +202,17 @@ def ingest_confluence(
 
     with ndjson_path.open("w", encoding="utf-8") as out:
 
-        def write_page_obj(p: Page):
+        def write_page_obj(p: Page, obj: Dict):
             nonlocal written_pages, written_attachments
-            d = p.model_dump(mode="json")
-            out.write(json.dumps(d, ensure_ascii=False) + "\n")
+            page_dict = p.model_dump(mode="json")
+            # Add new body representation fields
+            repr_ = _detect_body_repr(obj)
+            page_dict["body_repr"] = repr_
+            if repr_ == "storage":
+                page_dict["body_storage"] = _extract_body_storage(obj)
+            elif repr_ == "adf":
+                page_dict["body_adf"] = _extract_body_adf(obj)
+            out.write(json.dumps(page_dict, ensure_ascii=False) + "\n")
             written_pages += 1
             written_attachments += len(p.attachments)
 
@@ -183,7 +223,7 @@ def ingest_confluence(
                 # attachments
                 for att in client.get_attachments_for_page(page.id):
                     page.attachments.append(_map_attachment(site_base, att))
-                write_page_obj(page)
+                write_page_obj(page, obj)
                 if max_pages and written_pages >= max_pages:
                     break
         else:
@@ -201,7 +241,7 @@ def ingest_confluence(
                         page.attachments.append(
                             _map_attachment(site_base, att)
                         )
-                    write_page_obj(page)
+                    write_page_obj(page, obj)
                     if max_pages and written_pages >= max_pages:
                         break
                 if max_pages and written_pages >= max_pages:

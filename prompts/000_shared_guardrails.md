@@ -1,37 +1,26 @@
-# Guardrails for Trailblazer prompts
+PREAMBLE — Shared Guardrails (paste at the top of every prompt)
+Save once as prompts/000_shared_guardrails.md and also paste at the top when you run this prompt.
 
-Read me first (do not skip): Guardrails for Trailblazer prompts
+Trailblazer Prompt Guardrails (read first)
 
-Work on main only. No feature branches, no PRs, commit atomically to main.
+Main only. Do all work on main. No feature branches/PRs for this task.
 
-Always use a venv:
-
-```bash
-make setup
-# (creates .venv, installs dev deps, installs pre-commit hooks)
-```
-
-Never hand-fix lint/format. Use the toolchain:
+Always use a venv + our toolchain:
 
 ```bash
-make fmt     # ruff --fix + black
-make lint    # ruff check + mypy
-make test    # pytest -q
+make setup        # creates .venv, installs dev deps, installs pre-commit
+make fmt          # ruff --fix + black
+make lint         # ruff check + mypy
+make test         # pytest -q
 ```
-
 Only commit/push if all three succeed.
 
-Pre-commit must be installed and green before each commit.
+Never hand-fix lint/format. Use the Make targets above.
 
-Save this prompt to prompts/ as instructed before you code.
+Proof-of-work in your reply: paste the exact commands you ran and the last ~10 lines of their output (no screenshots).
 
-Proof-of-work inside Cursor: after changes, run the exact shell commands above and paste the command + last 10 lines of their output into the prompt response (no screenshots, no placeholders).
+Secrets: never commit real credentials. Examples must use placeholders.
 
-Secrets: read from .env, never printed or committed.
+Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Confluence: Cloud v2 endpoints with Basic auth (email + API token). Use v1 CQL only for delta prefiltering.
-
-Artifacts: every phase writes to runs/<run_id>/<phase>/..., never mutate previous runs.
-
-If any step fails, stop and fix; do not push broken code.
-You are responsible for verifying the code actually runs locally (CLI + tests), not just "compiles".
+Artifacts immutable: write to runs/<run_id>/<phase>/…; never mutate previous runs.

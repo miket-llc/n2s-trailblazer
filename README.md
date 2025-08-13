@@ -28,6 +28,21 @@ trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z --max-pag
 
 Artifacts: `runs/<run_id>/ingest/`.
 
+### Normalize (Storage & ADF → Markdown)
+Trailblazer converts Confluence bodies to Markdown, supporting both **Storage (XHTML)** and **ADF JSON**.
+
+```bash
+trailblazer normalize from-ingest --run-id <RUN_ID>    # uses runs/<RUN_ID>/ingest/confluence.ndjson
+# or:
+trailblazer normalize from-ingest --input runs/<RUN_ID>/ingest/confluence.ndjson
+```
+
+Outputs → runs/<RUN_ID>/normalize/:
+
+- normalized.ndjson (one record per page, with body_repr, text_md, links, attachments)
+
+- metrics.json, manifest.json
+
 ### Implementation Details
 - API base: https://ellucian.atlassian.net/wiki/api/v2
 - Auth: Basic (email + API token)

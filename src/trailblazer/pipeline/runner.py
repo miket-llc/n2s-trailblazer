@@ -36,4 +36,8 @@ def _execute_phase(phase: str, out: str) -> None:
             since=None,
             body_format=SETTINGS.CONFLUENCE_BODY_FORMAT,
         )
+    elif phase == "normalize":
+        from .steps.normalize.html_to_md import normalize_from_ingest
+
+        normalize_from_ingest(outdir=out)
     # other phases: placeholders
