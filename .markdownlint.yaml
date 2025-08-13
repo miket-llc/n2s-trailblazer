@@ -1,0 +1,17 @@
+# Markdownlint configuration
+# See https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+# Disable rules that are too strict for documentation
+MD036: false  # no-emphasis-as-heading - Allow emphasis for visual formatting
+MD034: false  # no-bare-urls - Allow bare URLs in documentation  
+MD040: false  # fenced-code-language - Allow code blocks without language
+MD022: false  # blanks-around-headings - Allow flexible heading spacing
+MD031: false  # blanks-around-fences - Allow flexible fence spacing
+MD032: false  # blanks-around-lists - Allow flexible list spacing
+
+# Keep important rules enabled
+MD001: true   # heading-increment - Enforce proper heading levels
+MD002: true   # first-heading-h1 - First heading should be h1
+MD003: true   # heading-style - Consistent heading style
+MD004: true   # ul-style - Consistent unordered list style
+MD005: true   # list-indent - Proper list indentation
