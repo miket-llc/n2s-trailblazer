@@ -3,7 +3,7 @@
 
 # Disable rules that are too strict for documentation
 MD036: false  # no-emphasis-as-heading - Allow emphasis for visual formatting
-MD034: false  # no-bare-urls - Allow bare URLs in documentation  
+MD034: false  # no-bare-urls - Allow bare URLs in documentation
 MD040: false  # fenced-code-language - Allow code blocks without language
 MD022: false  # blanks-around-headings - Allow flexible heading spacing
 MD031: false  # blanks-around-fences - Allow flexible fence spacing
