@@ -46,4 +46,14 @@ def _execute_phase(phase: str, out: str) -> None:
         # Extract run_id from output path (runs/<run_id>/embed)
         run_id = out.split("/")[-2]
         load_normalized_to_db(run_id=run_id, provider_name="dummy")
+    elif phase == "retrieve":
+        # This is handled via the CLI 'ask' command
+        # Runner can create a placeholder directory for consistency
+        from pathlib import Path
+
+        Path(out).mkdir(parents=True, exist_ok=True)
+        log.info(
+            "phase.retrieve.placeholder",
+            msg="Use 'trailblazer ask <question>' for interactive retrieval",
+        )
     # other phases: placeholders

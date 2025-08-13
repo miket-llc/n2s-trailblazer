@@ -209,5 +209,141 @@ def embed_load_cmd(
         raise typer.Exit(1)
 
 
+@app.command()
+def ask(
+    question: str = typer.Argument(..., help="Question to ask"),
+    top_k: int = typer.Option(
+        8, "--top-k", help="Number of top chunks to retrieve"
+    ),
+    max_chunks_per_doc: int = typer.Option(
+        3, "--max-chunks-per-doc", help="Maximum chunks per document"
+    ),
+    provider: str = typer.Option(
+        "dummy",
+        "--provider",
+        help="Embedding provider (dummy, openai, sentencetransformers)",
+    ),
+    max_chars: int = typer.Option(
+        6000, "--max-chars", help="Maximum characters in context"
+    ),
+    format_output: str = typer.Option(
+        "text", "--format", help="Output format (text, json)"
+    ),
+    out_dir: Optional[str] = typer.Option(
+        None, "--out", help="Output directory (default: runs/<run_id>/ask/)"
+    ),
+    db_url: Optional[str] = typer.Option(
+        None, "--db-url", help="Database URL override"
+    ),
+) -> None:
+    """Ask a question using dense retrieval over embedded chunks."""
+    import json
+    import time
+    from pathlib import Path
+
+    from ..core.artifacts import new_run_id, phase_dir
+    from ..retrieval.dense import create_retriever
+    from ..retrieval.pack import (
+        group_by_doc,
+        pack_context,
+        create_context_summary,
+    )
+
+    # Setup
+    run_id = new_run_id()
+    out_path = Path(out_dir) if out_dir else phase_dir(run_id, "ask")
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    typer.echo(f"🔍 Asking: {question}")
+    typer.echo(f"📁 Output: {out_path}")
+    typer.echo(f"🧠 Provider: {provider}")
+
+    try:
+        # Create retriever
+        start_time = time.time()
+        retriever = create_retriever(db_url=db_url, provider_name=provider)
+
+        # Perform search
+        search_start = time.time()
+        raw_hits = retriever.search(question, top_k=top_k)
+        search_time = time.time() - search_start
+
+        if not raw_hits:
+            typer.echo("❌ No results found")
+            raise typer.Exit(1)
+
+        # Group and pack results
+        pack_start = time.time()
+        grouped_hits = group_by_doc(raw_hits, max_chunks_per_doc)
+        context = pack_context(grouped_hits, max_chars)
+        pack_time = time.time() - pack_start
+
+        total_time = time.time() - start_time
+
+        # Create timing info
+        timing_info = {
+            "total_seconds": total_time,
+            "search_seconds": search_time,
+            "pack_seconds": pack_time,
+        }
+
+        # Write artifacts
+        # 1. hits.jsonl
+        hits_file = out_path / "hits.jsonl"
+        with open(hits_file, "w") as f:
+            for hit in grouped_hits:
+                f.write(json.dumps(hit) + "\n")
+
+        # 2. summary.json
+        summary = create_context_summary(
+            question, grouped_hits, provider, timing_info
+        )
+        summary_file = out_path / "summary.json"
+        with open(summary_file, "w") as f:
+            json.dump(summary, f, indent=2)
+
+        # 3. context.txt
+        context_file = out_path / "context.txt"
+        with open(context_file, "w") as f:
+            f.write(context)
+
+        # Output results
+        if format_output == "json":
+            typer.echo(json.dumps(summary, indent=2))
+        else:
+            # Text format - show summary
+            typer.echo("\n📊 Results:")
+            typer.echo(f"  Top hits: {len(grouped_hits)}")
+            typer.echo(f"  Documents: {summary['unique_documents']}")
+            typer.echo(f"  Characters: {summary['total_characters']:,}")
+            typer.echo(
+                f"  Score range: {summary['score_stats']['min']:.3f} - {summary['score_stats']['max']:.3f}"
+            )
+            typer.echo(f"  Duration: {total_time:.2f}s")
+
+            # Show top few hits
+            typer.echo("\n🎯 Top results:")
+            for i, hit in enumerate(grouped_hits[:3]):
+                title = hit.get("title", "Untitled")
+                url = hit.get("url", "")
+                score = hit.get("score", 0.0)
+                typer.echo(f"  {i + 1}. {title} (score: {score:.3f})")
+                if url:
+                    typer.echo(f"     {url}")
+
+            if len(grouped_hits) > 3:
+                typer.echo(f"     ... and {len(grouped_hits) - 3} more")
+
+            typer.echo("\n📄 Context preview (first 200 chars):")
+            preview = context[:200].replace("\n", " ")
+            typer.echo(f"  {preview}{'...' if len(context) > 200 else ''}")
+
+        typer.echo(f"\n✅ Artifacts written to: {out_path}")
+
+    except Exception as e:
+        typer.echo(f"❌ Error during retrieval: {e}", err=True)
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()

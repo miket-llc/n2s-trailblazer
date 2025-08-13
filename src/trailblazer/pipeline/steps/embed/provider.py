@@ -138,15 +138,10 @@ class SentenceTransformerEmbedder(EmbeddingProvider):
     """Sentence Transformers local model embedder."""
 
     def __init__(self, model_name: Optional[str] = None):
-<<<<<<< HEAD
-        self.model_name = model_name or os.getenv(
-            "SENTENCE_TRANSFORMER_MODEL", "all-MiniLM-L6-v2"
-=======
         self.model_name: str = (
             model_name
             or os.getenv("SENTENCE_TRANSFORMER_MODEL", "all-MiniLM-L6-v2")
             or "all-MiniLM-L6-v2"
->>>>>>> 6f9ade6 (feat(embed): complete embed & graph v0 implementation)
         )
         self._model = None
         self._dim = None

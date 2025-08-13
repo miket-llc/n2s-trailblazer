@@ -79,7 +79,44 @@ trailblazer embed load --input normalized.ndjson --provider dummy
 
 **Note:** Tests and default provider are offline. PostgreSQL + pgvector recommended for real retrieval scale.
 
-### 4. Full pipeline
+### 4. Ask (dense retrieval)
+
+Query your embedded knowledge base using dense vector similarity:
+
+```bash
+# DB initialized and embeddings loaded from step 3
+trailblazer ask "How do I configure SSO in Navigate to SaaS?" --top-k 8 --max-chunks-per-doc 3 --provider dummy
+# artifacts → runs/<RUN_ID>/ask/
+
+# More options
+trailblazer ask "SAML configuration steps" \
+  --provider dummy \
+  --top-k 10 \
+  --max-chunks-per-doc 2 \
+  --max-chars 8000 \
+  --format json \
+  --out ./my-results/
+```
+
+**Ask CLI options:**
+
+- `--top-k N` - Number of top chunks to retrieve (default: 8)
+- `--max-chunks-per-doc N` - Max chunks per document (default: 3)
+- `--provider NAME` - Embedding provider: `dummy` (default), `openai`, `sentencetransformers`
+- `--max-chars N` - Max characters in packed context (default: 6000)
+- `--format FORMAT` - Output format: `text` (default) or `json`
+- `--out DIR` - Output directory (default: `runs/<run_id>/ask/`)
+- `--db-url URL` - Database URL override
+
+**Output artifacts:**
+
+- `hits.jsonl` - One retrieval hit per line with scores and metadata
+- `summary.json` - Query metadata, counts, timing, and score statistics
+- `context.txt` - Packed context with separators, ready for LLM consumption
+
+**Note:** Default provider is `dummy` for offline safety. Configure `EMBED_PROVIDER` and `DB_URL` for production use.
+
+### 5. Full pipeline
 
 ```bash
 # Run multiple phases in sequence (includes embed phase)
