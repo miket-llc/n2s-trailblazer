@@ -20,18 +20,14 @@ def test_ingest_cli_help_no_db_logs():
 
     try:
         # Mock DB engine creation to spy on calls
-        with (
-            patch("trailblazer.db.engine.create_engine") as mock_create_engine,
-            patch(
-                "trailblazer.core.db.create_engine"
-            ) as mock_core_create_engine,
-        ):
+        with patch(
+            "trailblazer.db.engine.create_engine"
+        ) as mock_create_engine:
             # Import ingest CLI - this should not trigger DB creation
             from trailblazer.cli.main import ingest_app  # noqa: F401
 
             # Assert no DB engine was created
             mock_create_engine.assert_not_called()
-            mock_core_create_engine.assert_not_called()
 
             # Check logs for any DB-related messages
             log_content = log_capture.getvalue()
@@ -53,26 +49,18 @@ def test_ingest_cli_help_no_db_logs():
 
 def test_ingest_module_import_no_db():
     """Test that importing ingest module doesn't trigger DB initialization."""
-    with (
-        patch("trailblazer.db.engine.create_engine") as mock_create_engine,
-        patch("trailblazer.core.db.create_engine") as mock_core_create_engine,
-    ):
+    with patch("trailblazer.db.engine.create_engine") as mock_create_engine:
         # Import ingest module
 
         # Assert no DB engine was created during import
         mock_create_engine.assert_not_called()
-        mock_core_create_engine.assert_not_called()
 
 
 def test_ingest_cli_import_no_db():
     """Test that importing CLI main doesn't trigger DB initialization."""
-    with (
-        patch("trailblazer.db.engine.create_engine") as mock_create_engine,
-        patch("trailblazer.core.db.create_engine") as mock_core_create_engine,
-    ):
+    with patch("trailblazer.db.engine.create_engine") as mock_create_engine:
         # Import CLI main
         from trailblazer.cli.main import ingest_app  # noqa: F401
 
         # Assert no DB engine was created during import
         mock_create_engine.assert_not_called()
-        mock_core_create_engine.assert_not_called()

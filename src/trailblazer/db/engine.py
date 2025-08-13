@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Dict, List
+from urllib.parse import urlparse
 
 from sqlalchemy import (
     JSON,
@@ -13,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    text,
 )
 
 try:
@@ -20,14 +23,11 @@ try:
 except ImportError:
     # pgvector not available, will use JSON fallback
     VECTOR = None
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.sql import func
 
 from ..core.config import SETTINGS
-
-# Default SQLite DB path
-DEFAULT_DB_URL = "sqlite:///./.trailblazer.db"
 
 
 class Base(DeclarativeBase):
@@ -40,17 +40,51 @@ _session_factory = None
 
 
 def get_db_url() -> str:
-    """Get database URL from settings or use default SQLite."""
-    return SETTINGS.TRAILBLAZER_DB_URL or DEFAULT_DB_URL
+    """Get database URL from settings.
+
+    Raises:
+        ValueError: If DB_URL is not configured and not in test environment.
+    """
+    db_url = SETTINGS.TRAILBLAZER_DB_URL
+    if not db_url:
+        # Check if we're in a test environment
+        if os.getenv("ALLOW_SQLITE_FOR_TESTS") == "1":
+            return "sqlite:///./.trailblazer.db"
+        raise ValueError(
+            "DB_URL is required. Set TRAILBLAZER_DB_URL in your .env file. "
+            "For tests, set ALLOW_SQLITE_FOR_TESTS=1."
+        )
+    return db_url
 
 
 def get_engine():
-    """Get or create the SQLAlchemy engine."""
+    """Get or create the SQLAlchemy engine.
+
+    Raises:
+        ValueError: If using SQLite without ALLOW_SQLITE_FOR_TESTS=1.
+    """
     global _engine
     if _engine is None:
         db_url = get_db_url()
+
+        # Check if SQLite is being used without test permission
+        if (
+            db_url.startswith("sqlite")
+            and os.getenv("ALLOW_SQLITE_FOR_TESTS") != "1"
+        ):
+            raise ValueError(
+                "SQLite is only allowed for tests. Set ALLOW_SQLITE_FOR_TESTS=1 for tests, "
+                "or configure TRAILBLAZER_DB_URL with PostgreSQL for production use."
+            )
+
         _engine = create_engine(db_url, future=True)
     return _engine
+
+
+def get_session() -> Session:
+    """Get a new database session."""
+    session_factory = get_session_factory()
+    return session_factory()
 
 
 def get_session_factory():
@@ -68,7 +102,75 @@ def create_tables():
 
 def is_postgres() -> bool:
     """Check if the current database is PostgreSQL."""
-    return get_db_url().startswith("postgresql")
+    try:
+        db_url = get_db_url()
+        return db_url.startswith("postgresql")
+    except ValueError:
+        return False
+
+
+def check_db_health() -> Dict[str, Any]:
+    """Check database connectivity and capabilities.
+
+    Returns:
+        Dict with status info including connectivity, dialect, database name, and pgvector availability.
+
+    Raises:
+        Exception: If database connection fails.
+    """
+    engine = get_engine()
+
+    with engine.connect() as conn:
+        # Test basic connectivity
+        conn.execute(text("SELECT 1"))
+
+        # Get database info
+        dialect = engine.dialect.name
+        db_url = get_db_url()
+        parsed_url = urlparse(db_url)
+        db_name = parsed_url.path.lstrip("/") if parsed_url.path else "default"
+
+        # Check for pgvector if PostgreSQL
+        pgvector_available = False
+        if dialect == "postgresql":
+            try:
+                result = conn.execute(
+                    text(
+                        "SELECT extname FROM pg_extension WHERE extname='vector'"
+                    )
+                )
+                pgvector_available = result.fetchone() is not None
+            except Exception:
+                # Extension query failed, pgvector not available
+                pass
+
+        return {
+            "status": "ok",
+            "dialect": dialect,
+            "database": db_name,
+            "pgvector": pgvector_available,
+            "host": parsed_url.hostname or "localhost",
+        }
+
+
+def initialize_postgres_extensions():
+    """Initialize PostgreSQL extensions if needed (pgvector).
+
+    Only attempts to create extensions if using PostgreSQL.
+    Silently continues if extension creation fails (e.g., insufficient permissions).
+    """
+    if not is_postgres():
+        return
+
+    engine = get_engine()
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.commit()
+        except Exception:
+            # Extension creation failed (likely permissions), but that's OK
+            # The user can create it manually if needed
+            pass
 
 
 class Document(Base):

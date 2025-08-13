@@ -1,6 +1,7 @@
 import typer
 from typing import List, Optional
 from datetime import datetime
+from urllib.parse import urlparse
 from ..core.logging import setup_logging, log
 from ..core.config import SETTINGS
 from ..pipeline.runner import run as run_pipeline
@@ -18,6 +19,37 @@ app.add_typer(db_app, name="db")
 app.add_typer(embed_app, name="embed")
 app.add_typer(confluence_app, name="confluence")
 app.add_typer(ops_app, name="ops")
+
+
+def _run_db_preflight_check() -> None:
+    """Run database health check and exit if it fails.
+
+    This is used as a preflight check for commands that require database access.
+    """
+    from ..db.engine import check_db_health
+
+    try:
+        health_info = check_db_health()
+
+        # For PostgreSQL, require pgvector
+        if (
+            health_info["dialect"] == "postgresql"
+            and not health_info["pgvector"]
+        ):
+            typer.echo(
+                "❌ Database preflight failed: pgvector extension not found",
+                err=True,
+            )
+            typer.echo(
+                "Run 'trailblazer db check' for details or 'trailblazer db init' to initialize",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+    except Exception as e:
+        typer.echo(f"❌ Database preflight failed: {e}", err=True)
+        typer.echo("Run 'trailblazer db check' for details", err=True)
+        raise typer.Exit(1)
 
 
 @app.callback()
@@ -311,17 +343,92 @@ def normalize_from_ingest_cmd(
     typer.echo(f"Normalized to: {out}")
 
 
+@db_app.command("check")
+def db_check_cmd() -> None:
+    """Check database connectivity and pgvector availability."""
+    from ..db.engine import check_db_health, get_db_url
+
+    try:
+        # Mask credentials in URL for logging
+        db_url = get_db_url()
+        parsed_url = urlparse(db_url)
+        if parsed_url.password:
+            safe_url = db_url.replace(parsed_url.password, "***")
+        else:
+            safe_url = db_url
+
+        typer.echo(f"🔍 Checking database: {safe_url}")
+
+        health_info = check_db_health()
+
+        typer.echo("✅ Database connection successful")
+        typer.echo(f"  Engine: {health_info['dialect']}")
+        typer.echo(f"  Host: {health_info['host']}")
+        typer.echo(f"  Database: {health_info['database']}")
+        typer.echo(
+            f"  pgvector: {'✅ available' if health_info['pgvector'] else '❌ not available'}"
+        )
+
+        # Exit with error if PostgreSQL but no pgvector
+        if (
+            health_info["dialect"] == "postgresql"
+            and not health_info["pgvector"]
+        ):
+            typer.echo(
+                "\n⚠️  pgvector extension not found. Run 'trailblazer db init' or manually:",
+                err=True,
+            )
+            typer.echo(
+                "    psql -d your_db -c 'CREATE EXTENSION vector;'", err=True
+            )
+            raise typer.Exit(1)
+
+    except Exception as e:
+        typer.echo(f"❌ Database check failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
 @db_app.command("init")
 def db_init_cmd() -> None:
     """Initialize database schema (safe if tables already exist)."""
-    from ..db.engine import create_tables, get_db_url
+    from urllib.parse import urlparse
+    from ..db.engine import (
+        create_tables,
+        get_db_url,
+        initialize_postgres_extensions,
+    )
 
     db_url = get_db_url()
-    typer.echo(f"Initializing database: {db_url}")
+    # Mask credentials for display
+    parsed_url = urlparse(db_url)
+    if parsed_url.password:
+        safe_url = db_url.replace(parsed_url.password, "***")
+    else:
+        safe_url = db_url
+
+    typer.echo(f"Initializing database: {safe_url}")
 
     try:
+        # Try to create pgvector extension first if PostgreSQL
+        initialize_postgres_extensions()
+
+        # Create tables
         create_tables()
         typer.echo("✅ Database schema initialized successfully")
+
+        # Run a quick health check to confirm everything works
+        from ..db.engine import check_db_health
+
+        health_info = check_db_health()
+        if (
+            health_info["dialect"] == "postgresql"
+            and not health_info["pgvector"]
+        ):
+            typer.echo(
+                "⚠️  pgvector extension not detected. You may need to run manually:"
+            )
+            typer.echo("    psql -d your_db -c 'CREATE EXTENSION vector;'")
+
     except Exception as e:
         typer.echo(f"❌ Error initializing database: {e}", err=True)
         raise typer.Exit(1)
@@ -355,6 +462,9 @@ def embed_load_cmd(
     ),
 ) -> None:
     """Load normalized documents to database with embeddings."""
+    # Run database preflight check first
+    _run_db_preflight_check()
+
     from ..db.engine import get_db_url
     from ..pipeline.steps.embed.loader import load_normalized_to_db
 
@@ -362,7 +472,14 @@ def embed_load_cmd(
         raise typer.BadParameter("Either --run-id or --input must be provided")
 
     db_url = get_db_url()
-    typer.echo(f"Loading to database: {db_url}")
+    # Mask credentials for display
+    parsed_url = urlparse(db_url)
+    if parsed_url.password:
+        safe_url = db_url.replace(parsed_url.password, "***")
+    else:
+        safe_url = db_url
+
+    typer.echo(f"Loading to database: {safe_url}")
     typer.echo(f"Provider: {provider}")
 
     try:
@@ -424,6 +541,9 @@ def ask(
     ),
 ) -> None:
     """Ask a question using dense retrieval over embedded chunks."""
+    # Run database preflight check first
+    _run_db_preflight_check()
+
     import json
     import time
     from pathlib import Path

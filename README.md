@@ -100,36 +100,79 @@ trailblazer normalize from-ingest --run-id <RUN_ID>
 # → outputs to runs/<RUN_ID>/normalize/normalized.ndjson
 ```
 
-### 3. Embed & Graph v0
+### 3. Database (Postgres-first)
+
+Trailblazer uses a Postgres-first database strategy with pgvector for embeddings. SQLite is only supported for tests.
+
+**Setup PostgreSQL:**
+
+```bash
+# Install PostgreSQL and pgvector extension
+# Ubuntu/Debian:
+sudo apt-get install postgresql postgresql-contrib
+sudo -u postgres psql -c "CREATE EXTENSION vector;"
+
+# macOS (with Homebrew):
+brew install postgresql pgvector
+createdb trailblazer
+psql trailblazer -c "CREATE EXTENSION vector;"
+```
+
+**Configuration:**
+
+Set `TRAILBLAZER_DB_URL` in your `.env` file:
+
+```bash
+# PostgreSQL (required for production)
+TRAILBLAZER_DB_URL=postgresql+psycopg2://trailblazer:trailblazer@localhost:5432/trailblazer
+
+# For tests only - SQLite is automatically enabled in test environment
+# ALLOW_SQLITE_FOR_TESTS=1  # Only needed if you manually want to use SQLite in tests
+```
+
+**Database Commands:**
+
+```bash
+# Check database connectivity and pgvector availability
+trailblazer db check
+
+# Initialize database schema (creates tables and pgvector extension if possible)
+trailblazer db init
+```
+
+If you see pgvector errors, manually enable the extension:
+
+```sql
+-- Connect to your database
+psql -d trailblazer -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+### 4. Embed & Graph v0
 
 Chunk normalized documents and generate embeddings for retrieval:
 
 ```bash
-# Initialize database schema
-trailblazer db init
-
-# Load documents with embeddings (default: dummy provider, offline)
+# Load documents with embeddings (requires database setup above)
 trailblazer embed load --run-id <RUN_ID> --provider dummy --batch 128
 
 # Or load from custom file
 trailblazer embed load --input normalized.ndjson --provider dummy
 ```
 
-**Environment variables for embed & graph:**
+**Environment variables for embeddings:**
 
-- `DB_URL` - Database URL (default: `sqlite:///./.trailblazer.db`)
 - `EMBED_PROVIDER` - Embedding provider: `dummy` (default, offline), `openai`, `sentencetransformers`
 - `OPENAI_API_KEY` - Required for OpenAI embeddings
 - `SENTENCE_TRANSFORMER_MODEL` - Local model name for sentence-transformers
 
-**Note:** Tests and default provider are offline. PostgreSQL + pgvector recommended for real retrieval scale.
+**Note:** Commands like `embed load` and `ask` run a database preflight check and will fail if PostgreSQL + pgvector is not available (unless in test environment).
 
-### 4. Ask (dense retrieval)
+### 5. Ask (dense retrieval)
 
 Query your embedded knowledge base using dense vector similarity:
 
 ```bash
-# DB initialized and embeddings loaded from step 3
+# DB initialized and embeddings loaded from step 4
 trailblazer ask "How do I configure SSO in Navigate to SaaS?" --top-k 8 --max-chunks-per-doc 3 --provider dummy
 # artifacts → runs/<RUN_ID>/ask/
 
