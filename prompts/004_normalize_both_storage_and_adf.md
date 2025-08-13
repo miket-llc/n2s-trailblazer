@@ -346,6 +346,7 @@ def normalize_from_ingest(outdir: str, input_file: Optional[str] = None, limit: 
 If not already present, wire normalize in the runner (add the elif phase == "normalize" branch) and add the normalize from-ingest CLI command (as in your previous Prompt 004; no change needed beyond keeping it in sync with the new function signature).
 
 **D) Tests**
+
 1) Storage path test — tests/test_normalize_storage.py
 
 ```python

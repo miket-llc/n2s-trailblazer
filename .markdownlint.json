@@ -7,5 +7,11 @@
   "MD022": {
     "lines_above": 1,
     "lines_below": 1
+  },
+  "MD032": {
+    "ul_single": 1,
+    "ol_single": 1,
+    "ul_multi": 1,
+    "ol_multi": 1
   }
 }

@@ -57,6 +57,7 @@ Never hand-fix lint/format; use the tools. Only commit if all are green.
 **Delta (`--since`):** enumerate candidate IDs via v1 CQL, then fetch full bodies via v2.
 
 **Body formats:**
+
 - `storage` → Confluence Storage Format (XHTML-ish).
 - `atlas_doc_format` → ADF JSON.
 
@@ -67,6 +68,7 @@ Ingest records should include `body_repr = storage|adf` plus `body_storage` (str
 ### Ingest output (`runs/<run_id>/ingest/`)
 
 **`confluence.ndjson`:** one Page per line, including:
+
 - `id`, `title`, `space_key`, `space_id`, `version`, `created_at`, `updated_at`, `url`
 - `attachments[]` (`id`, `filename`, `media_type`, `file_size`, `download_url`)
 - **Body:** `body_repr` + `body_storage` or `body_adf` (keep `body_html` if already emitted)
@@ -75,6 +77,7 @@ Ingest records should include `body_repr = storage|adf` plus `body_storage` (str
 ### Normalize output (`runs/<run_id>/normalize/`)
 
 **`normalized.ndjson`:** per page, include `text_md` (deterministic), `links[]`, `attachments[]`, `body_repr`
+
 - `metrics.json`, `manifest.json`
 
 **Rule of thumb:** deterministic transforms (same input → same output). Never overwrite previous runs.

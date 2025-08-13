@@ -34,6 +34,7 @@ comprehensive architecture, contracts, and development guidelines.**
 ### 1. Ingest from Confluence
 
 Create `.env` from `configs/dev.env.example` and set:
+
 - `CONFLUENCE_EMAIL`, `CONFLUENCE_API_TOKEN`  
 - `CONFLUENCE_BASE_URL` (defaults to `https://ellucian.atlassian.net/wiki`)
 

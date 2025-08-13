@@ -20,8 +20,13 @@ Only commit/push if all three succeed.
 
 Never hand-fix lint/format. Use the Make targets above.
 
-**Markdown files:** markdownlint is configured to be non-disruptive (disabled
-line length, heading, and HTML rules). Focus on content over formatting.
+**Markdown files - ZERO IDE ERRORS TOLERATED:**
+CRITICAL: IDE linter errors must be ELIMINATED, not ignored. Always:
+
+1. Use `npx markdownlint "**/*.md" --fix --config .markdownlint.json` to auto-fix
+2. If new MD*** rules appear in IDE, add them to `.markdownlint.json` with proper config
+3. NEVER manually fix markdown - use automated tools FIRST
+4. Always start .md files with a top-level heading
 
 Proof-of-work in your reply: paste the exact commands you ran and the last
 ~10 lines of their output (no screenshots).
