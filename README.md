@@ -43,6 +43,18 @@ Create `.env` from `configs/dev.env.example` and set:
 trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z \
   --max-pages 10
 # → outputs to runs/<run_id>/ingest/
+
+# Observable ingest with progress and sidecars
+trailblazer ingest confluence --space DEV --progress --progress-every 5
+# → writes CSV exports, summary.json, and seen page IDs
+
+# Auto-since using state files (delta ingest)
+trailblazer ingest confluence --space DEV --auto-since
+# → reads state/confluence/DEV_state.json for last highwater mark
+
+# List all spaces with structured output
+trailblazer confluence spaces
+# → displays table and writes runs/<run_id>/ingest/spaces.json
 ```
 
 ### 2. Normalize to Markdown
@@ -116,7 +128,38 @@ trailblazer ask "SAML configuration steps" \
 
 **Note:** Default provider is `dummy` for offline safety. Configure `EMBED_PROVIDER` and `DB_URL` for production use.
 
-### 5. Full pipeline
+### 5. Observability & Operations
+
+**Diff-deletions:** Track page deletions between runs:
+
+```bash
+# Compare two runs to find deleted pages
+trailblazer ingest diff-deletions --space DEV \
+  --baseline-run run-2025-01-01_1200_a1b2 \
+  --current-run run-2025-01-15_1400_c3d4
+# → writes deleted_ids.json to current run's ingest dir
+```
+
+**Prune old artifacts:** Clean up old run directories safely:
+
+```bash
+# Dry-run: show what would be deleted (default mode)
+trailblazer ops prune-runs --keep 10 --min-age-days 30
+
+# Actually delete old runs (protects newest N + referenced in state)
+trailblazer ops prune-runs --keep 10 --min-age-days 30 --no-dry-run
+# → writes prune_report.json to logs/ directory
+```
+
+**Observable artifacts from enhanced ingest:**
+
+- `pages.csv` - Page metadata with sort-stable columns
+- `attachments.csv` - All attachments with download URLs
+- `summary.json` - Per-space statistics (pages, attachments, empty bodies, avg chars)
+- `<SPACE>_seen_page_ids.json` - Page IDs seen this run (for diff-deletions)
+- Structured logs: `confluence.space`, `confluence.page`, `confluence.attachments` events
+
+### 6. Full pipeline
 
 ```bash
 # Run multiple phases in sequence (includes embed phase)

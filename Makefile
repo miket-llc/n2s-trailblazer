@@ -5,7 +5,7 @@ setup:
 
 fmt:
 	ruff check . --fix
-	black src tests
+	ruff format .
 	pre-commit run mdformat --all-files || true
 
 lint:

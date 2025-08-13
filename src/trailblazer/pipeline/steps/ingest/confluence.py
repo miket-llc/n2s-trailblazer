@@ -1,7 +1,8 @@
 from pathlib import Path
 from datetime import datetime, timezone
 import json
-from typing import Dict, List, Optional, Tuple
+import csv
+from typing import Dict, List, Optional, Tuple, Set, Any
 from ....adapters.confluence_api import ConfluenceClient
 from ....core.models import Page, Attachment
 from ....core.logging import log
@@ -155,17 +156,30 @@ def ingest_confluence(
     space_keys: Optional[List[str]] = None,
     space_ids: Optional[List[str]] = None,
     since: Optional[datetime] = None,
+    auto_since: bool = False,
     body_format: str = "storage",
     max_pages: Optional[int] = None,
+    progress: bool = False,
+    progress_every: int = 1,
+    run_id: Optional[str] = None,
 ) -> Dict:
     """
     Fetch pages via v2 (bodies + attachments). If since is provided, prefilter ids with v1 CQL.
     Write one Page per line to confluence.ndjson and emit metrics/manifest.
+    Enhanced with progress logging, sidecars, auto-since, and seen IDs tracking.
     """
-    Path(outdir).mkdir(parents=True, exist_ok=True)
-    ndjson_path = Path(outdir) / "confluence.ndjson"
-    metrics_path = Path(outdir) / "metrics.json"
-    manifest_path = Path(outdir) / "manifest.json"
+    outdir_path = Path(outdir)
+    outdir_path.mkdir(parents=True, exist_ok=True)
+    ndjson_path = outdir_path / "confluence.ndjson"
+    metrics_path = outdir_path / "metrics.json"
+    manifest_path = outdir_path / "manifest.json"
+
+    # Sidecar files
+    pages_csv_path = outdir_path / "pages.csv"
+    attachments_csv_path = outdir_path / "attachments.csv"
+    summary_json_path = outdir_path / "summary.json"
+
+    started_at = datetime.now(timezone.utc)
 
     client = ConfluenceClient()
     site_base = client.site_base
@@ -176,11 +190,55 @@ def ingest_confluence(
     )
     num_spaces = len(space_id_list) if (space_id_list or space_keys) else 0
 
+    # Handle auto-since
+    effective_since = since
+    if auto_since and (space_keys or space_ids):
+        from pathlib import Path as StatePath
+
+        state_base = StatePath("state/confluence")
+        # Use first space for auto-since (could be enhanced to handle multiple)
+        first_space_key = (
+            space_keys[0]
+            if space_keys
+            else list(space_key_by_id.values())[0]
+            if space_key_by_id
+            else None
+        )
+        if first_space_key:
+            state_file = state_base / f"{first_space_key}_state.json"
+            if state_file.exists():
+                try:
+                    with open(state_file) as f:
+                        state_data = json.load(f)
+                        if "last_highwater" in state_data:
+                            effective_since = datetime.fromisoformat(
+                                state_data["last_highwater"].replace(
+                                    "Z", "+00:00"
+                                )
+                            )
+                            log.info(
+                                "ingest.confluence.auto_since",
+                                space=first_space_key,
+                                since=_iso(effective_since),
+                            )
+                except Exception as e:
+                    log.warning(
+                        "ingest.confluence.auto_since.failed",
+                        space=first_space_key,
+                        error=str(e),
+                    )
+            else:
+                log.warning(
+                    "ingest.confluence.auto_since.missing_state",
+                    space=first_space_key,
+                    state_file=str(state_file),
+                )
+
     # Determine candidate page IDs if since provided
     candidate_ids: Optional[List[str]] = None
-    if since:
+    if effective_since:
         cql = _cql_for_since(
-            space_keys or list(space_key_by_id.values()), since
+            space_keys or list(space_key_by_id.values()), effective_since
         )
         start, ids = 0, []
         while True:
@@ -196,15 +254,55 @@ def ingest_confluence(
             start += 50
         candidate_ids = ids
 
-    # Iterate pages
+    # Initialize tracking data
     written_pages = 0
     written_attachments = 0
+    seen_page_ids: Dict[str, Set[str]] = {}  # space_key -> set of page IDs
+    pages_data = []  # For CSV export
+    attachments_data = []  # For CSV export
+    space_stats: Dict[str, Dict] = {}  # space_key -> stats
+    last_highwater: Optional[datetime] = None
 
-    with ndjson_path.open("w", encoding="utf-8") as out:
+    # Open CSV writers
+    with (
+        ndjson_path.open("w", encoding="utf-8") as out,
+        pages_csv_path.open(
+            "w", newline="", encoding="utf-8"
+        ) as pages_csv_file,
+        attachments_csv_path.open(
+            "w", newline="", encoding="utf-8"
+        ) as att_csv_file,
+    ):
+        pages_csv = csv.DictWriter(
+            pages_csv_file,
+            fieldnames=[
+                "space_key",
+                "page_id",
+                "title",
+                "version",
+                "updated_at",
+                "attachments_count",
+                "url",
+            ],
+        )
+        pages_csv.writeheader()
+
+        attachments_csv = csv.DictWriter(
+            att_csv_file,
+            fieldnames=[
+                "page_id",
+                "filename",
+                "media_type",
+                "file_size",
+                "download_url",
+            ],
+        )
+        attachments_csv.writeheader()
 
         def write_page_obj(p: Page, obj: Dict):
-            nonlocal written_pages, written_attachments
+            nonlocal written_pages, written_attachments, last_highwater
             page_dict = p.model_dump(mode="json")
+
             # Add new body representation fields
             repr_ = _detect_body_repr(obj)
             page_dict["body_repr"] = repr_
@@ -212,7 +310,98 @@ def ingest_confluence(
                 page_dict["body_storage"] = _extract_body_storage(obj)
             elif repr_ == "adf":
                 page_dict["body_adf"] = _extract_body_adf(obj)
-            out.write(json.dumps(page_dict, ensure_ascii=False) + "\n")
+
+            # Write NDJSON
+            out.write(
+                json.dumps(page_dict, ensure_ascii=False, sort_keys=True)
+                + "\n"
+            )
+
+            # Track seen IDs
+            space_key = p.space_key or "unknown"
+            if space_key not in seen_page_ids:
+                seen_page_ids[space_key] = set()
+            seen_page_ids[space_key].add(p.id)
+
+            # Track stats
+            if space_key not in space_stats:
+                space_stats[space_key] = {
+                    "pages": 0,
+                    "attachments": 0,
+                    "empty_bodies": 0,
+                    "total_chars": 0,
+                }
+            space_stats[space_key]["pages"] += 1
+            space_stats[space_key]["attachments"] += len(p.attachments)
+
+            body_content = p.body_html or ""
+            if not body_content.strip():
+                space_stats[space_key]["empty_bodies"] += 1
+            space_stats[space_key]["total_chars"] += len(body_content)
+
+            # Track highwater mark
+            if p.updated_at:
+                if last_highwater is None or p.updated_at > last_highwater:
+                    last_highwater = p.updated_at
+
+            # CSV data
+            pages_data.append(
+                {
+                    "space_key": space_key,
+                    "page_id": p.id,
+                    "title": p.title,
+                    "version": str(p.version) if p.version else "",
+                    "updated_at": _iso(p.updated_at) if p.updated_at else "",
+                    "attachments_count": len(p.attachments),
+                    "url": p.url or "",
+                }
+            )
+
+            for att in p.attachments:
+                attachments_data.append(
+                    {
+                        "page_id": p.id,
+                        "filename": att.filename or "",
+                        "media_type": att.media_type or "",
+                        "file_size": (
+                            str(att.file_size) if att.file_size else ""
+                        ),
+                        "download_url": att.download_url or "",
+                    }
+                )
+
+            # Structured logging
+            log.info(
+                "confluence.page",
+                space_key=space_key,
+                space_id=p.space_id,
+                page_id=p.id,
+                title=p.title,
+                version=p.version,
+                updated_at=_iso(p.updated_at) if p.updated_at else None,
+                url=p.url,
+                body_repr=repr_,
+                attachments_count=len(p.attachments),
+            )
+
+            if p.attachments:
+                filenames = [
+                    att.filename for att in p.attachments if att.filename
+                ]
+                log.info(
+                    "confluence.attachments",
+                    page_id=p.id,
+                    count=len(p.attachments),
+                    filenames=filenames,
+                )
+
+            # Progress output
+            if progress and written_pages % progress_every == 0:
+                updated_str = _iso(p.updated_at) if p.updated_at else "unknown"
+                print(
+                    f'{space_key} | p={p.id} | "{p.title}" | att={len(p.attachments)} | {updated_str}'
+                )
+
             written_pages += 1
             written_attachments += len(p.attachments)
 
@@ -247,21 +436,115 @@ def ingest_confluence(
                 if max_pages and written_pages >= max_pages:
                     break
 
+    # Write deterministic CSV data
+    pages_data.sort(key=lambda x: (x["space_key"], x["page_id"]))
+    attachments_data.sort(key=lambda x: (x["page_id"], x["filename"]))
+
+    with pages_csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "space_key",
+                "page_id",
+                "title",
+                "version",
+                "updated_at",
+                "attachments_count",
+                "url",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(pages_data)
+
+    with attachments_csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "page_id",
+                "filename",
+                "media_type",
+                "file_size",
+                "download_url",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(attachments_data)
+
+    # Write seen page IDs per space
+    for space_key, page_ids in seen_page_ids.items():
+        seen_ids_file = outdir_path / f"{space_key}_seen_page_ids.json"
+        with open(seen_ids_file, "w") as f:
+            json.dump(sorted(list(page_ids)), f, indent=2, sort_keys=True)
+
+    completed_at = datetime.now(timezone.utc)
+
+    # Create summary.json with per-space stats
+    summary_data: Dict[str, Any] = {
+        "run_id": run_id,
+        "started_at": _iso(started_at),
+        "completed_at": _iso(completed_at),
+        "total_pages": written_pages,
+        "total_attachments": written_attachments,
+        "spaces": {},
+    }
+
+    for space_key, stats in space_stats.items():
+        avg_chars = (
+            stats["total_chars"] / stats["pages"] if stats["pages"] > 0 else 0
+        )
+        summary_data["spaces"][space_key] = {
+            "pages": stats["pages"],
+            "attachments": stats["attachments"],
+            "empty_bodies": stats["empty_bodies"],
+            "avg_chars": round(avg_chars, 2),
+        }
+
+    with open(summary_json_path, "w") as f:
+        json.dump(summary_data, f, indent=2, sort_keys=True)
+
+    # Update state files with auto-since
+    if auto_since and last_highwater and (space_keys or space_ids):
+        from pathlib import Path as StatePath
+
+        state_base = StatePath("state/confluence")
+        state_base.mkdir(parents=True, exist_ok=True)
+
+        spaces_to_update = space_keys or list(space_key_by_id.values())
+        for space_key in spaces_to_update:
+            state_file = state_base / f"{space_key}_state.json"
+            state_data = {
+                "last_highwater": _iso(last_highwater),
+                "last_run_id": run_id,
+                "updated_at": _iso(completed_at),
+            }
+            with open(state_file, "w") as f:
+                json.dump(state_data, f, indent=2, sort_keys=True)
+            log.info(
+                "ingest.confluence.state_updated",
+                space=space_key,
+                last_highwater=_iso(last_highwater),
+                run_id=run_id,
+            )
+
     # metrics + manifest
     metrics = {
         "spaces": num_spaces,
         "pages": written_pages,
         "attachments": written_attachments,
-        "since": _iso(since),
+        "since": _iso(effective_since),
         "body_format": body_format,
     }
-    metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    metrics_path.write_text(
+        json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8"
+    )
     manifest = {
         "phase": "ingest",
         "artifact": "confluence.ndjson",
-        "completed_at": _iso(datetime.now(timezone.utc)),
+        "completed_at": _iso(completed_at),
     }
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
     log.info("ingest.confluence.done", **metrics, out=str(ndjson_path))
     return metrics

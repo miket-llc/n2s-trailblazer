@@ -10,6 +10,10 @@ def new_run_id() -> str:
     return f"{datetime.now(timezone.utc).strftime('%Y-%m-%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
 
 
+def runs_dir() -> Path:
+    return RUNS
+
+
 def phase_dir(run_id: str, phase: str) -> Path:
     p = RUNS / run_id / phase
     p.mkdir(parents=True, exist_ok=True)

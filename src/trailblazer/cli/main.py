@@ -10,10 +10,14 @@ ingest_app = typer.Typer(help="Ingestion commands")
 normalize_app = typer.Typer(help="Normalization commands")
 db_app = typer.Typer(help="Database commands")
 embed_app = typer.Typer(help="Embedding commands")
+confluence_app = typer.Typer(help="Confluence commands")
+ops_app = typer.Typer(help="Operations commands")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(normalize_app, name="normalize")
 app.add_typer(db_app, name="db")
 app.add_typer(embed_app, name="embed")
+app.add_typer(confluence_app, name="confluence")
+app.add_typer(ops_app, name="ops")
 
 
 @app.callback()
@@ -62,11 +66,20 @@ def ingest_confluence_cmd(
     since: Optional[str] = typer.Option(
         None, help='ISO timestamp, e.g. "2025-08-01T00:00:00Z"'
     ),
+    auto_since: bool = typer.Option(
+        False, "--auto-since", help="Auto-read since from state files"
+    ),
     body_format: str = typer.Option(
         "storage", help="storage or atlas_doc_format"
     ),
     max_pages: Optional[int] = typer.Option(
         None, help="Stop after N pages (debug)"
+    ),
+    progress: bool = typer.Option(
+        False, "--progress", help="Show per-page progress"
+    ),
+    progress_every: int = typer.Option(
+        1, "--progress-every", help="Progress output every N pages"
     ),
 ) -> None:
     from ..core.artifacts import new_run_id, phase_dir
@@ -82,11 +95,133 @@ def ingest_confluence_cmd(
         space_keys=space or None,
         space_ids=space_id or None,
         since=dt,
+        auto_since=auto_since,
         body_format=body_format,
         max_pages=max_pages,
+        progress=progress,
+        progress_every=progress_every,
+        run_id=rid,
     )
     log.info("cli.ingest.confluence.done", run_id=rid, **metrics)
     typer.echo(rid)
+
+
+@confluence_app.command("spaces")
+def confluence_spaces_cmd() -> None:
+    """List Confluence spaces with structured logging and artifact output."""
+    import json
+    from tabulate import tabulate  # type: ignore
+    from ..core.artifacts import new_run_id, phase_dir
+    from ..adapters.confluence_api import ConfluenceClient
+
+    rid = new_run_id()
+    out_dir = phase_dir(rid, "ingest")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    client = ConfluenceClient()
+    spaces = []
+
+    # Collect all spaces
+    for space in client.get_spaces():
+        space_data = {
+            "id": str(space.get("id", "")),
+            "key": space.get("key", ""),
+            "name": space.get("name", ""),
+            "type": space.get("type", ""),
+            "status": space.get("status", ""),
+            "homepage_id": str(
+                space.get("homepageId", "") if space.get("homepageId") else ""
+            ),
+        }
+        spaces.append(space_data)
+
+        # Structured log per space
+        log.info("confluence.space", **space_data)
+
+    # Sort for deterministic output
+    spaces.sort(key=lambda x: (x["key"], x["id"]))
+
+    # Write spaces.json artifact
+    spaces_file = out_dir / "spaces.json"
+    with open(spaces_file, "w") as f:
+        json.dump(spaces, f, indent=2, sort_keys=True)
+
+    # Pretty console output
+    if spaces:
+        table_data = [
+            [s["id"], s["key"], s["name"], s["type"], s["status"]]
+            for s in spaces
+        ]
+        headers = ["ID", "KEY", "NAME", "TYPE", "STATUS"]
+        typer.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
+    else:
+        typer.echo("No spaces found.")
+
+    typer.echo(f"\n📄 Spaces written to: {spaces_file}")
+    log.info(
+        "cli.confluence.spaces.done", run_id=rid, spaces_count=len(spaces)
+    )
+
+
+@ingest_app.command("diff-deletions")
+def ingest_diff_deletions_cmd(
+    space: str = typer.Option(..., "--space", help="Confluence space key"),
+    baseline_run: str = typer.Option(
+        ..., "--baseline-run", help="Baseline run ID"
+    ),
+    current_run: str = typer.Option(
+        ..., "--current-run", help="Current run ID"
+    ),
+) -> None:
+    """Find deleted page IDs between two runs."""
+    import json
+    from ..core.artifacts import runs_dir
+
+    runs_base = runs_dir()
+
+    # Read baseline seen IDs
+    baseline_file = (
+        runs_base / baseline_run / "ingest" / f"{space}_seen_page_ids.json"
+    )
+    if not baseline_file.exists():
+        typer.echo(f"❌ Baseline file not found: {baseline_file}", err=True)
+        raise typer.Exit(1)
+
+    with open(baseline_file) as f:
+        baseline_ids = set(json.load(f))
+
+    # Read current seen IDs
+    current_file = (
+        runs_base / current_run / "ingest" / f"{space}_seen_page_ids.json"
+    )
+    if not current_file.exists():
+        typer.echo(f"❌ Current file not found: {current_file}", err=True)
+        raise typer.Exit(1)
+
+    with open(current_file) as f:
+        current_ids = set(json.load(f))
+
+    # Find deletions (in baseline but not current)
+    deleted_ids = sorted(list(baseline_ids - current_ids))
+
+    # Write deletions to current run's ingest dir
+    current_ingest_dir = runs_base / current_run / "ingest"
+    current_ingest_dir.mkdir(parents=True, exist_ok=True)
+    deleted_file = current_ingest_dir / "deleted_ids.json"
+
+    with open(deleted_file, "w") as f:
+        json.dump(deleted_ids, f, indent=2, sort_keys=True)
+
+    typer.echo(f"🗑️  Found {len(deleted_ids)} deleted pages in space '{space}'")
+    typer.echo(f"📄 Deletions written to: {deleted_file}")
+
+    log.info(
+        "cli.ingest.diff_deletions.done",
+        space=space,
+        baseline_run=baseline_run,
+        current_run=current_run,
+        deleted_count=len(deleted_ids),
+    )
 
 
 @normalize_app.command("from-ingest")
@@ -343,6 +478,139 @@ def ask(
     except Exception as e:
         typer.echo(f"❌ Error during retrieval: {e}", err=True)
         raise typer.Exit(1)
+
+
+@ops_app.command("prune-runs")
+def ops_prune_runs_cmd(
+    keep: int = typer.Option(
+        ..., "--keep", help="Number of newest runs to keep"
+    ),
+    min_age_days: int = typer.Option(
+        ..., "--min-age-days", help="Minimum age in days for deletion"
+    ),
+    dry_run: bool = typer.Option(
+        True, "--dry-run/--no-dry-run", help="Dry run mode (default: true)"
+    ),
+) -> None:
+    """Prune old run artifacts (safe, opt-in)."""
+    import json
+    import shutil
+    from datetime import datetime, timedelta
+    from pathlib import Path
+    from ..core.artifacts import runs_dir
+
+    runs_base = runs_dir()
+    if not runs_base.exists():
+        typer.echo("No runs directory found.")
+        return
+
+    # Get all run directories sorted by modification time (newest first)
+    run_dirs = [d for d in runs_base.iterdir() if d.is_dir()]
+    run_dirs.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+
+    # Keep newest N runs
+    protected_runs = set()
+    if len(run_dirs) > keep:
+        for i in range(keep):
+            protected_runs.add(run_dirs[i].name)
+    else:
+        # If we have fewer runs than keep, protect all
+        for d in run_dirs:
+            protected_runs.add(d.name)
+
+    # Read referenced runs from state files
+    state_dir = Path("state/confluence")
+    if state_dir.exists():
+        for state_file in state_dir.glob("*_state.json"):
+            try:
+                with open(state_file) as f:
+                    state_data = json.load(f)
+                    if "last_run_id" in state_data:
+                        protected_runs.add(state_data["last_run_id"])
+            except Exception as e:
+                typer.echo(f"⚠️  Warning: Could not read {state_file}: {e}")
+
+    # Find candidates for deletion
+    min_age = timedelta(days=min_age_days)
+    now = datetime.now()
+    candidates = []
+
+    for run_dir in run_dirs:
+        if run_dir.name in protected_runs:
+            continue
+
+        # Check age
+        modified_time = datetime.fromtimestamp(run_dir.stat().st_mtime)
+        if now - modified_time < min_age:
+            continue
+
+        candidates.append(
+            {
+                "run_id": run_dir.name,
+                "path": str(run_dir),
+                "modified_at": modified_time.isoformat(),
+                "age_days": (now - modified_time).days,
+            }
+        )
+
+    # Sort candidates by age for deterministic output
+    candidates.sort(key=lambda x: str(x["modified_at"]))
+
+    # Report
+    report = {
+        "timestamp": now.isoformat(),
+        "dry_run": dry_run,
+        "keep": keep,
+        "min_age_days": min_age_days,
+        "total_runs": len(run_dirs),
+        "protected_runs": sorted(list(protected_runs)),
+        "candidates": candidates,
+        "deleted_count": 0 if dry_run else len(candidates),
+    }
+
+    # Write report
+    reports_dir = Path("logs")
+    reports_dir.mkdir(exist_ok=True)
+    report_file = (
+        reports_dir / f"prune_report_{now.strftime('%Y%m%d_%H%M%S')}.json"
+    )
+    with open(report_file, "w") as f:
+        json.dump(report, f, indent=2, sort_keys=True)
+
+    # Output
+    typer.echo(f"🗂️  Total runs: {len(run_dirs)}")
+    typer.echo(f"🛡️  Protected runs: {len(protected_runs)}")
+    typer.echo(f"🗑️  Deletion candidates: {len(candidates)}")
+
+    if candidates:
+        typer.echo("\nCandidates for deletion:")
+        for candidate in candidates:
+            typer.echo(
+                f"  - {candidate['run_id']} (age: {candidate['age_days']} days)"
+            )
+
+    if not dry_run and candidates:
+        typer.echo(f"\n🔥 Deleting {len(candidates)} run directories...")
+        for candidate in candidates:
+            try:
+                shutil.rmtree(str(candidate["path"]))
+                typer.echo(f"  ✅ Deleted: {candidate['run_id']}")
+            except Exception as e:
+                typer.echo(f"  ❌ Failed to delete {candidate['run_id']}: {e}")
+        report["deleted_count"] = len(candidates)
+        # Update report with final status
+        with open(report_file, "w") as f:
+            json.dump(report, f, indent=2, sort_keys=True)
+    elif dry_run and candidates:
+        typer.echo(
+            "\n💡 This is a dry run. Use --no-dry-run to actually delete."
+        )
+
+    typer.echo(f"\n📄 Report written to: {report_file}")
+    log.info(
+        "cli.ops.prune_runs.done",
+        **{k: v for k, v in report.items() if k != "candidates"},
+    )
 
 
 if __name__ == "__main__":
