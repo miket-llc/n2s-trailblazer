@@ -77,7 +77,10 @@ def test_paginate_with_link_header(mock_http_client):
 
     response2 = Mock()
     response2.raise_for_status.return_value = None
-    response2.json.return_value = {"results": [{"id": "2", "title": "Page 2"}], "_links": {}}
+    response2.json.return_value = {
+        "results": [{"id": "2", "title": "Page 2"}],
+        "_links": {},
+    }
     response2.headers = {}  # No more pages
 
     mock_http_client.get.side_effect = [response1, response2]
@@ -105,7 +108,10 @@ def test_paginate_single_page(mock_http_client):
 
     response = Mock()
     response.raise_for_status.return_value = None
-    response.json.return_value = {"results": [{"id": "1", "title": "Only Page"}], "_links": {}}
+    response.json.return_value = {
+        "results": [{"id": "1", "title": "Only Page"}],
+        "_links": {},
+    }
     response.headers = {}
 
     mock_http_client.get.return_value = response

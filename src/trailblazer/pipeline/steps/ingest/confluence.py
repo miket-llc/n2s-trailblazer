@@ -55,10 +55,16 @@ def ingest_confluence(
         for space in client.get_spaces(keys=space_keys):
             if space.get("key") in space_keys:
                 resolved_space_ids.append(space["id"])
-                log.info("ingest.confluence.resolved_space", key=space.get("key"), id=space["id"])
+                log.info(
+                    "ingest.confluence.resolved_space",
+                    key=space.get("key"),
+                    id=space["id"],
+                )
 
     if not resolved_space_ids:
-        log.warning("ingest.confluence.no_spaces", space_keys=space_keys, space_ids=space_ids)
+        log.warning(
+            "ingest.confluence.no_spaces", space_keys=space_keys, space_ids=space_ids
+        )
         resolved_space_ids = [None]  # Fetch from all spaces
 
     # Collect page IDs to process
@@ -179,7 +185,9 @@ def ingest_confluence(
                     version=version_num,
                     body_html=(
                         page_data.get("body", {}).get("storage", {}).get("value")
-                        or page_data.get("body", {}).get("atlas_doc_format", {}).get("value")
+                        or page_data.get("body", {})
+                        .get("atlas_doc_format", {})
+                        .get("value")
                     ),
                     url=page_url,
                     attachments=attachments,

@@ -5,7 +5,9 @@ from ..core.logging import log
 
 
 def run(
-    phases: Optional[List[str]] = None, dry_run: bool = False, run_id: Optional[str] = None
+    phases: Optional[List[str]] = None,
+    dry_run: bool = False,
+    run_id: Optional[str] = None,
 ) -> str:
     phases = validate_phases(phases or DEFAULT_PHASES)
     rid = run_id or new_run_id()

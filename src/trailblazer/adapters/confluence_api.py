@@ -66,7 +66,9 @@ class ConfluenceClient:
     # -------- v2 endpoints (cursor pagination) --------
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
-    def get_spaces(self, keys: Optional[List[str]] = None, limit: int = 100) -> Iterable[Dict]:
+    def get_spaces(
+        self, keys: Optional[List[str]] = None, limit: int = 100
+    ) -> Iterable[Dict]:
         """
         GET /wiki/api/v2/spaces?keys=KEY1,KEY2&limit=100
         Yields space objects; follow Link/_links.next for pagination.
@@ -116,13 +118,17 @@ class ConfluenceClient:
         """
         GET /wiki/api/v2/pages/{id}?body-format=...
         """
-        params: Dict[str, Any] = {"body-format": (body_format or SETTINGS.CONFLUENCE_BODY_FORMAT)}
+        params: Dict[str, Any] = {
+            "body-format": (body_format or SETTINGS.CONFLUENCE_BODY_FORMAT)
+        }
         r = self._client.get(f"{V2_PREFIX}/pages/{page_id}", params=params)
         r.raise_for_status()
         return r.json()
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
-    def get_attachments_for_page(self, page_id: str, limit: int = 100) -> Iterable[Dict]:
+    def get_attachments_for_page(
+        self, page_id: str, limit: int = 100
+    ) -> Iterable[Dict]:
         """
         GET /wiki/api/v2/pages/{id}/attachments?limit=...
         """

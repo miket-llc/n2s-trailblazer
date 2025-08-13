@@ -27,14 +27,18 @@ def run(
     phases: Optional[List[str]] = typer.Option(
         None, "--phases", help="Subset of phases to run, in order"
     ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Do not execute; just scaffold outputs"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Do not execute; just scaffold outputs"
+    ),
 ) -> None:
     rid = run_pipeline(phases=phases, dry_run=dry_run)
     log.info("cli.run.done", run_id=rid)
 
 
 @app.command()
-def config(mask_secrets: bool = typer.Option(True, help="Mask secrets in output")) -> None:
+def config(
+    mask_secrets: bool = typer.Option(True, help="Mask secrets in output"),
+) -> None:
     for k, v in SETTINGS.model_dump().items():
         if mask_secrets and "TOKEN" in k:
             v = "***"
@@ -43,9 +47,13 @@ def config(mask_secrets: bool = typer.Option(True, help="Mask secrets in output"
 
 @ingest_app.command("confluence")
 def ingest_confluence_cmd(
-    spaces: List[str] = typer.Option([], "--space", help="Space keys (e.g., DEV, DOCS)"),
+    spaces: List[str] = typer.Option(
+        [], "--space", help="Space keys (e.g., DEV, DOCS)"
+    ),
     space_ids: List[str] = typer.Option([], "--space-id", help="Space IDs"),
-    since: Optional[str] = typer.Option(None, help="ISO timestamp (e.g., 2025-08-01T00:00:00Z)"),
+    since: Optional[str] = typer.Option(
+        None, help="ISO timestamp (e.g., 2025-08-01T00:00:00Z)"
+    ),
     body_format: str = typer.Option("storage", help="storage or atlas_doc_format"),
     max_pages: Optional[int] = typer.Option(None, help="Stop after N pages (debug)"),
 ) -> None:

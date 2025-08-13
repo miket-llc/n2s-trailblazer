@@ -19,7 +19,9 @@ def mock_confluence_client():
     client = Mock()
 
     # Mock spaces data
-    client.get_spaces.return_value = [{"id": "space1", "key": "TEST", "name": "Test Space"}]
+    client.get_spaces.return_value = [
+        {"id": "space1", "key": "TEST", "name": "Test Space"}
+    ]
 
     # Mock pages data
     client.get_pages.return_value = [
@@ -175,7 +177,9 @@ def test_ingest_confluence_with_since(temp_outdir, mock_confluence_client):
     """Test ingest with since parameter using CQL search."""
 
     # Mock CQL search results
-    mock_confluence_client.search_cql.return_value = {"results": [{"id": "page1"}, {"id": "page2"}]}
+    mock_confluence_client.search_cql.return_value = {
+        "results": [{"id": "page1"}, {"id": "page2"}]
+    }
 
     with patch(
         "src.trailblazer.pipeline.steps.ingest.confluence.ConfluenceClient"
