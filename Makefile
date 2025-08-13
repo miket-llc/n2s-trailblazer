@@ -1,4 +1,4 @@
-.PHONY: setup lint test fmt md check-md precommit
+.PHONY: setup lint test fmt md check-md ci
 
 setup:
 	python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]" && pre-commit install
@@ -6,7 +6,7 @@ setup:
 fmt:
 	ruff check . --fix
 	black src tests
-	mdformat $(shell git ls-files '*.md')
+	pre-commit run mdformat --all-files || true
 
 lint:
 	ruff check .
@@ -21,3 +21,6 @@ md:
 
 check-md:
 	npx markdownlint "**/*.md" --config .markdownlint.json
+
+ci:
+	make fmt && make lint && make test && make check-md

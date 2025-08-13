@@ -20,11 +20,12 @@ repos:
     rev: v1.17.1
     hooks:
       - id: mypy
-  - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.45.0
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.17.2
     hooks:
-      - id: markdownlint
+      - id: markdownlint-cli2
         args: [--fix, --config, .markdownlint.json]
+        files: \.(md|markdown)$
   - repo: https://github.com/zricethezav/gitleaks
     rev: v8.21.2
     hooks:

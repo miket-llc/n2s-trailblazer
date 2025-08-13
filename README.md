@@ -26,7 +26,7 @@ trailblazer --help
 - **Artifacts immutable** - runs write to `runs/<run_id>/<phase>/`, never mutate
   previous runs
 
-📖 **See [mindfile](docs/2025-08-13-1308-trailblazer-mindfile.md) for
+📖 **See [mindfile](docs/2025-08-13-1358-trailblazer-mindfile.md) for
 comprehensive architecture, contracts, and development guidelines.**
 
 ## Usage
@@ -75,9 +75,11 @@ trailblazer run --phases ingest normalize --dry-run
 
 ## Contributing & Non-Regression
 
-- **Main-only workflow:** No feature branches for routine work
-- **Toolchain commands:** Always use `make setup`, `make fmt`, `make lint`, `make test`
-- **Markdown hygiene:** All `.md` files must pass `mdformat` and `markdownlint`
-- **Secrets policy:** Placeholders only in repo; real values in `.env`/CI only
-- **Zero-errors policy:** IDE linter warnings must be eliminated via tool configs
-- **Do not weaken guardrails:** Never relax lint rules without explicit approval
+- **Main-only workflow:** No feature branches for routine work; commit atomically to main
+- **Make commands:** Always use `make setup`, `make fmt`, `make lint`, `make test`, `make check-md`
+- **Markdown hygiene:** All `.md` files must pass `mdformat` and `markdownlint` (enforced in pre-commit)
+- **Secrets policy:** Placeholders only in repo; real values in `.env`/CI secrets only
+- **Zero-errors policy:** IDE linter warnings must be eliminated via tool configs, not per-file waivers
+- **Do not weaken Shared Guardrails:** Never relax lint rules or remove stricter configs without explicit approval
+
+📖 **Latest comprehensive guidelines:** [mindfile](docs/2025-08-13-1358-trailblazer-mindfile.md)

@@ -1,28 +1,45 @@
 name: CI
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11", cache: "pip" }
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
       - uses: actions/setup-node@v4
-        with: { node-version: "18" }
-      - name: Install deps
+        with:
+          node-version: "18"
+
+      - name: Install dependencies
         run: |
           python -m venv .venv
           . .venv/bin/activate
           pip install -e ".[dev]"
-          npm -v || sudo apt-get update && sudo apt-get install -y npm
+          npm -v || (sudo apt-get update && sudo apt-get install -y npm)
           npm install -g markdownlint-cli2 || true
+
       - name: Format
         run: . .venv/bin/activate && make fmt
+
       - name: Lint
         run: . .venv/bin/activate && make lint
+
       - name: Test
         run: . .venv/bin/activate && make test
+
       - name: Markdown (no fix)
         run: npx markdownlint "**/*.md" --config .markdownlint.json
+
+      # Optional: secrets scan (non-blocking)
+      - name: Gitleaks (detect only)
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --no-banner --redact --source .
+        continue-on-error: true
