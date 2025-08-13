@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from typing import Dict, List, Optional, Tuple
 from ....adapters.confluence_api import ConfluenceClient
@@ -171,7 +171,7 @@ def ingest_confluence(
 
         def write_page_obj(p: Page):
             nonlocal written_pages, written_attachments
-            d = p.model_dump()
+            d = p.model_dump(mode="json")
             out.write(json.dumps(d, ensure_ascii=False) + "\n")
             written_pages += 1
             written_attachments += len(p.attachments)
@@ -219,7 +219,7 @@ def ingest_confluence(
     manifest = {
         "phase": "ingest",
         "artifact": "confluence.ndjson",
-        "completed_at": _iso(datetime.utcnow()),
+        "completed_at": _iso(datetime.now(timezone.utc)),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 

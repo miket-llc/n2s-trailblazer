@@ -32,6 +32,32 @@ def test_ingest_writes_ndjson(tmp_path, monkeypatch):
             }
 
         def get_page_by_id(self, page_id, body_format=None):
+            if page_id == "p1":
+                return {
+                    "id": "p1",
+                    "title": "T1",
+                    "spaceId": "111",
+                    "version": {
+                        "number": 1,
+                        "createdAt": "2025-08-10T12:00:00Z",
+                    },
+                    "_links": {"webui": "/spaces/DEV/pages/p1/T1"},
+                    "createdAt": "2025-08-01T00:00:00Z",
+                    "body": {"storage": {"value": "<p>hi</p>"}},
+                }
+            elif page_id == "p2":
+                return {
+                    "id": "p2",
+                    "title": "T2",
+                    "spaceId": "111",
+                    "version": {
+                        "number": 2,
+                        "createdAt": "2025-08-11T12:00:00Z",
+                    },
+                    "_links": {"webui": "/spaces/DEV/pages/p2/T2"},
+                    "createdAt": "2025-08-02T00:00:00Z",
+                    "body": {"storage": {"value": "<p>bye</p>"}},
+                }
             return {}
 
         def get_attachments_for_page(self, page_id, limit=100):
