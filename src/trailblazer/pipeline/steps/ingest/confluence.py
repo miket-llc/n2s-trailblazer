@@ -63,7 +63,9 @@ def ingest_confluence(
 
     if not resolved_space_ids:
         log.warning(
-            "ingest.confluence.no_spaces", space_keys=space_keys, space_ids=space_ids
+            "ingest.confluence.no_spaces",
+            space_keys=space_keys,
+            space_ids=space_ids,
         )
         resolved_space_ids = [None]  # Fetch from all spaces
 
@@ -95,7 +97,9 @@ def ingest_confluence(
         # Iterate through pages in each space
         for space_id in resolved_space_ids:
             log.info("ingest.confluence.fetching_pages", space_id=space_id)
-            for page in client.get_pages(space_id=space_id, body_format=body_format):
+            for page in client.get_pages(
+                space_id=space_id, body_format=body_format
+            ):
                 page_ids_to_fetch.append(page["id"])
                 # Stop early if max_pages limit reached
                 if max_pages and len(page_ids_to_fetch) >= max_pages:
@@ -107,7 +111,9 @@ def ingest_confluence(
     ndjson_path = out_path / "confluence.ndjson"
     pages_processed = 0
     attachments_processed = 0
-    spaces_processed = len([sid for sid in resolved_space_ids if sid is not None])
+    spaces_processed = len(
+        [sid for sid in resolved_space_ids if sid is not None]
+    )
 
     with open(ndjson_path, "w", encoding="utf-8") as f:
         for page_id in page_ids_to_fetch:
@@ -116,7 +122,9 @@ def ingest_confluence(
 
             try:
                 # Fetch full page data with body
-                page_data = client.get_page_by_id(page_id, body_format=body_format)
+                page_data = client.get_page_by_id(
+                    page_id, body_format=body_format
+                )
 
                 # Build absolute URL
                 webui_link = page_data.get("_links", {}).get("webui", "")
@@ -133,7 +141,9 @@ def ingest_confluence(
                 for att_data in client.get_attachments_for_page(page_id):
                     download_link = att_data.get("downloadLink", "")
                     if download_link.startswith("/"):
-                        download_url = client.base_url.rstrip("/wiki") + download_link
+                        download_url = (
+                            client.base_url.rstrip("/wiki") + download_link
+                        )
                     else:
                         download_url = download_link
 
@@ -184,7 +194,9 @@ def ingest_confluence(
                     updated_at=updated_at,
                     version=version_num,
                     body_html=(
-                        page_data.get("body", {}).get("storage", {}).get("value")
+                        page_data.get("body", {})
+                        .get("storage", {})
+                        .get("value")
                         or page_data.get("body", {})
                         .get("atlas_doc_format", {})
                         .get("value")
@@ -202,10 +214,16 @@ def ingest_confluence(
                 pages_processed += 1
 
                 if pages_processed % 10 == 0:
-                    log.info("ingest.confluence.progress", pages=pages_processed)
+                    log.info(
+                        "ingest.confluence.progress", pages=pages_processed
+                    )
 
             except Exception as e:
-                log.error("ingest.confluence.page_error", page_id=page_id, error=str(e))
+                log.error(
+                    "ingest.confluence.page_error",
+                    page_id=page_id,
+                    error=str(e),
+                )
                 continue
 
     # Calculate metrics

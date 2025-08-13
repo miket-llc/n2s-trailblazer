@@ -15,7 +15,9 @@ class Settings(BaseSettings):
     # Database (optional at scaffold time)
     TRAILBLAZER_DB_URL: Optional[str] = None
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8"
+    )
 
 
 SETTINGS = Settings()

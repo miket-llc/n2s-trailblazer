@@ -19,7 +19,10 @@ def test_paginate_with_links_next(mock_http_client):
     response1 = Mock()
     response1.raise_for_status.return_value = None
     response1.json.return_value = {
-        "results": [{"id": "1", "title": "Page 1"}, {"id": "2", "title": "Page 2"}],
+        "results": [
+            {"id": "1", "title": "Page 1"},
+            {"id": "2", "title": "Page 2"},
+        ],
         "_links": {"next": "/api/v2/pages?cursor=next1"},
     }
     response1.headers = {}

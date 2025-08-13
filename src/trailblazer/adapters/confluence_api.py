@@ -60,7 +60,9 @@ class ConfluenceClient:
                     # Parse Link header
                     for link in link_header.split(","):
                         if 'rel="next"' in link:
-                            current_url = link.split(";")[0].strip().strip("<>")
+                            current_url = (
+                                link.split(";")[0].strip().strip("<>")
+                            )
                             break
 
     # -------- v2 endpoints (cursor pagination) --------
@@ -114,7 +116,9 @@ class ConfluenceClient:
         log.info("confluence.get_pages.done", space_id=space_id, count=count)
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
-    def get_page_by_id(self, page_id: str, body_format: Optional[str] = None) -> Dict:
+    def get_page_by_id(
+        self, page_id: str, body_format: Optional[str] = None
+    ) -> Dict:
         """
         GET /wiki/api/v2/pages/{id}?body-format=...
         """
@@ -135,11 +139,15 @@ class ConfluenceClient:
         count = 0
         params: Dict[str, Any] = {"limit": limit}
 
-        for item in self._paginate(f"{V2_PREFIX}/pages/{page_id}/attachments", params):
+        for item in self._paginate(
+            f"{V2_PREFIX}/pages/{page_id}/attachments", params
+        ):
             yield item
             count += 1
 
-        log.debug("confluence.get_attachments.done", page_id=page_id, count=count)
+        log.debug(
+            "confluence.get_attachments.done", page_id=page_id, count=count
+        )
 
     # -------- v1 CQL search (until v2 offers equivalent) --------
 

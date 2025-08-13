@@ -50,7 +50,10 @@ def mock_confluence_client():
                 "id": "page1",
                 "title": "Test Page 1",
                 "space": {"id": "space1", "key": "TEST"},
-                "version": {"number": 1, "createdAt": "2025-01-01T12:00:00.000Z"},
+                "version": {
+                    "number": 1,
+                    "createdAt": "2025-01-01T12:00:00.000Z",
+                },
                 "_links": {"webui": "/wiki/spaces/TEST/pages/page1"},
                 "body": {"storage": {"value": "<p>Test content 1</p>"}},
             },
@@ -58,7 +61,10 @@ def mock_confluence_client():
                 "id": "page2",
                 "title": "Test Page 2",
                 "space": {"id": "space1", "key": "TEST"},
-                "version": {"number": 2, "createdAt": "2025-01-01T13:00:00.000Z"},
+                "version": {
+                    "number": 2,
+                    "createdAt": "2025-01-01T13:00:00.000Z",
+                },
                 "_links": {"webui": "/wiki/spaces/TEST/pages/page2"},
                 "body": {"storage": {"value": "<p>Test content 2</p>"}},
             },
@@ -127,7 +133,10 @@ def test_ingest_confluence_smoke(temp_outdir, mock_confluence_client):
         assert page1["id"] == "page1"
         assert page1["title"] == "Test Page 1"
         assert page1["body_html"] == "<p>Test content 1</p>"
-        assert page1["url"] == "https://test.atlassian.net/wiki/spaces/TEST/pages/page1"
+        assert (
+            page1["url"]
+            == "https://test.atlassian.net/wiki/spaces/TEST/pages/page1"
+        )
 
         # Check metrics file
         metrics_path = outdir / "metrics.json"
