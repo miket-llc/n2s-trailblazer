@@ -5,6 +5,7 @@ Save this prompt as: prompts/004_normalize_both_storage_and_adf.md
 You are: lead engineer extending Trailblazer on main. Implement a robust Normalize step that supports both Confluence body formats. Also patch ingest to persist the body representation so downstream logic is unambiguous.
 
 ## Objectives
+
 **Ingest patch (backward-compatible):**
 
 When fetching pages:
@@ -48,6 +49,7 @@ For each record:
 - Update README: "Normalize supports Storage & ADF."
 
 ## Code Changes
+
 **A) Ingest: persist body representation (light patch)**
 File: src/trailblazer/pipeline/steps/ingest/confluence.py
 
@@ -480,6 +482,7 @@ git push origin main
 ```
 
 ## Acceptance Criteria
+
 - Ingest writes body_repr and body_storage or body_adf accordingly (and keeps old fields if present).
 
 - trailblazer normalize from-ingest --run-id <RID> produces normalized.ndjson with text_md for both Storage and ADF records, plus metrics.json & manifest.json.

@@ -96,17 +96,20 @@ Ingest records should include `body_repr = storage|adf` plus `body_storage` (str
 ## 7) Next milestones (chunked; each ≤ 9 to-dos prompt)
 
 ### ~~004A — Normalize (Storage & ADF → Markdown)~~ ✅ COMPLETED
+
 - ~~Implement `normalize_from_ingest` handling both storage and adf.~~
 - ~~Add CLI `trailblazer normalize from-ingest`.~~
 - ~~Tests: storage path, ADF path, whitespace determinism.~~
 - ~~Docs: README section "Normalize (Storage & ADF → Markdown)".~~
 
 ### 005 — Embed & graph (initial)
+
 - Chunker → passages; embed with chosen model; write to Postgres/pgvector.
 - Minimal graph tables (nodes, edges, chunks, chunk_embeddings).
 - Loader from normalized NDJSON → DB; tests for idempotency.
 
 ### 006 — Ask/Generate (MVP)
+
 - `trailblazer ask "<question>"` → retrieval over vectors + (optionally) graph expansion.
 - First generator template (e.g., Implementation Checklist) with budgeted compose.
 

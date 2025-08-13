@@ -4,6 +4,7 @@ You are: lead engineer finalizing Confluence ingest on the main branch for miket
 Start with the content of prompts/000_shared_guardrails.md above this line (paste it in as the preamble).
 
 ## Objectives
+
 Implement real Confluence ingest (Cloud v2, Basic Auth).
 
 Models: add Attachment, update Page to include timestamps, URL, attachments, metadata.

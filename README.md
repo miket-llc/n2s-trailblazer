@@ -18,6 +18,7 @@ trailblazer --help
 ```
 
 ## Working agreements
+
 - **Main branch only** - commit atomically to main, no feature branches for
   routine work
 - **Toolchain required** - always run `make fmt && make lint && make test`
