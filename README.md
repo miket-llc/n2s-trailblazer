@@ -16,7 +16,23 @@ trailblazer run --phases ingest normalize --dry-run
 - Idempotent steps; artifacts under `runs/<run_id>/<phase>/`.
 - Config via env / `configs/pipeline.yaml`.
 
-## Confluence
+## Confluence Ingest
+
+### Ingest from Confluence (Cloud v2 + Basic auth)
+
+1. Create `.env` from `configs/dev.env.example` and set:
+   - `CONFLUENCE_EMAIL`, `CONFLUENCE_API_TOKEN`
+   - `CONFLUENCE_BASE_URL` (default is `https://ellucian.atlassian.net/wiki`)
+2. Run:
+```bash
+trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z
+# or enumerate a space id:
+trailblazer ingest confluence --space-id 123456
+```
+
+Artifacts appear under `runs/<run_id>/ingest/`.
+
+### Implementation Details
 - API base: https://ellucian.atlassian.net/wiki/api/v2
 - Auth: Basic (email + API token)
 - Use v2 for spaces/pages/attachments; use v1 CQL endpoint for search until v2 adds it.

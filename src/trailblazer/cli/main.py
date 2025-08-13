@@ -1,10 +1,13 @@
 import typer
 from typing import List, Optional
+from datetime import datetime
 from ..core.logging import setup_logging, log
 from ..core.config import SETTINGS
 from ..pipeline.runner import run as run_pipeline
 
 app = typer.Typer(add_completion=False, help="Trailblazer CLI")
+ingest_app = typer.Typer(help="Ingestion commands")
+app.add_typer(ingest_app, name="ingest")
 
 
 @app.callback()
@@ -36,6 +39,30 @@ def config(mask_secrets: bool = typer.Option(True, help="Mask secrets in output"
         if mask_secrets and "TOKEN" in k:
             v = "***"
         typer.echo(f"{k}={v}")
+
+
+@ingest_app.command("confluence")
+def ingest_confluence_cmd(
+    spaces: List[str] = typer.Option([], "--space", help="Space keys (e.g., DEV, DOCS)"),
+    space_ids: List[str] = typer.Option([], "--space-id", help="Space IDs"),
+    since: Optional[str] = typer.Option(None, help="ISO timestamp (e.g., 2025-08-01T00:00:00Z)"),
+    body_format: str = typer.Option("storage", help="storage or atlas_doc_format"),
+    max_pages: Optional[int] = typer.Option(None, help="Stop after N pages (debug)"),
+) -> None:
+    """Ingest pages from Confluence Cloud using v2 API."""
+    from ..core.artifacts import new_run_id, phase_dir
+    from ..pipeline.steps.ingest.confluence import ingest_confluence
+
+    rid = new_run_id()
+    outdir = str(phase_dir(rid, "ingest"))
+    dt = datetime.fromisoformat(since.replace("Z", "+00:00")) if since else None
+
+    metrics = ingest_confluence(
+        outdir, spaces or None, space_ids or None, dt, body_format, max_pages
+    )
+
+    log.info("cli.ingest.confluence.done", run_id=rid, **metrics)
+    typer.echo(rid)
 
 
 if __name__ == "__main__":

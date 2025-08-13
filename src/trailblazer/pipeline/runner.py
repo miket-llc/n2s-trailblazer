@@ -24,7 +24,14 @@ def run(
 
 def _execute_phase(phase: str, out: str) -> None:
     if phase == "ingest":
-        from .steps.ingest.confluence import ingest_confluence_minimal
+        from .steps.ingest.confluence import ingest_confluence
+        from ..core.config import SETTINGS
 
-        ingest_confluence_minimal(out)
+        ingest_confluence(
+            out,
+            space_keys=None,
+            space_ids=None,
+            since=None,
+            body_format=SETTINGS.CONFLUENCE_BODY_FORMAT,
+        )
     # other phases: placeholders
