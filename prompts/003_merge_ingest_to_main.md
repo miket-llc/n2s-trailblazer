@@ -120,6 +120,7 @@ trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z --max-pag
 ```
 
 Artifacts appear under runs/<run_id>/ingest/.
+
 ```
 
 ### 7) Pre-commit: add a pre-push test gate (optional but recommended)

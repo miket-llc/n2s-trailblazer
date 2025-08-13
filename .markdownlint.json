@@ -13,5 +13,8 @@
     "ol_single": 1,
     "ul_multi": 1,
     "ol_multi": 1
+  },
+  "MD031": {
+    "list_items": true
   }
 }

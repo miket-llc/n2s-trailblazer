@@ -16,6 +16,7 @@ make fmt          # ruff --fix + black
 make lint         # ruff check + mypy
 make test         # pytest -q
 ```
+
 Only commit/push if all three succeed.
 
 Never hand-fix lint/format. Use the Make targets above.

@@ -31,6 +31,7 @@
   data/
   runs/
   ```
+
 * If `docs/trailblazer-mindfile.md` is missing, add it from our last message (keep it brief if needed).
 
 ---
