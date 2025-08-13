@@ -20,9 +20,8 @@ Only commit/push if all three succeed.
 
 Never hand-fix lint/format. Use the Make targets above.
 
-**Markdown files:** markdownlint enforces standards on README.md only (line
-length ≤80 chars, start with # heading). prompts/ and docs/ are excluded.
-**Always start .md files with a top-level heading.**
+**Markdown files:** markdownlint is configured to be non-disruptive (disabled
+line length, heading, and HTML rules). Focus on content over formatting.
 
 Proof-of-work in your reply: paste the exact commands you ran and the last
 ~10 lines of their output (no screenshots).
