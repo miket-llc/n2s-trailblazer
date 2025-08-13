@@ -58,7 +58,7 @@ Replace the stub with a real ingest_confluence(...):
 - Resolve space keys → ids using v2 get_spaces(keys=...).
 - If since provided: use v1 CQL to list candidate IDs (type=page AND lastModified > "ISO" AND space in (...)), then fetch each page by v2 (get_page_by_id(..., body-format=...)).
 - If no since: iterate v2 get_pages(space-id=..., body-format=...).
-- For each page: map to Page, fetch attachments via v2, build absolute URLs from _links.webui and downloadLink.
+- For each page: map to Page, fetch attachments via v2, build absolute URLs from \_links.webui and downloadLink.
 - Write NDJSON (confluence.ndjson, one Page per line), plus metrics.json and manifest.json.
 
 ### 3) CLI — src/trailblazer/cli/main.py
@@ -108,7 +108,7 @@ if phase == "ingest":
 
 Add a section:
 
-```md
+````md
 ### Ingest from Confluence (Cloud v2 + Basic)
 Create `.env` from `configs/dev.env.example`:
 - `CONFLUENCE_EMAIL`, `CONFLUENCE_API_TOKEN`
@@ -117,11 +117,11 @@ Create `.env` from `configs/dev.env.example`:
 Run:
 ```bash
 trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z --max-pages 10
-```
+````
 
-Artifacts appear under runs/<run_id>/ingest/.
+Artifacts appear under runs/\<run_id>/ingest/.
 
-```
+````
 
 ### 7) Pre-commit: add a pre-push test gate (optional but recommended)
 
@@ -136,7 +136,7 @@ Append to `.pre-commit-config.yaml`:
       language: system
       pass_filenames: false
       stages: [push]
-```
+````
 
 ## Validation (run locally, paste outputs)
 

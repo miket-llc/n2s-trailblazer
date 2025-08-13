@@ -18,7 +18,7 @@ Keep existing fields (body_html) if you already write them, but prefer the new f
 
 **Normalize step (normalize_from_ingest):**
 
-- Input: runs/<run_id>/ingest/confluence.ndjson.
+- Input: runs/\<run_id>/ingest/confluence.ndjson.
 
 For each record:
 
@@ -28,7 +28,7 @@ For each record:
 
 - Preserve links (from HTML links or ADF link marks) and attachments (as {filename,url}).
 
-- Output: runs/<run_id>/normalize/normalized.ndjson (+ metrics.json, manifest.json).
+- Output: runs/\<run_id>/normalize/normalized.ndjson (+ metrics.json, manifest.json).
 
 **Runner & CLI:**
 
@@ -105,7 +105,7 @@ elif repr_ == "adf":
 **B) Normalize: handle Storage (XHTML) and ADF**
 File (new/replace): src/trailblazer/pipeline/steps/normalize/html_to_md.py
 
-```python
+````python
 from __future__ import annotations
 import json, re
 from datetime import datetime, timezone
@@ -340,14 +340,14 @@ def normalize_from_ingest(outdir: str, input_file: Optional[str] = None, limit: 
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     log.info("normalize.done", **metrics)
     return metrics
-```
+````
 
 **C) Runner & CLI**
 If not already present, wire normalize in the runner (add the elif phase == "normalize" branch) and add the normalize from-ingest CLI command (as in your previous Prompt 004; no change needed beyond keeping it in sync with the new function signature).
 
 **D) Tests**
 
-1) Storage path test — tests/test_normalize_storage.py
+1. Storage path test — tests/test_normalize_storage.py
 
 ```python
 import json
@@ -387,7 +387,7 @@ def test_normalize_storage(tmp_path):
         artifacts.ROOT = old
 ```
 
-2) ADF path test — tests/test_normalize_adf.py
+2. ADF path test — tests/test_normalize_adf.py
 
 ```python
 import json
@@ -439,12 +439,12 @@ def test_normalize_adf(tmp_path):
         artifacts.ROOT = old
 ```
 
-3) Markdown consistency — keep the whitespace/heading unit test from your earlier Prompt 004.
+3. Markdown consistency — keep the whitespace/heading unit test from your earlier Prompt 004.
 
 **E) README**
 Add/adjust:
 
-```md
+````md
 ### Normalize (Storage & ADF → Markdown)
 Trailblazer converts Confluence bodies to Markdown, supporting both **Storage (XHTML)** and **ADF JSON**.
 
@@ -452,15 +452,15 @@ Trailblazer converts Confluence bodies to Markdown, supporting both **Storage (X
 trailblazer normalize from-ingest --run-id <RUN_ID>    # uses runs/<RUN_ID>/ingest/confluence.ndjson
 # or:
 trailblazer normalize from-ingest --input runs/<RUN_ID>/ingest/confluence.ndjson
-```
+````
 
-Outputs → runs/<RUN_ID>/normalize/:
+Outputs → runs/\<RUN_ID>/normalize/:
 
 - normalized.ndjson (one record per page, with body_repr, text_md, links, attachments)
 
 - metrics.json, manifest.json
 
----
+______________________________________________________________________
 
 ## Validation (run locally, then commit to main)
 

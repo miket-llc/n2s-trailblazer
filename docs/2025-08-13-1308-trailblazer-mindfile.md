@@ -163,6 +163,6 @@ CONFLUENCE_BODY_FORMAT=storage   # or atlas_doc_format
 - **ADR-004:** Normalize supports Storage & ADF; output is deterministic Markdown + links/attachments.
 - **ADR-005:** Pre-commit + Makefile are mandatory; main-only workflow.
 
----
+______________________________________________________________________
 
 **Keep this mindfile authoritative.** When architecture/contracts change, update here first, then prompts, then code.

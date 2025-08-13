@@ -215,7 +215,7 @@ CLI-first monorepo for Navigate to SaaS (N2S) RAG + document generation.
 
 ## Quick start
 
-```bash
+````bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
@@ -791,3 +791,4 @@ Atlassian Developer
 CQL search (v1) usage + limits; use /wiki/rest/api/content/search?cql=..., be aware of 50-result quirks on expansions. 
 Atlassian Developer
 Atlassian Support
+````

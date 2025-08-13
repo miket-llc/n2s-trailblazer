@@ -7,38 +7,42 @@
 **Repo target:** `miket-llc/n2s-trailblazer`.
 If the repo/editor isn't connected, create files locally and **stop before pushing**. If connected, **create a feature branch and push**.
 
----
+______________________________________________________________________
 
 ## Goals
 
 1. **Adapters:** Finish `ConfluenceClient` for v2 pages/spaces/attachments + v1 CQL search helper.
-2. **Ingest step:** Fetch pages from one or more spaces (by **space keys** or **space ids**), optional **delta** (`--since`), collect **attachments**, and write **NDJSON** artifacts.
-3. **CLI:** Add `trailblazer ingest confluence ...` command to run the step directly.
-4. **Runner:** Keep `pipeline.run` behavior (ingest phase calls the same function).
-5. **Idempotent:** Re-running with the same args should not error; output goes under `runs/<run_id>/ingest/`.
-6. **Tests & docs:** Minimal tests + README updates.
+1. **Ingest step:** Fetch pages from one or more spaces (by **space keys** or **space ids**), optional **delta** (`--since`), collect **attachments**, and write **NDJSON** artifacts.
+1. **CLI:** Add `trailblazer ingest confluence ...` command to run the step directly.
+1. **Runner:** Keep `pipeline.run` behavior (ingest phase calls the same function).
+1. **Idempotent:** Re-running with the same args should not error; output goes under `runs/<run_id>/ingest/`.
+1. **Tests & docs:** Minimal tests + README updates.
 
----
+______________________________________________________________________
 
 ## Files to Create/Modify (exact)
 
 **1) `src/trailblazer/adapters/confluence_api.py`** — implement real client
 
-* Keep `ConfluenceClient` using `httpx.Client` with **BasicAuth(email, api\_token)** and `base_url="https://.../wiki"`.
-* Implement methods (cursor pagination via `_links.next` **or** `Link` header):
+- Keep `ConfluenceClient` using `httpx.Client` with **BasicAuth(email, api_token)** and `base_url="https://.../wiki"`.
 
-  * `get_spaces(keys: list[str] | None, limit=100) -> Iterable[dict]` (v2 `/api/v2/spaces?keys=...`)
-  * `get_pages(space_id: str | None, body_format: str | None, limit=100) -> Iterable[dict]` (v2 `/api/v2/pages?space-id=...&body-format=...`)
-  * `get_page_by_id(page_id: str, body_format: str | None) -> dict` (v2 `/api/v2/pages/{id}?body-format=...`)
-  * `get_attachments_for_page(page_id: str, limit=100) -> Iterable[dict]` (v2 `/api/v2/pages/{id}/attachments`)
-  * `search_cql(cql: str, start=0, limit=50, expand: str | None = None) -> dict` (v1 `/rest/api/content/search?cql=...`; use to prefilter by `lastModified > ...` when `--since` is set)
-* Add a tiny `_paginate(url, params)` helper that:
+- Implement methods (cursor pagination via `_links.next` **or** `Link` header):
 
-  * GETs the url with params on first call,
-  * yields `data["results"]`,
-  * follows `data["_links"]["next"]` if present, otherwise parses `Link` header for `rel="next"`.
-* Log with `structlog` at **start/end** and for each page batch.
-* Do **tenacity** retries with `wait_exponential(min=1, max=30)` and `stop_after_attempt(5)`.
+  - `get_spaces(keys: list[str] | None, limit=100) -> Iterable[dict]` (v2 `/api/v2/spaces?keys=...`)
+  - `get_pages(space_id: str | None, body_format: str | None, limit=100) -> Iterable[dict]` (v2 `/api/v2/pages?space-id=...&body-format=...`)
+  - `get_page_by_id(page_id: str, body_format: str | None) -> dict` (v2 `/api/v2/pages/{id}?body-format=...`)
+  - `get_attachments_for_page(page_id: str, limit=100) -> Iterable[dict]` (v2 `/api/v2/pages/{id}/attachments`)
+  - `search_cql(cql: str, start=0, limit=50, expand: str | None = None) -> dict` (v1 `/rest/api/content/search?cql=...`; use to prefilter by `lastModified > ...` when `--since` is set)
+
+- Add a tiny `_paginate(url, params)` helper that:
+
+  - GETs the url with params on first call,
+  - yields `data["results"]`,
+  - follows `data["_links"]["next"]` if present, otherwise parses `Link` header for `rel="next"`.
+
+- Log with `structlog` at **start/end** and for each page batch.
+
+- Do **tenacity** retries with `wait_exponential(min=1, max=30)` and `stop_after_attempt(5)`.
 
 **2) `src/trailblazer/core/models.py`** — enrich Page & Attachment models
 
@@ -81,30 +85,33 @@ from pathlib import Path
 import json
 ```
 
-* Public function:
+- Public function:
   `def ingest_confluence(outdir: str, space_keys: list[str] | None, space_ids: list[str] | None, since: datetime | None, body_format: str = "storage", max_pages: int | None = None) -> dict:`
 
-  * Resolve **space\_ids**: if keys provided, call `get_spaces(keys=...)` (v2) and map key→id.
-  * **Delta logic**:
+  - Resolve **space_ids**: if keys provided, call `get_spaces(keys=...)` (v2) and map key→id.
 
-    * If `since` is given: use **CQL** to find candidate page IDs (e.g., `type=page AND lastModified > "<ISO>" AND space in (...)`), then fetch each page by **v2** `get_page_by_id(..., body_format)` to get bodies reliably.
+  - **Delta logic**:
+
+    - If `since` is given: use **CQL** to find candidate page IDs (e.g., `type=page AND lastModified > "<ISO>" AND space in (...)`), then fetch each page by **v2** `get_page_by_id(..., body_format)` to get bodies reliably.
       (Avoid v1 `expand=body.*` 50-item cap; use v2 for bodies.)
-    * If `since` is not given: iterate v2 `get_pages(space-id=...)` per space and post-filter by `version.createdAt` if caller supplied `--since` anyway.
-  * For each page:
+    - If `since` is not given: iterate v2 `get_pages(space-id=...)` per space and post-filter by `version.createdAt` if caller supplied `--since` anyway.
 
-    * Build **absolute** page URL from `_links.webui` (`base_url + webui` if needed).
-    * Fetch **attachments** via v2, build `download_url` as absolute (`base_url + downloadLink`).
-    * Map to `Page` + `Attachment` models; `updated_at` from `version.createdAt`, `version` from `version.number`.
-    * Write **one JSON per line** to `confluence.ndjson` (UTF-8). Keep a simple `count` accumulator.
-  * Return metrics: `{"spaces": n, "pages": n, "attachments": n, "since": since_iso_or_null}` and write them to `metrics.json`.
+  - For each page:
 
-* Create files in `outdir`:
+    - Build **absolute** page URL from `_links.webui` (`base_url + webui` if needed).
+    - Fetch **attachments** via v2, build `download_url` as absolute (`base_url + downloadLink`).
+    - Map to `Page` + `Attachment` models; `updated_at` from `version.createdAt`, `version` from `version.number`.
+    - Write **one JSON per line** to `confluence.ndjson` (UTF-8). Keep a simple `count` accumulator.
 
-  * `confluence.ndjson` (pages with embedded attachments array)
-  * `metrics.json` (counts, duration, args)
-  * `manifest.json` (simple descriptor: run\_id, phase, started\_at, completed\_at)
+  - Return metrics: `{"spaces": n, "pages": n, "attachments": n, "since": since_iso_or_null}` and write them to `metrics.json`.
 
-* If `max_pages` provided, stop after writing that many (useful for smoke tests).
+- Create files in `outdir`:
+
+  - `confluence.ndjson` (pages with embedded attachments array)
+  - `metrics.json` (counts, duration, args)
+  - `manifest.json` (simple descriptor: run_id, phase, started_at, completed_at)
+
+- If `max_pages` provided, stop after writing that many (useful for smoke tests).
 
 **4) `src/trailblazer/pipeline/runner.py`** — call the new function
 
@@ -118,7 +125,7 @@ if phase == "ingest":
 
 **5) `src/trailblazer/cli/main.py`** — add a nested command
 
-* Add a Typer sub-app:
+- Add a Typer sub-app:
 
 ```python
 ingest_app = typer.Typer(help="Ingestion commands")
@@ -144,16 +151,17 @@ def ingest_confluence_cmd(
 
 **6) Tests**
 
-* `tests/test_ingest_confluence_smoke.py`:
+- `tests/test_ingest_confluence_smoke.py`:
 
-  * Monkeypatch `ConfluenceClient` methods to return **tiny fixtures** (1 space, 2 pages, 1 attachment) and assert:
+  - Monkeypatch `ConfluenceClient` methods to return **tiny fixtures** (1 space, 2 pages, 1 attachment) and assert:
 
-    * `confluence.ndjson` exists with **2 lines**.
-    * Each line parses to JSON and has `id`, `title`, `attachments` list (possibly empty).
-    * `metrics.json` contains `pages=2`.
-* `tests/test_confluence_client_pagination.py`:
+    - `confluence.ndjson` exists with **2 lines**.
+    - Each line parses to JSON and has `id`, `title`, `attachments` list (possibly empty).
+    - `metrics.json` contains `pages=2`.
 
-  * Unit test a fake paginated response that includes `_links.next` and ensure the helper follows it.
+- `tests/test_confluence_client_pagination.py`:
+
+  - Unit test a fake paginated response that includes `_links.next` and ensure the helper follows it.
 
 **7) README**
 
@@ -187,30 +195,34 @@ git commit -m "feat(ingest): Confluence Cloud v2 ingest + CLI + NDJSON artifacts
 git push -u origin feat/001-ingest-confluence-v2
 ````
 
----
+______________________________________________________________________
 
 ## Design Notes & Constraints
 
-* **Why v2 for bodies + attachments?** v2 `GET /pages` and `GET /pages/{id}` expose `body.storage` / `body.atlas_doc_format` via `body-format` and page objects include `_links.webui`; attachments expose `downloadLink`. v2 uses **cursor pagination** via `_links.next` / `Link` header. ([Atlassian Developer][1])
-* **Why keep v1 CQL?** Use it only to pre-filter IDs for **delta** (e.g., `lastModified > ... AND type=page AND space = KEY`). Fetch page bodies via v2 afterward. ([Atlassian Developer][2])
-* **Basic auth** is email + API token. (Fine for scripts; note Atlassian docs recommend OAuth for apps.) ([Atlassian Developer][3])
-* **Spaces by keys**: v2 supports `GET /api/v2/spaces?keys=KEY1,KEY2` and returns `id` and `key`, plus `_links.next` for pagination. ([Atlassian Developer][4])
-* **Pages by space**: v2 supports `GET /api/v2/pages?space-id=<id>&body-format=...&limit=...` and returns page `version` (with `createdAt`) and `body`. ([Atlassian Developer][1])
+- **Why v2 for bodies + attachments?** v2 `GET /pages` and `GET /pages/{id}` expose `body.storage` / `body.atlas_doc_format` via `body-format` and page objects include `_links.webui`; attachments expose `downloadLink`. v2 uses **cursor pagination** via `_links.next` / `Link` header. ([Atlassian Developer][1])
+- **Why keep v1 CQL?** Use it only to pre-filter IDs for **delta** (e.g., `lastModified > ... AND type=page AND space = KEY`). Fetch page bodies via v2 afterward. ([Atlassian Developer][2])
+- **Basic auth** is email + API token. (Fine for scripts; note Atlassian docs recommend OAuth for apps.) ([Atlassian Developer][3])
+- **Spaces by keys**: v2 supports `GET /api/v2/spaces?keys=KEY1,KEY2` and returns `id` and `key`, plus `_links.next` for pagination. ([Atlassian Developer][4])
+- **Pages by space**: v2 supports `GET /api/v2/pages?space-id=<id>&body-format=...&limit=...` and returns page `version` (with `createdAt`) and `body`. ([Atlassian Developer][1])
 
----
+______________________________________________________________________
 
 ## Acceptance Criteria
 
-* `trailblazer ingest confluence --space SOMEKEY --since 2025-08-01T00:00:00Z` runs and creates:
+- `trailblazer ingest confluence --space SOMEKEY --since 2025-08-01T00:00:00Z` runs and creates:
 
-  * `runs/<run_id>/ingest/confluence.ndjson` (≥1 line if any pages match)
-  * `runs/<run_id>/ingest/metrics.json` and `manifest.json`
-* `trailblazer run --phases ingest --dry-run` still works (no network).
-* Unit tests pass: `pytest -q`
-* Linters pass: `ruff`, `black --check`, `mypy` (non-strict OK).
-* Prompt saved to `prompts/001_ingest_confluence_v2.md`.
+  - `runs/<run_id>/ingest/confluence.ndjson` (≥1 line if any pages match)
+  - `runs/<run_id>/ingest/metrics.json` and `manifest.json`
 
----
+- `trailblazer run --phases ingest --dry-run` still works (no network).
+
+- Unit tests pass: `pytest -q`
+
+- Linters pass: `ruff`, `black --check`, `mypy` (non-strict OK).
+
+- Prompt saved to `prompts/001_ingest_confluence_v2.md`.
+
+______________________________________________________________________
 
 ## Smoke Commands (once credentials are set)
 
@@ -228,40 +240,34 @@ trailblazer ingest confluence --space-id 123456 --since 2025-08-01T00:00:00Z --b
 trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z --max-pages 10
 ```
 
----
+______________________________________________________________________
 
 ## Implementation Tips
 
-* **Absolute URLs:** Build with the client `base_url` (which already ends in `/wiki`). For a relative `_links.webui` or `downloadLink`, do `base_url.rstrip("/wiki") + <relative>` or use `urllib.parse.urljoin(base_url, rel)`.
-* **Date parsing:** Confluence returns ISO strings. Use `datetime.fromisoformat(...replace("Z","+00:00"))` or `dateutil.parser` if installed.
-* **Throughput:** Start sequential; we can add bounded async later.
-* **Error handling:** If a page fails, log and continue (unless we add `--fail-fast` later).
-* **Idempotency:** Don't overwrite an existing `confluence.ndjson` unless `--force` (not required now). Creating a new `run_id` each time is usually fine.
+- **Absolute URLs:** Build with the client `base_url` (which already ends in `/wiki`). For a relative `_links.webui` or `downloadLink`, do `base_url.rstrip("/wiki") + <relative>` or use `urllib.parse.urljoin(base_url, rel)`.
+- **Date parsing:** Confluence returns ISO strings. Use `datetime.fromisoformat(...replace("Z","+00:00"))` or `dateutil.parser` if installed.
+- **Throughput:** Start sequential; we can add bounded async later.
+- **Error handling:** If a page fails, log and continue (unless we add `--fail-fast` later).
+- **Idempotency:** Don't overwrite an existing `confluence.ndjson` unless `--force` (not required now). Creating a new `run_id` each time is usually fine.
 
----
+______________________________________________________________________
 
 ## After this lands
 
-* We'll do **Prompt 002 — Normalize HTML→Markdown** (deterministic normalization, link preservation, attachment mapping).
-* We'll also add a tiny **state/hwm** file in a later prompt to remember per-space cursors.
+- We'll do **Prompt 002 — Normalize HTML→Markdown** (deterministic normalization, link preservation, attachment mapping).
+- We'll also add a tiny **state/hwm** file in a later prompt to remember per-space cursors.
 
----
+______________________________________________________________________
 
 ## References
 
-* Confluence **REST API v2** index and **Page** endpoints (supports `space-id`, `body-format`, and cursor via `_links.next`). ([Atlassian Developer][5])
-* Confluence **REST API v2** **Space** endpoints (supports `keys=` and cursor pagination). ([Atlassian Developer][4])
-* Confluence **REST API v2** **Attachment** endpoints (`/pages/{id}/attachments`, `downloadLink`). ([Atlassian Developer][6])
-* **CQL** guide and example of calling `/wiki/rest/api/content/search?cql=...` (use for delta filtering). ([Atlassian Developer][2])
-* **Basic auth** with Atlassian account email + API token (Confluence Cloud). ([Atlassian Developer][3])
+- Confluence **REST API v2** index and **Page** endpoints (supports `space-id`, `body-format`, and cursor via `_links.next`). ([Atlassian Developer][5])
+- Confluence **REST API v2** **Space** endpoints (supports `keys=` and cursor pagination). ([Atlassian Developer][4])
+- Confluence **REST API v2** **Attachment** endpoints (`/pages/{id}/attachments`, `downloadLink`). ([Atlassian Developer][6])
+- **CQL** guide and example of calling `/wiki/rest/api/content/search?cql=...` (use for delta filtering). ([Atlassian Developer][2])
+- **Basic auth** with Atlassian account email + API token (Confluence Cloud). ([Atlassian Developer][3])
 
----
-[1]: https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/ "The Confluence Cloud REST API"
-[2]: https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/ "Advanced searching using CQL"
-[3]: https://developer.atlassian.com/cloud/confluence/basic-auth-for-rest-apis/ "Basic auth for REST APIs"
-[4]: https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-space/ "The Confluence Cloud REST API"
-[5]: https://developer.atlassian.com/cloud/confluence/rest/ "The Confluence Cloud REST API"
-[6]: https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-attachment/ "The Confluence Cloud REST API"
+______________________________________________________________________
 
 note that the confluence API key is
 
@@ -272,3 +278,10 @@ and the email address to use is michael.thompson@ellucian.com
 you'll need to save both of course. if and only if you need it, the cloud id for the ellucian.atlassian.net/wiki site is
 
 89daa32b-93ca-43e5-a9ce-feeefab105c1
+
+[1]: https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/ "The Confluence Cloud REST API"
+[2]: https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/ "Advanced searching using CQL"
+[3]: https://developer.atlassian.com/cloud/confluence/basic-auth-for-rest-apis/ "Basic auth for REST APIs"
+[4]: https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-space/ "The Confluence Cloud REST API"
+[5]: https://developer.atlassian.com/cloud/confluence/rest/ "The Confluence Cloud REST API"
+[6]: https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-attachment/ "The Confluence Cloud REST API"

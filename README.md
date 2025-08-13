@@ -35,7 +35,7 @@ comprehensive architecture, contracts, and development guidelines.**
 
 Create `.env` from `configs/dev.env.example` and set:
 
-- `CONFLUENCE_EMAIL`, `CONFLUENCE_API_TOKEN`  
+- `CONFLUENCE_EMAIL`, `CONFLUENCE_API_TOKEN`
 - `CONFLUENCE_BASE_URL` (defaults to `https://ellucian.atlassian.net/wiki`)
 
 ```bash
@@ -72,3 +72,12 @@ trailblazer run --phases ingest normalize --dry-run
   pgvector (planned)
 - **Auth:** Store `CONFLUENCE_EMAIL` + `CONFLUENCE_API_TOKEN` in local `.env`
   only
+
+## Contributing & Non-Regression
+
+- **Main-only workflow:** No feature branches for routine work
+- **Toolchain commands:** Always use `make setup`, `make fmt`, `make lint`, `make test`
+- **Markdown hygiene:** All `.md` files must pass `mdformat` and `markdownlint`
+- **Secrets policy:** Placeholders only in repo; real values in `.env`/CI only
+- **Zero-errors policy:** IDE linter warnings must be eliminated via tool configs
+- **Do not weaken guardrails:** Never relax lint rules without explicit approval

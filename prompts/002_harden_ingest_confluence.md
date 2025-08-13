@@ -7,34 +7,34 @@
 **Repo:** `miket-llc/n2s-trailblazer`
 **Branch:** create `feat/002-ingest-confluence-harden` (or reuse an open feature branch if 001 already created one).
 
----
+______________________________________________________________________
 
 ## Objectives
 
 1. **Adapters (v2 + Basic)**: Ensure the Confluence client is complete and defensive (cursor pagination, robust body parsing, attachments).
-2. **Models**: Add `Attachment` and upgrade `Page` to include timestamps, url, attachments.
-3. **Ingest step**: Implement `ingest_confluence(...)` that resolves spaces, supports `--since` (via v1 CQL prefilter), fetches v2 bodies + attachments, and writes **NDJSON** + `metrics.json` + `manifest.json`.
-4. **CLI**: Add `trailblazer ingest confluence …` with options for spaces/ids/since/body-format/max-pages.
-5. **Runner**: Keep phase execution working; if `ingest` runs via `runner`, it should call the same function.
-6. **Tests**: Add smoke tests with fakes for pagination and mapping; no network required.
-7. **Docs**: Update README; ensure `.gitignore` ignores `data/` and `runs/`.
+1. **Models**: Add `Attachment` and upgrade `Page` to include timestamps, url, attachments.
+1. **Ingest step**: Implement `ingest_confluence(...)` that resolves spaces, supports `--since` (via v1 CQL prefilter), fetches v2 bodies + attachments, and writes **NDJSON** + `metrics.json` + `manifest.json`.
+1. **CLI**: Add `trailblazer ingest confluence …` with options for spaces/ids/since/body-format/max-pages.
+1. **Runner**: Keep phase execution working; if `ingest` runs via `runner`, it should call the same function.
+1. **Tests**: Add smoke tests with fakes for pagination and mapping; no network required.
+1. **Docs**: Update README; ensure `.gitignore` ignores `data/` and `runs/`.
 
----
+______________________________________________________________________
 
 ## Changes to Make (exact)
 
 ### 0) Housekeeping
 
-* Ensure `.gitignore` includes:
+- Ensure `.gitignore` includes:
 
   ```
   data/
   runs/
   ```
 
-* If `docs/trailblazer-mindfile.md` is missing, add it from our last message (keep it brief if needed).
+- If `docs/trailblazer-mindfile.md` is missing, add it from our last message (keep it brief if needed).
 
----
+______________________________________________________________________
 
 ### 1) Models — `src/trailblazer/core/models.py`
 
@@ -66,7 +66,7 @@ class Page(BaseModel):
     metadata: Dict = {}
 ```
 
----
+______________________________________________________________________
 
 ### 2) Confluence client — `src/trailblazer/adapters/confluence_api.py`
 
@@ -173,7 +173,7 @@ class ConfluenceClient:
         return rel_or_abs if rel_or_abs.startswith("http") else urljoin(self.site_base + "/", rel_or_abs.lstrip("/"))
 ```
 
----
+______________________________________________________________________
 
 ### 3) Ingest step — `src/trailblazer/pipeline/steps/ingest/confluence.py`
 
@@ -366,7 +366,7 @@ def ingest_confluence(
     return metrics
 ```
 
----
+______________________________________________________________________
 
 ### 4) Runner — `src/trailblazer/pipeline/runner.py`
 
@@ -381,7 +381,7 @@ def _execute_phase(phase: str, out: str) -> None:
 
 *(If you already pass args via config, keep that; default to env/SETTINGS unless CLI is used.)*
 
----
+______________________________________________________________________
 
 ### 5) CLI — `src/trailblazer/cli/main.py`
 
@@ -434,7 +434,7 @@ def ingest_confluence_cmd(
     typer.echo(rid)
 ```
 
----
+______________________________________________________________________
 
 ### 6) Tests
 
@@ -500,7 +500,7 @@ def test_next_link_parsing(monkeypatch):
     assert "cursor=abc" in nxt
 ```
 
----
+______________________________________________________________________
 
 ### 7) README update
 
@@ -533,26 +533,30 @@ git commit -m "feat(ingest): complete v2 Confluence ingest + CLI + NDJSON + test
 git push -u origin feat/002-ingest-confluence-harden
 ````
 
----
+______________________________________________________________________
 
 ## Acceptance Criteria
 
-* `trailblazer ingest confluence --space <KEY> --since <ISO>` writes:
+- `trailblazer ingest confluence --space <KEY> --since <ISO>` writes:
 
-  * `runs/<run_id>/ingest/confluence.ndjson` (≥1 line when pages exist)
-  * `runs/<run_id>/ingest/metrics.json` with counts
-  * `runs/<run_id>/ingest/manifest.json`
-* `trailblazer run --phases ingest` works (uses same function).
-* Tests pass locally: `pytest -q`.
-* Linters pass: `ruff`, `black --check`, `mypy` (non-strict OK).
-* Prompt saved to `prompts/002_harden_ingest_confluence.md`.
+  - `runs/<run_id>/ingest/confluence.ndjson` (≥1 line when pages exist)
+  - `runs/<run_id>/ingest/metrics.json` with counts
+  - `runs/<run_id>/ingest/manifest.json`
 
----
+- `trailblazer run --phases ingest` works (uses same function).
+
+- Tests pass locally: `pytest -q`.
+
+- Linters pass: `ruff`, `black --check`, `mypy` (non-strict OK).
+
+- Prompt saved to `prompts/002_harden_ingest_confluence.md`.
+
+______________________________________________________________________
 
 ## Notes & guardrails
 
-* **Delta strategy:** use **v1 CQL** only to enumerate candidate IDs when `--since` is provided; always fetch bodies via **v2**.
-* **Body parsing:** be defensive; `body.storage.value` is preferred; ADF may differ — leave `body_html=None` if not rendered by API.
-* **Absolute URLs:** normalize via `urljoin` against the `/wiki` base.
-* **Idempotent:** each run creates a new `run_id`; do not mutate previous artifacts.
-* **No network in tests:** rely on monkeypatch fakes.
+- **Delta strategy:** use **v1 CQL** only to enumerate candidate IDs when `--since` is provided; always fetch bodies via **v2**.
+- **Body parsing:** be defensive; `body.storage.value` is preferred; ADF may differ — leave `body_html=None` if not rendered by API.
+- **Absolute URLs:** normalize via `urljoin` against the `/wiki` base.
+- **Idempotent:** each run creates a new `run_id`; do not mutate previous artifacts.
+- **No network in tests:** rely on monkeypatch fakes.

@@ -4,37 +4,33 @@ PREAMBLE — Shared Guardrails (paste at the top of every prompt)
 Save once as prompts/000_shared_guardrails.md and also paste at the top when
 you run this prompt.
 
-Trailblazer Prompt Guardrails (read first)
+**Trailblazer Prompt Guardrails (read first)**
 
-Main only. Do all work on main. No feature branches/PRs for this task.
+**Main only.** Do all work on main. No feature branches/PRs for routine work.
 
-Always use a venv + our toolchain:
+**Zero IDE linter errors across all file types.** If an IDE warns and our tools don't, update tool configs so the warning disappears permanently (don't hand-tweak files ad-hoc).
+
+**Automate fixes first.** Always use the toolchain; never hand-fix format/lint.
 
 ```bash
-make setup        # creates .venv, installs dev deps, installs pre-commit
-make fmt          # ruff --fix + black
-make lint         # ruff check + mypy
-make test         # pytest -q
+make setup     # venv + dev deps + pre-commit
+make fmt       # ruff --fix, black, mdformat for .md
+make lint      # ruff check, mypy, markdownlint
+make test      # pytest -q
 ```
 
-Only commit/push if all three succeed.
+**Markdown hygiene:** all .md must pass mdformat and markdownlint (e.g., fixes MD032 blanks-around-lists via formatter).
 
-Never hand-fix lint/format. Use the Make targets above.
+**Secrets hygiene:** placeholders only in repo/prompts; real values only in .env/CI. Secret scanning (e.g., gitleaks) is required in pre-commit.
 
-**Markdown files - ZERO IDE ERRORS TOLERATED:**
-CRITICAL: IDE linter errors must be ELIMINATED, not ignored. Always:
+**Pre-push gate:** tests must pass before pushing to main. Add/keep a pre-push pytest hook.
 
-1. Use `npx markdownlint "**/*.md" --fix --config .markdownlint.json` to auto-fix
-2. If new MD*** rules appear in IDE, add them to `.markdownlint.json` with proper config
-3. NEVER manually fix markdown - use automated tools FIRST
-4. Always start .md files with a top-level heading
+**Prompt size rule:** keep checklists to ≤9 to-dos (Cursor limit). Split into 004A/004B, etc., when needed.
 
-Proof-of-work in your reply: paste the exact commands you ran and the last
-~10 lines of their output (no screenshots).
+**Proof-of-work:** in every prompt response, paste the exact commands run and the last ~10 lines of output for make fmt, make lint, and make test.
 
-Secrets: never commit real credentials. Examples must use placeholders.
+**Non-regression:** Never relax guardrails or remove stricter lint rules without explicit approval. Future prompts must start by pasting this file unchanged.
 
-Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since
-is set. Bodies/attachments fetched via v2.
+Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
 Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
