@@ -371,7 +371,17 @@ def _derive_run_id(outdir: str) -> str:
 
 
 def _default_ingest_path(run_id: str) -> Path:
-    return ROOT / "runs" / run_id / "ingest" / "confluence.ndjson"
+    """Auto-detect ingest NDJSON file - try confluence.ndjson first, then dita.ndjson"""
+    confluence_path = ROOT / "runs" / run_id / "ingest" / "confluence.ndjson"
+    if confluence_path.exists():
+        return confluence_path
+
+    dita_path = ROOT / "runs" / run_id / "ingest" / "dita.ndjson"
+    if dita_path.exists():
+        return dita_path
+
+    # Default to confluence for backwards compatibility
+    return confluence_path
 
 
 def _now_iso() -> str:
