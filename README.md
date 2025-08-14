@@ -68,57 +68,64 @@ repo/
 The most common workflow to get from Confluence to searchable knowledge base:
 
 ```bash
-# 1. List available spaces
-trailblazer confluence spaces
-# → Shows table of spaces and writes var/runs/<run_id>/ingest/spaces.json
-
-# 2. Ingest from Confluence (ADF is the default body format)
-trailblazer ingest confluence --space DEV --progress
-# → Writes to var/runs/<run_id>/ingest/confluence.ndjson + sidecars
-# → No database required for ingest
-
-# 3. Normalize to Markdown  
-trailblazer normalize from-ingest --run-id <RUN_ID>
-# → Writes to var/runs/<run_id>/normalize/normalized.ndjson
-# → No database required for normalize
-
-# 4. Set up database (required for embedding and retrieval)
-make db.up && trailblazer db init && trailblazer db doctor
-
-# 5. Load embeddings (requires PostgreSQL + pgvector)
-trailblazer embed load --run-id <RUN_ID> --provider dummy
-
-# 6. Query your knowledge base
-trailblazer ask "How do I configure SSO?" --provider dummy
-```
-
-**Key Points:**
-
-- **Ingest & Normalize**: Work without database - just file I/O
-- **Database**: Only required for embedding and retrieval phases
-- **ADF Default**: `atlas_doc_format` is the default body format
-- **Artifacts**: Find all outputs in `runs/<run_id>/<phase>/`
-- **Observability**: Rich progress, NDJSON event logs, and assurance reports
-
-## Simple Workflow
-
-The easiest way to ingest all your data:
-
-```bash
 # 1. Preview what would be ingested (no writes)
 trailblazer plan
 
-# 2. Ingest everything with enforced ADF format  
-trailblazer ingest-all --from-scratch
+# 2. Ingest everything (ADF enforced automatically)
+trailblazer ingest-all --from-scratch --progress
 
 # 3. Normalize all ingested data
 trailblazer normalize-all
 
 # 4. Check status and results
 trailblazer status
+
+# 5. Set up database (required for embedding and retrieval)
+make db.up && trailblazer db init && trailblazer db doctor
+
+# 6. Load embeddings (requires PostgreSQL + pgvector)
+trailblazer embed load --run-id <RUN_ID> --provider dummy
+
+# 7. Query your knowledge base
+trailblazer ask "How do I configure SSO?" --provider dummy
 ```
 
-These wrapper commands handle workspace validation, ADF enforcement, progress forwarding, and session tracking automatically. For advanced usage, see [`scripts/examples.md`](scripts/examples.md) or use the underlying `trailblazer ingest` and `trailblazer normalize` commands directly.
+**Key Points:**
+
+- **New Wrapper Commands**: `plan`, `ingest-all`, `normalize-all`, `status` handle common workflows
+- **Ingest & Normalize**: Work without database - just file I/O
+- **Database**: Only required for embedding and retrieval phases
+- **ADF Enforced**: `atlas_doc_format` enforced automatically in wrapper commands
+- **Workspace Validation**: All outputs strictly under `var/` - legacy paths blocked
+- **Observability**: Rich progress, NDJSON event logs, assurance reports, and session tracking
+
+## Simple Workflow
+
+For a full clean-slate ingest of all Confluence spaces and DITA content:
+
+```bash
+# 1. Preview what would be ingested (dry-run, no writes)
+trailblazer plan
+
+# 2. Ingest everything from scratch with full observability
+trailblazer ingest-all --from-scratch --progress
+
+# 3. Normalize all ingested data to unified format
+trailblazer normalize-all
+
+# 4. Check workspace status and disk usage
+trailblazer status
+```
+
+**Wrapper Command Benefits:**
+
+- **Automatic workspace validation** (blocks legacy paths, enforces `var/` only)
+- **ADF enforcement** for Confluence (no manual `--body-format` needed)
+- **Progress forwarding** to underlying commands
+- **Session tracking** with INDEX files
+- **Error handling** with actionable troubleshooting guidance
+
+For advanced options and individual space ingests, see [`scripts/examples.md`](scripts/examples.md) or use the underlying `trailblazer ingest confluence` and `trailblazer normalize from-ingest` commands directly.
 
 ## What You'll See
 
