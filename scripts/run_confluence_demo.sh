@@ -24,4 +24,4 @@ while IFS= read -r SPACE; do
     1> "var/logs/ingest-$RID-$SPACE.jsonl" \
     2> >(tee -a "var/logs/ingest-$RID-$SPACE.out")
   echo "[DONE ] space=$SPACE rid=$RID exit=$?"
-done < var/state/spaces.txt
+done < var/state/spaces_demo.txt

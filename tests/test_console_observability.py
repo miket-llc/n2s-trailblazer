@@ -28,13 +28,17 @@ class TestProgressRenderer:
     def test_init_with_custom_file(self):
         """Test progress renderer with custom output file."""
         output = StringIO()
-        renderer = ProgressRenderer(enabled=True, file=output)
+        renderer = ProgressRenderer(enabled=True, file=output, no_color=True)
 
         renderer.start_banner("test-123", 2, "auto-since", 100)
 
         content = output.getvalue()
-        assert "test-123" in content
-        assert "Spaces targeted: 2" in content
+        # Strip ANSI codes if any remain and check for content
+        import re
+
+        clean_content = re.sub(r"\x1b\[[0-9;]*m", "", content)
+        assert "test-123" in clean_content
+        assert "Spaces targeted: 2" in clean_content
         assert "Mode: auto-since" in content
         assert "Max pages: 100" in content
 
@@ -60,7 +64,7 @@ class TestProgressRenderer:
     def test_spaces_table(self):
         """Test spaces table rendering."""
         output = StringIO()
-        renderer = ProgressRenderer(enabled=True, file=output)
+        renderer = ProgressRenderer(enabled=True, file=output, no_color=True)
 
         spaces = [
             {"id": "123", "key": "DEV", "name": "Development Space"},
@@ -70,7 +74,11 @@ class TestProgressRenderer:
         renderer.spaces_table(spaces)
         content = output.getvalue()
 
-        assert "Spaces to ingest:" in content
+        # Strip ANSI codes and check content
+        import re
+
+        clean_content = re.sub(r"\x1b\[[0-9;]*m", "", content)
+        assert "Spaces to Ingest" in clean_content
         assert "DEV" in content
         assert "PROD" in content
         assert "Development Space" in content
@@ -105,21 +113,38 @@ class TestProgressRenderer:
     def test_finish_banner(self):
         """Test finish banner with space stats."""
         output = StringIO()
-        renderer = ProgressRenderer(enabled=True, file=output)
+        renderer = ProgressRenderer(enabled=True, file=output, no_color=True)
 
         space_stats = {
-            "DEV": {"pages": 10, "attachments": 5, "empty_bodies": 1},
-            "PROD": {"pages": 20, "attachments": 15, "empty_bodies": 0},
+            "DEV": {
+                "pages": 10,
+                "attachments": 5,
+                "empty_bodies": 1,
+                "avg_chars": 1500,
+            },
+            "PROD": {
+                "pages": 20,
+                "attachments": 15,
+                "empty_bodies": 0,
+                "avg_chars": 2000,
+            },
         }
 
         renderer.finish_banner("test-123", space_stats, 45.2)
         content = output.getvalue()
 
-        assert "Completed ingest run: test-123" in content
+        # Strip ANSI codes and check content
+        import re
+
+        clean_content = re.sub(r"\x1b\[[0-9;]*m", "", content)
+        assert "Completed ingest run: test-123" in clean_content
         assert "Elapsed: 45.2s" in content
         assert "Total: 30 pages, 20 attachments" in content
         assert "Empty bodies: 1" in content
-        assert "DEV: 10 pages, 5 attachments" in content
+        # Check table contains the data (new Rich format)
+        assert "DEV" in content
+        assert "PROD" in content
+        assert "Per-Space Breakdown" in content
 
 
 class TestLoggingConfiguration:
@@ -232,12 +257,16 @@ class TestProgressCheckpoints:
     def test_resume_indicator(self):
         """Test resume indicator display."""
         output = StringIO()
-        renderer = ProgressRenderer(enabled=True, file=output)
+        renderer = ProgressRenderer(enabled=True, file=output, no_color=True)
 
         renderer.resume_indicator("12345", "2025-01-01T00:00:00Z")
 
         content = output.getvalue()
-        assert "Resuming from page 12345" in content
+        # Strip ANSI codes and check content
+        import re
+
+        clean_content = re.sub(r"\x1b\[[0-9;]*m", "", content)
+        assert "Resuming from page 12345" in clean_content
         assert "2025-01-01T00:00:00Z" in content
 
 

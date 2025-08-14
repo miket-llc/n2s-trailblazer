@@ -360,6 +360,7 @@ class ProgressRenderer:
         attachments: int,
         updated_at: Optional[str] = None,
         throttle_every: int = 1,
+        content_bytes: Optional[int] = None,
     ):
         """Show enhanced progress update for a page with Rich formatting."""
         if not self.enabled:

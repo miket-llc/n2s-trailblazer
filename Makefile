@@ -11,16 +11,16 @@ fmt:
 lint:
 	ruff check .
 	mypy src
-	npx markdownlint "**/*.md" --config .markdownlint.json
+	npx markdownlint "**/*.md" --ignore "var/**" --ignore "archive/**" --config .markdownlint.json
 
 test:
 	pytest -q
 
 md:
-	npx markdownlint "**/*.md" --fix --config .markdownlint.json
+	npx markdownlint "**/*.md" --ignore "var/**" --ignore "archive/**" --fix --config .markdownlint.json
 
 check-md:
-	npx markdownlint "**/*.md" --config .markdownlint.json
+	npx markdownlint "**/*.md" --ignore "var/**" --ignore "archive/**" --config .markdownlint.json
 
 ci:
 	make fmt && make lint && make test && make check-md
