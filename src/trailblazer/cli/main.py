@@ -149,6 +149,9 @@ def ingest_confluence_cmd(
     quiet_pretty: bool = typer.Option(
         False, "--quiet-pretty", help="Suppress banners but keep progress bars"
     ),
+    no_color: bool = typer.Option(
+        False, "--no-color", help="Disable colored output"
+    ),
 ) -> None:
     from ..core.artifacts import new_run_id, phase_dir
     from ..pipeline.steps.ingest.confluence import ingest_confluence
@@ -165,7 +168,7 @@ def ingest_confluence_cmd(
 
     # Initialize progress renderer
     progress_renderer = init_progress(
-        enabled=progress, quiet_pretty=quiet_pretty
+        enabled=progress, quiet_pretty=quiet_pretty, no_color=no_color
     )
 
     rid = new_run_id()
@@ -185,8 +188,19 @@ def ingest_confluence_cmd(
         elif since:
             since_mode = f"since {since}"
 
-        # Show start banner
+        # Show start banner with resumability evidence
         num_spaces = len(space or []) + len(space_id or [])
+
+        # Show resumability evidence if using since mode
+        if since or auto_since:
+            progress_renderer.resumability_evidence(
+                since=since,
+                spaces=num_spaces,
+                pages_known=0,  # TODO: calculate from state files
+                estimated_to_fetch=0,  # TODO: estimate based on CQL query
+                skipped_unchanged=0,  # TODO: track during ingest
+            )
+
         progress_renderer.start_banner(
             run_id=rid,
             spaces=num_spaces,
@@ -284,6 +298,9 @@ def ingest_dita_cmd(
     quiet_pretty: bool = typer.Option(
         False, "--quiet-pretty", help="Suppress banners but keep progress bars"
     ),
+    no_color: bool = typer.Option(
+        False, "--no-color", help="Disable colored output"
+    ),
 ) -> None:
     """Ingest DITA topics and maps from local filesystem."""
     from ..core.artifacts import new_run_id, phase_dir
@@ -301,7 +318,7 @@ def ingest_dita_cmd(
 
     # Initialize progress renderer
     progress_renderer = init_progress(
-        enabled=progress, quiet_pretty=quiet_pretty
+        enabled=progress, quiet_pretty=quiet_pretty, no_color=no_color
     )
 
     rid = new_run_id()

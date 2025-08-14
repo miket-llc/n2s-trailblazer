@@ -3,10 +3,13 @@ from datetime import datetime, timezone
 import json
 import csv
 import re
+import time
 from typing import Dict, List, Optional, Tuple, Set, Any
 from ....adapters.confluence_api import ConfluenceClient
 from ....core.models import Page, Attachment, ConfluenceUser, PageAncestor
 from ....core.logging import log
+from ....core.event_log import init_event_logger, get_event_logger
+from ....core.assurance import generate_assurance_report
 from .link_resolver import (
     extract_links_from_storage_with_classification,
     extract_links_from_adf_with_classification,
@@ -389,6 +392,10 @@ def ingest_confluence(
     from ....core.progress import get_progress
 
     progress_renderer = get_progress()
+
+    # Initialize event logging
+    event_log_path = outdir_path.parent.parent / "logs" / f"{run_id}.ndjson"
+    event_logger = init_event_logger(event_log_path, run_id or "unknown")
 
     # Resolve spaces
     space_id_list, space_key_by_id = _resolve_space_map(
@@ -792,6 +799,40 @@ def ingest_confluence(
                     }
                 )
 
+            # Event logging for page write
+            event_logger = get_event_logger()
+            if event_logger:
+                # Calculate bytes written (rough estimate)
+                page_json = json.dumps(
+                    page_dict, ensure_ascii=False, sort_keys=True
+                )
+                bytes_written = len(page_json.encode("utf-8"))
+
+                event_logger.page_write(
+                    source="confluence",
+                    space_key=space_key,
+                    space_id=p.space_id,
+                    page_id=p.id,
+                    title=p.title,
+                    url=p.url,
+                    version=p.version,
+                    content_sha256=page_dict.get("content_sha256"),
+                    body_repr=repr_,
+                    attachment_count=len(p.attachments),
+                    bytes_written=bytes_written,
+                )
+
+                # Log attachment writes
+                for attachment in p.attachments:
+                    event_logger.attachment_write(
+                        source="confluence",
+                        page_id=p.id,
+                        attachment_id=getattr(attachment, "id", None),
+                        attachment_title=getattr(attachment, "filename", None),
+                        mime=getattr(attachment, "media_type", None),
+                        bytes=getattr(attachment, "file_size", None),
+                    )
+
             # Structured logging
             log.info(
                 "confluence.page",
@@ -860,7 +901,33 @@ def ingest_confluence(
                     )
 
         if candidate_ids is not None:
+            # Single space since mode - log space begin/end
+            first_space_key = (
+                space_keys[0]
+                if space_keys
+                else list(space_key_by_id.values())[0]
+                if space_key_by_id
+                else "unknown"
+            )
+            event_logger.space_begin(
+                source="confluence",
+                space_key=first_space_key,
+                space_id=space_id_list[0] if space_id_list else None,
+                estimated_pages=len(candidate_ids),
+            )
+
+            space_start_time = time.time()
+            space_pages = 0
+            space_attachments = 0
+
             for pid in candidate_ids:
+                event_logger.page_fetch(
+                    source="confluence",
+                    space_key=first_space_key,
+                    page_id=pid,
+                    since_mode=True,
+                )
+
                 obj = client.get_page_by_id(pid, body_format=body_format)
                 page = _map_page(
                     site_base,
@@ -870,19 +937,116 @@ def ingest_confluence(
                     space_key_unknown_count,
                     space_details_cache,
                 )
-                # attachments
-                for att in client.get_attachments_for_page(page.id):
+                # attachments with retry logic
+                attachments_fetched = []
+                attachment_retry_count = 0
+                max_attachment_retries = 3
+
+                while attachment_retry_count <= max_attachment_retries:
+                    try:
+                        attachments_fetched = list(
+                            client.get_attachments_for_page(page.id)
+                        )
+                        break
+                    except Exception as e:
+                        attachment_retry_count += 1
+                        if attachment_retry_count > max_attachment_retries:
+                            log.error(
+                                "confluence.attachments.fetch_failed",
+                                page_id=page.id,
+                                retry_count=attachment_retry_count,
+                                error=str(e),
+                            )
+                            event_logger.error(
+                                message=f"Failed to fetch attachments for page {page.id}",
+                                error_type="attachment_fetch_failed",
+                                context={"page_id": page.id},
+                                retry_count=attachment_retry_count,
+                            )
+                            break
+
+                        # Exponential backoff: 1s, 2s, 4s
+                        time.sleep(2 ** (attachment_retry_count - 1))
+                        log.warning(
+                            "confluence.attachments.fetch_retry",
+                            page_id=page.id,
+                            retry_count=attachment_retry_count,
+                            error=str(e),
+                        )
+
+                for att in attachments_fetched:
                     page.attachments.append(_map_attachment(site_base, att))
+                    event_logger.attachment_fetch(
+                        source="confluence",
+                        page_id=page.id,
+                        attachment_id=att.get("id"),
+                        attachment_title=att.get("title"),
+                        mime=att.get("mediaType"),
+                        download_url=att.get("downloadLink"),
+                        file_size=att.get("fileSize"),
+                    )
+
+                # Verify attachment count
+                expected_count = len(attachments_fetched)
+                actual_count = len(page.attachments)
+                if expected_count != actual_count:
+                    progress_renderer.attachment_verification_error(
+                        page_id=page.id,
+                        expected=expected_count,
+                        actual=actual_count,
+                    )
+                    event_logger.warning(
+                        message=f"Attachment count mismatch for page {page.id}",
+                        context={
+                            "page_id": page.id,
+                            "expected": expected_count,
+                            "actual": actual_count,
+                        },
+                    )
+
                 write_page_obj(page, obj)
+                space_pages += 1
+                space_attachments += len(page.attachments)
+
                 if max_pages and written_pages >= max_pages:
                     break
+
+            # Log space completion
+            event_logger.space_end(
+                source="confluence",
+                space_key=first_space_key,
+                space_id=space_id_list[0] if space_id_list else None,
+                pages_processed=space_pages,
+                attachments_processed=space_attachments,
+                elapsed_seconds=time.time() - space_start_time,
+                errors=0,  # TODO: track space-level errors
+            )
         else:
             # full space scans
             if space_id_list:
                 target_spaces: List[Optional[str]] = list(space_id_list)
             else:
                 target_spaces = [None]  # None => all pages
+
             for sid in target_spaces:
+                # Get space key for logging
+                space_key = (
+                    space_key_by_id.get(sid, "unknown")
+                    if sid
+                    else "all_spaces"
+                )
+
+                # Log space begin
+                event_logger.space_begin(
+                    source="confluence",
+                    space_key=space_key,
+                    space_id=sid,
+                )
+
+                space_start_time = time.time()
+                space_pages = 0
+                space_attachments = 0
+
                 for obj in client.get_pages(
                     space_id=sid, body_format=body_format
                 ):
@@ -894,13 +1058,105 @@ def ingest_confluence(
                         space_key_unknown_count,
                         space_details_cache,
                     )
-                    for att in client.get_attachments_for_page(page.id):
+
+                    # Log page fetch
+                    event_logger.page_fetch(
+                        source="confluence",
+                        space_key=page.space_key or space_key or "unknown",
+                        space_id=page.space_id,
+                        page_id=page.id,
+                        title=page.title,
+                        url=page.url,
+                        version=page.version,
+                    )
+
+                    # Process attachments with retry logic
+                    attachments_fetched = []
+                    attachment_retry_count = 0
+                    max_attachment_retries = 3
+
+                    while attachment_retry_count <= max_attachment_retries:
+                        try:
+                            attachments_fetched = list(
+                                client.get_attachments_for_page(page.id)
+                            )
+                            break
+                        except Exception as e:
+                            attachment_retry_count += 1
+                            if attachment_retry_count > max_attachment_retries:
+                                log.error(
+                                    "confluence.attachments.fetch_failed",
+                                    page_id=page.id,
+                                    retry_count=attachment_retry_count,
+                                    error=str(e),
+                                )
+                                event_logger.error(
+                                    message=f"Failed to fetch attachments for page {page.id}",
+                                    error_type="attachment_fetch_failed",
+                                    context={"page_id": page.id},
+                                    retry_count=attachment_retry_count,
+                                )
+                                break
+
+                            # Exponential backoff: 1s, 2s, 4s
+                            time.sleep(2 ** (attachment_retry_count - 1))
+                            log.warning(
+                                "confluence.attachments.fetch_retry",
+                                page_id=page.id,
+                                retry_count=attachment_retry_count,
+                                error=str(e),
+                            )
+
+                    for att in attachments_fetched:
                         page.attachments.append(
                             _map_attachment(site_base, att)
                         )
+                        event_logger.attachment_fetch(
+                            source="confluence",
+                            page_id=page.id,
+                            attachment_id=att.get("id"),
+                            attachment_title=att.get("title"),
+                            mime=att.get("mediaType"),
+                            download_url=att.get("downloadLink"),
+                            file_size=att.get("fileSize"),
+                        )
+
+                    # Verify attachment count
+                    expected_count = len(attachments_fetched)
+                    actual_count = len(page.attachments)
+                    if expected_count != actual_count:
+                        progress_renderer.attachment_verification_error(
+                            page_id=page.id,
+                            expected=expected_count,
+                            actual=actual_count,
+                        )
+                        event_logger.warning(
+                            message=f"Attachment count mismatch for page {page.id}",
+                            context={
+                                "page_id": page.id,
+                                "expected": expected_count,
+                                "actual": actual_count,
+                            },
+                        )
+
                     write_page_obj(page, obj)
+                    space_pages += 1
+                    space_attachments += len(page.attachments)
+
                     if max_pages and written_pages >= max_pages:
                         break
+
+                # Log space completion
+                event_logger.space_end(
+                    source="confluence",
+                    space_key=space_key,
+                    space_id=sid,
+                    pages_processed=space_pages,
+                    attachments_processed=space_attachments,
+                    elapsed_seconds=time.time() - space_start_time,
+                    errors=0,  # TODO: track space-level errors
+                )
+
                 if max_pages and written_pages >= max_pages:
                     break
 
@@ -1123,6 +1379,34 @@ def ingest_confluence(
         links_jsonl_entries=len(links_data),
         attachments_manifest_entries=len(attachments_manifest_data),
     )
+
+    # Generate assurance reports
+    try:
+        json_path, md_path = generate_assurance_report(
+            run_id=run_id or "unknown",
+            source="confluence",
+            outdir=outdir_path,
+            event_log_path=event_log_path,
+        )
+
+        # Print assurance report paths to console
+        progress_renderer.console.print()
+        progress_renderer.console.print(
+            "[bold green]📋 Assurance Reports Generated:[/bold green]"
+        )
+        progress_renderer.console.print(f"  JSON: [cyan]{json_path}[/cyan]")
+        progress_renderer.console.print(f"  Markdown: [cyan]{md_path}[/cyan]")
+
+        log.info(
+            "ingest.confluence.assurance_generated",
+            json_path=str(json_path),
+            md_path=str(md_path),
+        )
+    except Exception as e:
+        log.error("ingest.confluence.assurance_failed", error=str(e))
+
+    # Close event logger
+    event_logger.close()
 
     log.info("ingest.confluence.done", **metrics, out=str(ndjson_path))
     return metrics

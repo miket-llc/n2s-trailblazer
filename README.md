@@ -98,6 +98,30 @@ trailblazer ask "How do I configure SSO?" --provider dummy
 - **Database**: Only required for embedding and retrieval phases
 - **ADF Default**: `atlas_doc_format` is the default body format
 - **Artifacts**: Find all outputs in `runs/<run_id>/<phase>/`
+- **Observability**: Rich progress, NDJSON event logs, and assurance reports
+
+## What You'll See
+
+**Rich Progress Output:**
+
+```
+🚀 Starting ingest run: 2025-08-14_153540_be5f
+   Spaces targeted: 5
+   Mode: since 2025-08-01T00:00:00Z
+
+💓 12:34:56 ingesting | processed: 150 | rate: 2.5/s | elapsed: 60s | API: 200 OK
+ADN | p=380764162 | "Advancement Domain" | att=5 | 2020-06-25T23:14:26Z (2.5/s)
+
+✅ Completed ingest run: 2025-08-14_153540_be5f
+   Total: 188 pages, 505 attachments
+   Rate: 2.8 pages/s
+
+📋 Assurance Reports Generated:
+  JSON: var/runs/2025-08-14_153540_be5f/ingest/assurance.json
+  Markdown: var/runs/2025-08-14_153540_be5f/ingest/assurance.md
+```
+
+**Event Logging:** Structured NDJSON events in `var/logs/<run_id>.ndjson` for complete audit trails and debugging.
 
 ## Detailed Usage
 
