@@ -126,7 +126,7 @@ def ingest_confluence_cmd(
         False, "--auto-since", help="Auto-read since from state files"
     ),
     body_format: str = typer.Option(
-        "storage", help="storage or atlas_doc_format"
+        None, help="storage or atlas_doc_format [default: atlas_doc_format]"
     ),
     max_pages: Optional[int] = typer.Option(
         None, help="Stop after N pages (debug)"
@@ -197,7 +197,7 @@ def ingest_confluence_cmd(
             space_ids=space_id or None,
             since=dt,
             auto_since=auto_since,
-            body_format=body_format,
+            body_format=body_format or SETTINGS.CONFLUENCE_BODY_FORMAT,
             max_pages=max_pages,
             progress=progress,
             progress_every=progress_every,

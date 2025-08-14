@@ -140,3 +140,44 @@ class ConfluenceClient:
             if rel_or_abs.startswith("http")
             else urljoin(self.site_base + "/", rel_or_abs.lstrip("/"))
         )
+
+    @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(3))
+    def get_page_labels(self, page_id: str) -> List[Dict]:
+        """Get labels for a specific page."""
+        try:
+            response = self._client.get(f"{V2_PREFIX}/pages/{page_id}/labels")
+            response.raise_for_status()
+            data = response.json()
+            return data.get("results", [])
+        except Exception:
+            # Labels are optional - don't fail the whole ingest
+            return []
+
+    @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(3))
+    def get_page_ancestors(self, page_id: str) -> List[Dict]:
+        """Get ancestor hierarchy for a page."""
+        try:
+            response = self._client.get(
+                f"{V2_PREFIX}/pages/{page_id}", params={"expand": "ancestors"}
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("ancestors", [])
+        except Exception:
+            # Ancestors are optional - don't fail the whole ingest
+            return []
+
+    @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(3))
+    def get_space_details(self, space_key: str) -> Dict:
+        """Get detailed space information."""
+        try:
+            response = self._client.get(
+                f"{V2_PREFIX}/spaces", params={"keys": space_key}
+            )
+            response.raise_for_status()
+            data = response.json()
+            results = data.get("results", [])
+            return results[0] if results else {}
+        except Exception:
+            # Space details are optional
+            return {}

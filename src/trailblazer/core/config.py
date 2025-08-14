@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     CONFLUENCE_BASE_URL: str = "https://ellucian.atlassian.net/wiki"
     CONFLUENCE_EMAIL: Optional[str] = None
     CONFLUENCE_API_TOKEN: Optional[str] = None
-    CONFLUENCE_BODY_FORMAT: str = "storage"  # or "atlas_doc_format"
+    CONFLUENCE_BODY_FORMAT: str = "atlas_doc_format"  # or "storage"
 
     # Pipeline
     PIPELINE_PHASES: List[str] = []

@@ -5,8 +5,18 @@ import csv
 import re
 from typing import Dict, List, Optional, Tuple, Set, Any
 from ....adapters.confluence_api import ConfluenceClient
-from ....core.models import Page, Attachment
+from ....core.models import Page, Attachment, ConfluenceUser, PageAncestor
 from ....core.logging import log
+from .link_resolver import (
+    extract_links_from_storage_with_classification,
+    extract_links_from_adf_with_classification,
+)
+from .media_extractor import (
+    extract_media_from_adf,
+    extract_media_from_storage,
+    resolve_attachment_ids,
+)
+from .content_hash import compute_content_sha256
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
@@ -88,6 +98,7 @@ def _map_page(
     obj: Dict,
     client: Optional[ConfluenceClient] = None,
     space_key_unknown_count: Optional[Dict[str, int]] = None,
+    space_details_cache: Optional[Dict[str, Dict]] = None,
 ) -> Page:
     version = obj.get("version") or {}
     space_id = (
@@ -109,11 +120,99 @@ def _map_page(
         # Fallback to old logic for backward compatibility
         space_key = space_key_by_id.get(space_id) if space_id else None
 
+    # Get space details if available
+    space_name = None
+    space_type = None
+    if space_key and space_details_cache is not None:
+        if space_key not in space_details_cache and client:
+            try:
+                if hasattr(client, "get_space_details"):
+                    space_details_cache[space_key] = client.get_space_details(
+                        space_key
+                    )
+                else:
+                    space_details_cache[space_key] = {}
+            except Exception:
+                space_details_cache[space_key] = {}
+        space_details = space_details_cache.get(space_key, {})
+        if isinstance(space_details, dict):
+            space_name = (
+                space_details.get("name")
+                if isinstance(space_details.get("name"), str)
+                else None
+            )
+            space_type = (
+                space_details.get("type")
+                if isinstance(space_details.get("type"), str)
+                else None
+            )
+
+    # Extract user information
+    created_by = None
+    updated_by = None
+
+    author_info = obj.get("authorId")
+    if author_info and isinstance(author_info, str):
+        created_by = ConfluenceUser(account_id=author_info)
+    elif isinstance(author_info, dict):
+        created_by = ConfluenceUser(
+            account_id=author_info.get("accountId", ""),
+            display_name=author_info.get("displayName"),
+        )
+
+    version_author = version.get("authorId")
+    if version_author and isinstance(version_author, str):
+        updated_by = ConfluenceUser(account_id=version_author)
+    elif isinstance(version_author, dict):
+        updated_by = ConfluenceUser(
+            account_id=version_author.get("accountId", ""),
+            display_name=version_author.get("displayName"),
+        )
+
+    # Get labels and ancestors if client is available
+    labels = []
+    ancestors = []
+    page_id = str(obj.get("id"))
+
+    if client:
+        # Fetch labels
+        try:
+            if hasattr(client, "get_page_labels"):
+                label_data = client.get_page_labels(page_id)
+                labels = [
+                    label.get("name", "")
+                    for label in label_data
+                    if label.get("name")
+                ]
+        except Exception:
+            pass  # Labels are optional
+
+        # Fetch ancestors
+        try:
+            if hasattr(client, "get_page_ancestors"):
+                ancestor_data = client.get_page_ancestors(page_id)
+                for ancestor in ancestor_data:
+                    ancestor_id = str(ancestor.get("id", ""))
+                    ancestor_title = ancestor.get("title", "")
+                    ancestor_url = _page_url(site_base, ancestor)
+                    if ancestor_id:
+                        ancestors.append(
+                            PageAncestor(
+                                id=ancestor_id,
+                                title=ancestor_title,
+                                url=ancestor_url,
+                            )
+                        )
+        except Exception:
+            pass  # Ancestors are optional
+
     page = Page(
-        id=str(obj.get("id")),
+        id=page_id,
         title=obj.get("title") or "",
         space_id=space_id,
         space_key=space_key,
+        space_name=space_name,
+        space_type=space_type,
         version=version.get("number"),
         updated_at=(
             datetime.fromisoformat(version["createdAt"].replace("Z", "+00:00"))
@@ -128,7 +227,16 @@ def _map_page(
         body_html=_body_html_from_v2(obj),
         url=page_url,
         attachments=[],
-        metadata={"raw_links": obj.get("_links", {})},
+        created_by=created_by,
+        updated_by=updated_by,
+        labels=labels,
+        ancestors=ancestors,
+        label_count=len(labels),
+        ancestor_count=len(ancestors),
+        metadata={
+            "raw_links": obj.get("_links", {}),
+            "space_status": "current",
+        },
     )
     return page
 
@@ -238,7 +346,7 @@ def ingest_confluence(
     space_ids: Optional[List[str]] = None,
     since: Optional[datetime] = None,
     auto_since: bool = False,
-    body_format: str = "storage",
+    body_format: str = "atlas_doc_format",
     max_pages: Optional[int] = None,
     progress: bool = False,
     progress_every: int = 1,
@@ -259,6 +367,14 @@ def ingest_confluence(
     pages_csv_path = outdir_path / "pages.csv"
     attachments_csv_path = outdir_path / "attachments.csv"
     summary_json_path = outdir_path / "summary.json"
+
+    # Traceability sidecar files
+    links_jsonl_path = outdir_path / "links.jsonl"
+    attachments_manifest_path = outdir_path / "attachments_manifest.jsonl"
+    ingest_media_path = outdir_path / "ingest_media.jsonl"
+    edges_jsonl_path = outdir_path / "edges.jsonl"
+    labels_jsonl_path = outdir_path / "labels.jsonl"
+    breadcrumbs_jsonl_path = outdir_path / "breadcrumbs.jsonl"
 
     # Progress checkpoint file
     progress_json_path = outdir_path / "progress.json"
@@ -394,6 +510,29 @@ def ingest_confluence(
     seen_page_ids: Dict[str, Set[str]] = {}  # space_key -> set of page IDs
     pages_data = []  # For CSV export
     attachments_data = []  # For CSV export
+
+    # Traceability tracking
+    links_data = []  # For links.jsonl export
+    attachments_manifest_data = []  # For attachments_manifest.jsonl export
+    media_data = []  # For ingest_media.jsonl export
+    edges_data = []  # For edges.jsonl export (hierarchy, labels)
+    labels_data = []  # For labels.jsonl export
+    breadcrumbs_data = []  # For breadcrumbs.jsonl export
+
+    link_stats = {
+        "total": 0,
+        "internal": 0,
+        "external": 0,
+        "unresolved": 0,
+        "attachment_refs": 0,
+    }
+
+    # Enhanced tracking
+    content_hash_collisions = 0
+    media_refs_total = 0
+    labels_total = 0
+    ancestors_total = 0
+    space_details_cache: Dict[str, Dict] = {}  # Cache space details
     space_stats: Dict[str, Dict] = {}  # space_key -> stats
     last_highwater: Optional[datetime] = None
     space_key_unknown_count: Dict[
@@ -438,15 +577,161 @@ def ingest_confluence(
 
         def write_page_obj(p: Page, obj: Dict):
             nonlocal written_pages, written_attachments, last_highwater
+            nonlocal link_stats, links_data, attachments_manifest_data
+            nonlocal media_data, edges_data, labels_data, breadcrumbs_data
+            nonlocal \
+                content_hash_collisions, \
+                media_refs_total, \
+                labels_total, \
+                ancestors_total
             page_dict = p.model_dump(mode="json")
 
             # Add new body representation fields
             repr_ = _detect_body_repr(obj)
             page_dict["body_repr"] = repr_
+            body_storage = None
+            body_adf = None
+
             if repr_ == "storage":
-                page_dict["body_storage"] = _extract_body_storage(obj)
+                body_storage = _extract_body_storage(obj)
+                page_dict["body_storage"] = body_storage
             elif repr_ == "adf":
-                page_dict["body_adf"] = _extract_body_adf(obj)
+                body_adf = _extract_body_adf(obj)
+                page_dict["body_adf"] = body_adf
+
+            # Compute content hash
+            content_hash = compute_content_sha256(body_adf, body_storage)
+            if content_hash:
+                page_dict["content_sha256"] = content_hash
+                p.content_sha256 = content_hash
+
+            # Update attachment counts
+            page_dict["attachment_count"] = len(p.attachments)
+            p.attachment_count = len(p.attachments)
+
+            # Extract links for traceability
+            page_links = []
+            if repr_ == "storage":
+                page_links = extract_links_from_storage_with_classification(
+                    page_dict.get("body_storage"), site_base
+                )
+            elif repr_ == "adf":
+                page_links = extract_links_from_adf_with_classification(
+                    page_dict.get("body_adf"), site_base
+                )
+
+            # Process links for sidecars
+            for link in page_links:
+                link_stats["total"] += 1
+
+                if link.target_type == "confluence":
+                    if link.target_page_id:
+                        link_stats["internal"] += 1
+                    else:
+                        link_stats["unresolved"] += 1
+                elif link.target_type == "external":
+                    link_stats["external"] += 1
+                elif link.target_type == "attachment":
+                    link_stats["attachment_refs"] += 1
+
+                # Add to links sidecar data
+                links_data.append(
+                    {
+                        "from_page_id": p.id,
+                        "from_url": p.url,
+                        "target_type": link.target_type,
+                        "target_page_id": link.target_page_id,
+                        "target_url": link.normalized_url,
+                        "anchor": link.anchor,
+                        "rel": "links_to",
+                    }
+                )
+
+            # Process attachments for manifest
+            for attachment in p.attachments:
+                attachments_manifest_data.append(
+                    {
+                        "page_id": p.id,
+                        "filename": attachment.filename,
+                        "media_type": attachment.media_type,
+                        "file_size": attachment.file_size,
+                        "download_url": attachment.download_url,
+                    }
+                )
+
+            # Extract media references
+            page_media = []
+            if repr_ == "adf" and body_adf:
+                page_media = extract_media_from_adf(body_adf)
+            elif repr_ == "storage" and body_storage:
+                page_media = extract_media_from_storage(body_storage)
+
+            # Resolve attachment IDs for media
+            if page_media and p.attachments:
+                attachment_dicts = [att.model_dump() for att in p.attachments]
+                page_media = resolve_attachment_ids(
+                    page_media, attachment_dicts
+                )
+
+            # Add media to sidecar data
+            for media in page_media:
+                media_data.append(
+                    {
+                        "page_id": p.id,
+                        "order": media.order,
+                        "type": media.media_type,
+                        "filename": media.filename,
+                        "attachment_id": media.attachment_id,
+                        "download_url": media.download_url,
+                        "context": media.context,
+                    }
+                )
+                media_refs_total += 1
+
+            # Process labels
+            for label in p.labels:
+                labels_data.append({"page_id": p.id, "label": label})
+
+                # Add label edge
+                edges_data.append(
+                    {
+                        "type": "LABELED_AS",
+                        "src": p.id,
+                        "dst": f"label:{label}",
+                    }
+                )
+
+            labels_total += len(p.labels)
+
+            # Process hierarchy (ancestors and containment)
+            for ancestor in p.ancestors:
+                edges_data.append(
+                    {"type": "PARENT_OF", "src": ancestor.id, "dst": p.id}
+                )
+
+            ancestors_total += len(p.ancestors)
+
+            # Add space containment edge
+            if p.space_key:
+                edges_data.append(
+                    {
+                        "type": "CONTAINS",
+                        "src": f"space:{p.space_key}",
+                        "dst": p.id,
+                    }
+                )
+
+            # Generate breadcrumbs
+            breadcrumb_items = []
+            if p.space_name:
+                breadcrumb_items.append(p.space_name)
+            for ancestor in p.ancestors:
+                breadcrumb_items.append(ancestor.title)
+            breadcrumb_items.append(p.title)
+
+            breadcrumbs_data.append(
+                {"page_id": p.id, "breadcrumbs": breadcrumb_items}
+            )
 
             # Write NDJSON
             out.write(
@@ -557,6 +842,17 @@ def ingest_confluence(
                 try:
                     with open(progress_json_path, "w") as f:
                         json.dump(checkpoint_data, f, indent=2, sort_keys=True)
+
+                    # Log link rollup every N pages
+                    log.info(
+                        "ingest.links_rollup",
+                        pages_processed=written_pages,
+                        links_total=link_stats["total"],
+                        links_internal=link_stats["internal"],
+                        links_external=link_stats["external"],
+                        links_unresolved=link_stats["unresolved"],
+                        attachment_refs=link_stats["attachment_refs"],
+                    )
                 except Exception as e:
                     log.warning(
                         "ingest.confluence.checkpoint_write.failed",
@@ -572,6 +868,7 @@ def ingest_confluence(
                     obj,
                     client,
                     space_key_unknown_count,
+                    space_details_cache,
                 )
                 # attachments
                 for att in client.get_attachments_for_page(page.id):
@@ -595,6 +892,7 @@ def ingest_confluence(
                         obj,
                         client,
                         space_key_unknown_count,
+                        space_details_cache,
                     )
                     for att in client.get_attachments_for_page(page.id):
                         page.attachments.append(
@@ -669,6 +967,21 @@ def ingest_confluence(
         "progress_checkpoints": written_pages // progress_every
         if progress_every > 0
         else 0,
+        # Traceability stats
+        "links_total": link_stats["total"],
+        "links_internal": link_stats["internal"],
+        "links_external": link_stats["external"],
+        "links_unresolved": link_stats["unresolved"],
+        "attachment_refs": link_stats["attachment_refs"],
+        # Enhanced traceability stats
+        "media_refs_total": media_refs_total,
+        "labels_total": labels_total,
+        "ancestors_total": ancestors_total,
+        "content_hash_collisions": content_hash_collisions,
+        "resume_from": None,  # For future use
+        "checkpoints_written": written_pages // progress_every
+        if progress_every > 0
+        else 0,
         "spaces": {},
     }
 
@@ -689,6 +1002,54 @@ def ingest_confluence(
 
     with open(summary_json_path, "w") as f:
         json.dump(summary_data, f, indent=2, sort_keys=True)
+
+    # Write traceability sidecar files
+    with open(links_jsonl_path, "w", encoding="utf-8") as f:
+        for link_record in links_data:
+            f.write(
+                json.dumps(link_record, ensure_ascii=False, sort_keys=True)
+                + "\n"
+            )
+
+    with open(attachments_manifest_path, "w", encoding="utf-8") as f:
+        for attachment_record in attachments_manifest_data:
+            f.write(
+                json.dumps(
+                    attachment_record, ensure_ascii=False, sort_keys=True
+                )
+                + "\n"
+            )
+
+    # Write new sidecar files
+    with open(ingest_media_path, "w", encoding="utf-8") as f:
+        for media_record in media_data:
+            f.write(
+                json.dumps(media_record, ensure_ascii=False, sort_keys=True)
+                + "\n"
+            )
+
+    with open(edges_jsonl_path, "w", encoding="utf-8") as f:
+        for edge_record in edges_data:
+            f.write(
+                json.dumps(edge_record, ensure_ascii=False, sort_keys=True)
+                + "\n"
+            )
+
+    with open(labels_jsonl_path, "w", encoding="utf-8") as f:
+        for label_record in labels_data:
+            f.write(
+                json.dumps(label_record, ensure_ascii=False, sort_keys=True)
+                + "\n"
+            )
+
+    with open(breadcrumbs_jsonl_path, "w", encoding="utf-8") as f:
+        for breadcrumb_record in breadcrumbs_data:
+            f.write(
+                json.dumps(
+                    breadcrumb_record, ensure_ascii=False, sort_keys=True
+                )
+                + "\n"
+            )
 
     # Write final one-line summary for humans
     final_summary = progress_renderer.one_line_summary(
@@ -748,6 +1109,19 @@ def ingest_confluence(
     }
     manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    # Log final traceability summary
+    log.info(
+        "ingest.traceability_summary",
+        total_pages=written_pages,
+        links_total=link_stats["total"],
+        links_internal=link_stats["internal"],
+        links_external=link_stats["external"],
+        links_unresolved=link_stats["unresolved"],
+        attachment_refs=link_stats["attachment_refs"],
+        links_jsonl_entries=len(links_data),
+        attachments_manifest_entries=len(attachments_manifest_data),
     )
 
     log.info("ingest.confluence.done", **metrics, out=str(ndjson_path))

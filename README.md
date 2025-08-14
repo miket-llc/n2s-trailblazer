@@ -59,6 +59,10 @@ trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z --allow-e
 # List all spaces with structured output
 trailblazer confluence spaces
 # → displays table and writes runs/<run_id>/ingest/spaces.json
+
+# Body format options (ADF is default, Storage also supported)
+trailblazer ingest confluence --space DEV --body-format atlas_doc_format  # ADF (default)
+trailblazer ingest confluence --space DEV --body-format storage           # Legacy format
 ```
 
 **Ingest exit codes:**
@@ -92,7 +96,7 @@ If all methods fail, `space_key` is set to `"__unknown__"` and tracked in `summa
 
 ### 2. Normalize to Markdown
 
-Converts Confluence bodies (Storage XHTML + ADF JSON) to clean Markdown:
+Converts Confluence bodies (ADF JSON + Storage XHTML) to clean Markdown. Uses ADF by default, falls back to Storage format:
 
 ```bash
 # Normalize from a previous ingest run
@@ -321,9 +325,164 @@ trailblazer ops prune-runs --keep 10 --min-age-days 30 --no-dry-run
 trailblazer run --phases normalize embed --dry-run
 ```
 
+## Traceability
+
+Trailblazer preserves end-to-end traceability for all content, links, and attachments through structured artifacts.
+
+### Ingest Artifacts
+
+Each ingest run produces:
+
+- **`confluence.ndjson`** - Complete canonical page records:
+
+  ```json
+  {
+    "source_system": "confluence",
+    "space_id": "111", "space_key": "DEV", "space_name": "Development", "space_type": "global",
+    "id": "123456", "title": "Page Title",
+    "url": "https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Page-Title",
+    "version": 1, "created_at": "2025-08-01T00:00:00Z", "updated_at": "2025-08-03T00:00:00Z",
+    "created_by": {"account_id": "user123", "display_name": "John Doe"},
+    "updated_by": {"account_id": "user456", "display_name": "Jane Smith"},
+    "body_repr": "adf", "body_adf": {...}, "content_sha256": "abc123...",
+    "labels": ["important", "api"], "ancestors": [{"id": "parent1", "title": "Parent"}],
+    "attachments": [{"id": "att1", "filename": "doc.pdf", "sha256": "file123..."}],
+    "attachment_count": 1, "label_count": 2, "ancestor_count": 1
+  }
+  ```
+
+- **`links.jsonl`** - Link graph for reconstructing page relationships:
+
+  ```json
+  {
+    "from_page_id": "123456",
+    "from_url": "https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Page-Title",
+    "target_type": "confluence",
+    "target_page_id": "789012",
+    "target_url": "/spaces/PROD/pages/789012/Other-Page",
+    "anchor": "section1",
+    "rel": "links_to"
+  }
+  ```
+
+- **`attachments_manifest.jsonl`** - Attachment references:
+
+  ```json
+  {
+    "page_id": "123456",
+    "filename": "document.pdf",
+    "media_type": "application/pdf",
+    "file_size": 1024,
+    "download_url": "https://example.atlassian.net/download/attachments/123456/document.pdf"
+  }
+  ```
+
+- **`ingest_media.jsonl`** - Position-aware media references:
+
+  ```json
+  {
+    "page_id": "123456",
+    "order": 0,
+    "type": "image",
+    "filename": "screenshot.png",
+    "attachment_id": "att1",
+    "download_url": "/download/attachments/123456/screenshot.png",
+    "context": {"adf_path": "0", "alt": "Screenshot", "width": 400, "height": 300}
+  }
+  ```
+
+- **`edges.jsonl`** - Hierarchy and label relationships:
+
+  ```json
+  {"type": "PARENT_OF", "src": "parent1", "dst": "123456"}
+  {"type": "CONTAINS", "src": "space:DEV", "dst": "123456"}
+  {"type": "LABELED_AS", "src": "123456", "dst": "label:important"}
+  ```
+
+- **`labels.jsonl`** - Page labels:
+
+  ```json
+  {"page_id": "123456", "label": "important"}
+  ```
+
+- **`breadcrumbs.jsonl`** - Navigation breadcrumbs:
+
+  ```json
+  {"page_id": "123456", "breadcrumbs": ["Development Space", "Parent Section", "Page Title"]}
+  ```
+
+- **`summary.json`** - Enhanced statistics with traceability counters:
+
+  ```json
+  {
+    "links_total": 150, "links_internal": 120, "links_external": 25, "links_unresolved": 3,
+    "media_refs_total": 75, "labels_total": 200, "ancestors_total": 180,
+    "content_hash_collisions": 0, "attachment_refs": 2
+  }
+  ```
+
+### Normalize Artifacts
+
+The `normalized.ndjson` preserves all traceability fields plus processed content:
+
+```json
+{
+  "id": "123456",
+  "space_key": "DEV",
+  "url": "https://example.atlassian.net/wiki/spaces/DEV/pages/123456/Page-Title",
+  "source_system": "confluence",
+  "links": ["https://external.com", "/spaces/PROD/pages/789012/Other"],
+  "attachments": [{"filename": "doc.pdf", "url": "https://..."}],
+  "text_md": "# Page Title\n\nMarkdown content..."
+}
+```
+
+### Reconstructing Link Graphs
+
+Extract page relationships:
+
+```bash
+# Find all pages linking to a specific page
+jq -r 'select(.target_page_id == "123456") | .from_page_id' runs/*/ingest/links.jsonl
+
+# Build adjacency list for internal links
+jq -r 'select(.target_type == "confluence") | "\(.from_page_id) -> \(.target_page_id)"' runs/*/ingest/links.jsonl
+```
+
+### External References
+
+Find external dependencies:
+
+```bash
+# List all external domains referenced
+jq -r 'select(.target_type == "external") | .target_url' runs/*/ingest/links.jsonl | cut -d'/' -f3 | sort -u
+
+# Count links by type
+jq -r '.target_type' runs/*/ingest/links.jsonl | sort | uniq -c
+```
+
+### Media and Hierarchy Analysis
+
+Analyze media usage and page hierarchy:
+
+```bash
+# Find pages with most media references
+jq -r '.page_id' runs/*/ingest/ingest_media.jsonl | sort | uniq -c | sort -nr | head -10
+
+# Build page hierarchy tree
+jq -r 'select(.type == "PARENT_OF") | "\(.src) -> \(.dst)"' runs/*/ingest/edges.jsonl
+
+# Find top-level pages (no parents)
+comm -23 <(jq -r '.dst' runs/*/ingest/edges.jsonl | grep -v '^space:' | sort -u) \
+         <(jq -r 'select(.type == "PARENT_OF") | .dst' runs/*/ingest/edges.jsonl | sort -u)
+
+# Most commonly used labels
+jq -r '.label' runs/*/ingest/labels.jsonl | sort | uniq -c | sort -nr | head -20
+```
+
 ## Technical details
 
-- **Pipeline:** ingest → normalize (Storage & ADF) → enrich/classify → embed →
+- **Pipeline:** ingest → normalize (ADF & Storage) → enrich/classify → embed →
   retrieve → compose/create → audit
 - **API:** Confluence Cloud v2 (`/wiki/api/v2`) with Basic auth; v1 CQL for
   delta filtering

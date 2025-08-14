@@ -219,9 +219,9 @@ def normalize_from_ingest(
             rec = json.loads(line)
 
             body_repr = rec.get("body_repr") or (
-                "storage"
-                if rec.get("body_storage")
-                else ("adf" if rec.get("body_adf") else None)
+                "adf"
+                if rec.get("body_adf")
+                else ("storage" if rec.get("body_storage") else None)
             )
             links: List[str] = []
             if body_repr == "storage":
@@ -255,8 +255,25 @@ def normalize_from_ingest(
                 "text_md": text_md,
                 "links": sorted(dict.fromkeys(links)),
                 "attachments": attachments,
-                "source": "confluence",
+                "source_system": rec.get(
+                    "source_system", "confluence"
+                ),  # Traceability field
+                "source": "confluence",  # Keep for backward compatibility
+                # Enhanced traceability preservation
+                "labels": rec.get("labels", []),
+                "content_sha256": rec.get("content_sha256"),
             }
+
+            # Add breadcrumbs if available (optional)
+            if rec.get("ancestors"):
+                breadcrumbs = []
+                space_name = rec.get("space_name")
+                if space_name:
+                    breadcrumbs.append(space_name)
+                for ancestor in rec.get("ancestors", []):
+                    breadcrumbs.append(ancestor.get("title", ""))
+                breadcrumbs.append(rec.get("title", ""))
+                out_rec["breadcrumbs"] = breadcrumbs
 
             if not text_md:
                 empty += 1
