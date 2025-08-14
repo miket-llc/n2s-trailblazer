@@ -1,4 +1,9 @@
-# Shared Guardrails
+JSON: /Users/miket/dev/n2s-trailblazer/var/runs/2025-08-14_164029_9f04/ingest/assurance.json
+Markdown: /Users/miket/dev/n2s-trailblazer/var/runs/2025-08-14_164029_9f04/ingest/assurance.md
+2025-08-14T16:40:30.954728Z [info ] ingest.confluence.assurance_generated json_path=/Users/miket/dev/n2s-trailblazer/var/runs/2025-08-14_164029_9f04/ingest/assurance.json md_path=/Users/miket/dev/n2s-trailblazer/var/runs/2025-08-14_164029_9f04/ingest/assurance.md
+2025-08-14T16:40:30.954808Z [info ] ingest.confluence.done attachments=0 body_format=atlas_doc_format out=/Users/miket/dev/n2s-trailblazer/var/runs/2025-08-14_164029_9f04/ingest/confluence.ndjson pages=3 since=None space_key_unknown_count=0 spaces=1
+2025-08-14T16:40:30.954878Z [info ] cli.ingest.confluence.done attachments=0 body_format=atlas_doc_format pages=3 run_id=2025-08-14_164029_9f04 since=None space_key_unknown_count=0 spaces=1
+2025-08-14_164029_9f04# Shared Guardrails
 
 PREAMBLE — Shared Guardrails (paste at the top of every prompt)
 Save once as prompts/000_shared_guardrails.md and also paste at the top when

@@ -241,7 +241,7 @@ def ingest_confluence_cmd(
                 )
                 raise typer.Exit(4)  # Empty result when not allowed
 
-        log.info("cli.ingest.confluence.done", run_id=rid, **metrics)
+        # Metrics already shown in human-friendly format by pipeline
 
         # Print run_id to stdout (for scripting)
         typer.echo(rid)

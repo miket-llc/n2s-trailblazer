@@ -417,6 +417,7 @@ def ingest_confluence(
                             "id": space_id,
                             "key": space_data.get("key", ""),
                             "name": space_data.get("name", ""),
+                            "type": space_data.get("type", ""),
                         }
                     )
             except Exception:
@@ -426,6 +427,7 @@ def ingest_confluence(
                         "id": space_id,
                         "key": space_key_by_id.get(space_id, ""),
                         "name": "",
+                        "type": "",
                     }
                 )
         progress_renderer.spaces_table(spaces_info)
@@ -514,6 +516,7 @@ def ingest_confluence(
     # Initialize tracking data
     written_pages = 0
     written_attachments = 0
+    # Content size tracking removed - we use actual file size for reporting
     seen_page_ids: Dict[str, Set[str]] = {}  # space_key -> set of page IDs
     pages_data = []  # For CSV export
     attachments_data = []  # For CSV export
@@ -833,19 +836,7 @@ def ingest_confluence(
                         bytes=getattr(attachment, "file_size", None),
                     )
 
-            # Structured logging
-            log.info(
-                "confluence.page",
-                space_key=space_key,
-                space_id=p.space_id,
-                page_id=p.id,
-                title=p.title,
-                version=p.version,
-                updated_at=_iso(p.updated_at) if p.updated_at else None,
-                url=p.url,
-                body_repr=repr_,
-                attachments_count=len(p.attachments),
-            )
+            # Human-friendly progress via progress_renderer below
 
             if p.attachments:
                 filenames = [
@@ -871,6 +862,8 @@ def ingest_confluence(
             written_pages += 1
             written_attachments += len(p.attachments)
 
+            # Content size tracking removed - we use actual file size instead
+
             # Write progress checkpoint every progress_every pages
             if written_pages % progress_every == 0:
                 checkpoint_data = {
@@ -884,15 +877,11 @@ def ingest_confluence(
                     with open(progress_json_path, "w") as f:
                         json.dump(checkpoint_data, f, indent=2, sort_keys=True)
 
-                    # Log link rollup every N pages
-                    log.info(
-                        "ingest.links_rollup",
-                        pages_processed=written_pages,
-                        links_total=link_stats["total"],
-                        links_internal=link_stats["internal"],
-                        links_external=link_stats["external"],
-                        links_unresolved=link_stats["unresolved"],
-                        attachment_refs=link_stats["attachment_refs"],
+                    # Human-friendly link summary every N pages
+                    progress_renderer.console.print(
+                        f"🔗 [dim]Links processed: {link_stats['total']} total "
+                        f"({link_stats['internal']} internal, {link_stats['external']} external, "
+                        f"{link_stats['attachment_refs']} attachments)[/dim]"
                     )
                 except Exception as e:
                     log.warning(
@@ -1367,18 +1356,7 @@ def ingest_confluence(
         json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
     )
 
-    # Log final traceability summary
-    log.info(
-        "ingest.traceability_summary",
-        total_pages=written_pages,
-        links_total=link_stats["total"],
-        links_internal=link_stats["internal"],
-        links_external=link_stats["external"],
-        links_unresolved=link_stats["unresolved"],
-        attachment_refs=link_stats["attachment_refs"],
-        links_jsonl_entries=len(links_data),
-        attachments_manifest_entries=len(attachments_manifest_data),
-    )
+    # Final traceability summary is included in the Rich completion banner
 
     # Generate assurance reports
     try:
@@ -1396,19 +1374,35 @@ def ingest_confluence(
         )
         progress_renderer.console.print(f"  JSON: [cyan]{json_path}[/cyan]")
         progress_renderer.console.print(f"  Markdown: [cyan]{md_path}[/cyan]")
-
-        log.info(
-            "ingest.confluence.assurance_generated",
-            json_path=str(json_path),
-            md_path=str(md_path),
-        )
     except Exception as e:
         log.error("ingest.confluence.assurance_failed", error=str(e))
 
     # Close event logger
     event_logger.close()
 
-    log.info("ingest.confluence.done", **metrics, out=str(ndjson_path))
+    # Human-friendly completion summary with actual data volume written
+    if ndjson_path.exists():
+        file_size_bytes = ndjson_path.stat().st_size
+        if file_size_bytes >= 1024 * 1024:  # >= 1MB
+            file_size_str = f"{file_size_bytes / (1024 * 1024):.1f}MB"
+        elif file_size_bytes >= 1024:  # >= 1KB
+            file_size_str = f"{file_size_bytes / 1024:.1f}KB"
+        else:
+            file_size_str = f"{file_size_bytes}B"
+    else:
+        file_size_str = "0B"
+
+    progress_renderer.console.print(
+        f"✅ [bold green]Ingestion complete:[/bold green] "
+        f"[cyan]{metrics.get('pages', 0)} pages[/cyan], "
+        f"[green]{file_size_str} written[/green], "
+        f"[cyan]{metrics.get('attachments', 0)} attachments[/cyan], "
+        f"[yellow]ADF format ✓[/yellow]"
+    )
+    progress_renderer.console.print(
+        f"📄 [blue]Data file:[/blue] [cyan]{ndjson_path.name}[/cyan]"
+    )
+
     return metrics
 
 
