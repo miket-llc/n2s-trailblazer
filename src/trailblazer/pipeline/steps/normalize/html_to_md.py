@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from markdownify import markdownify as md  # type: ignore
 
 from ....core.logging import log
-from ....core.artifacts import ROOT
+
 
 # ---------- DITA XML -> Markdown ----------
 
@@ -372,11 +372,13 @@ def _derive_run_id(outdir: str) -> str:
 
 def _default_ingest_path(run_id: str) -> Path:
     """Auto-detect ingest NDJSON file - try confluence.ndjson first, then dita.ndjson"""
-    confluence_path = ROOT / "runs" / run_id / "ingest" / "confluence.ndjson"
+    from ....core.paths import runs
+
+    confluence_path = runs() / run_id / "ingest" / "confluence.ndjson"
     if confluence_path.exists():
         return confluence_path
 
-    dita_path = ROOT / "runs" / run_id / "ingest" / "dita.ndjson"
+    dita_path = runs() / run_id / "ingest" / "dita.ndjson"
     if dita_path.exists():
         return dita_path
 
@@ -458,10 +460,24 @@ def normalize_from_ingest(
             else:
                 text_md = ""
 
-            attachments = [
-                {"filename": a.get("filename"), "url": a.get("download_url")}
-                for a in (rec.get("attachments") or [])
-            ]
+            # Handle attachments - can be strings (DITA) or objects (Confluence)
+            raw_attachments = rec.get("attachments") or []
+            attachments = []
+            for a in raw_attachments:
+                if isinstance(a, str):
+                    # DITA attachment - just a file path string
+                    attachments.append({"filename": a, "url": None})
+                elif isinstance(a, dict):
+                    # Confluence attachment - object with filename and download_url
+                    attachments.append(
+                        {
+                            "filename": a.get("filename"),
+                            "url": a.get("download_url"),
+                        }
+                    )
+                else:
+                    # Fallback for unexpected format
+                    attachments.append({"filename": str(a), "url": None})
 
             # Get enhanced metadata for DITA records
             enhanced_meta = metadata_by_page_id.get(rec.get("id"), {})

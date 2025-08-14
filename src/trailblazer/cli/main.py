@@ -13,12 +13,14 @@ db_app = typer.Typer(help="Database commands")
 embed_app = typer.Typer(help="Embedding commands")
 confluence_app = typer.Typer(help="Confluence commands")
 ops_app = typer.Typer(help="Operations commands")
+paths_app = typer.Typer(help="Workspace path commands")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(normalize_app, name="normalize")
 app.add_typer(db_app, name="db")
 app.add_typer(embed_app, name="embed")
 app.add_typer(confluence_app, name="confluence")
 app.add_typer(ops_app, name="ops")
+app.add_typer(paths_app, name="paths")
 
 
 def _run_db_preflight_check() -> None:
@@ -944,7 +946,9 @@ def ops_prune_runs_cmd(
             protected_runs.add(d.name)
 
     # Read referenced runs from state files
-    state_dir = Path("state/confluence")
+    from ..core.paths import state
+
+    state_dir = state() / "confluence"
     if state_dir.exists():
         for state_file in state_dir.glob("*_state.json"):
             try:
@@ -1036,6 +1040,54 @@ def ops_prune_runs_cmd(
         "cli.ops.prune_runs.done",
         **{k: v for k, v in report.items() if k != "candidates"},
     )
+
+
+# ========== Paths Commands ==========
+
+
+@paths_app.command()
+def show(
+    json_output: bool = typer.Option(
+        False, "--json", help="Output paths as JSON"
+    ),
+) -> None:
+    """Show resolved workspace paths."""
+    from ..core import paths
+    import json
+
+    path_info = {
+        "data": str(paths.data()),
+        "workdir": str(paths.workdir()),
+        "runs": str(paths.runs()),
+        "state": str(paths.state()),
+        "logs": str(paths.logs()),
+        "cache": str(paths.cache()),
+        "tmp": str(paths.tmp()),
+    }
+
+    if json_output:
+        typer.echo(json.dumps(path_info, indent=2))
+    else:
+        typer.echo("📁 Workspace Paths")
+        typer.echo("==================")
+        typer.echo(f"Data (inputs):     {path_info['data']}")
+        typer.echo(f"Workdir (managed): {path_info['workdir']}")
+        typer.echo("")
+        typer.echo("Tool-managed directories:")
+        typer.echo(f"  Runs:   {path_info['runs']}")
+        typer.echo(f"  State:  {path_info['state']}")
+        typer.echo(f"  Logs:   {path_info['logs']}")
+        typer.echo(f"  Cache:  {path_info['cache']}")
+        typer.echo(f"  Tmp:    {path_info['tmp']}")
+
+
+@paths_app.command()
+def ensure() -> None:
+    """Create all workspace directories."""
+    from ..core import paths
+
+    paths.ensure_all()
+    typer.echo("✅ All workspace directories created")
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from ....core.artifacts import ROOT
+
 from ....core.logging import log
 from ....db.engine import (  # type: ignore[import-untyped]
     get_session_factory,
@@ -22,7 +22,9 @@ from .provider import EmbeddingProvider, get_embedding_provider
 
 def _default_normalized_path(run_id: str) -> Path:
     """Get default path to normalized.ndjson for a run."""
-    return ROOT / "runs" / run_id / "normalize" / "normalized.ndjson"
+    from ....core.paths import runs
+
+    return runs() / run_id / "normalize" / "normalized.ndjson"
 
 
 def _now_iso() -> str:

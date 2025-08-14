@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # Database (optional at scaffold time)
     TRAILBLAZER_DB_URL: Optional[str] = None
 
+    # Workspace paths
+    TRAILBLAZER_DATA_DIR: str = "data"  # Human-managed inputs
+    TRAILBLAZER_WORKDIR: str = "var"  # Tool-managed artifacts
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8"
     )

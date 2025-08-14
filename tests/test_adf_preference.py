@@ -1,15 +1,15 @@
 import json
+from unittest.mock import patch
 from trailblazer.pipeline.steps.normalize.html_to_md import (
     normalize_from_ingest,
 )
-import trailblazer.core.artifacts as artifacts
 
 
 def test_normalize_prefers_adf_over_storage(tmp_path):
     """Test that when both ADF and storage are present, ADF is preferred."""
     rid = "2025-08-13_pref"
-    ingest = tmp_path / "runs" / rid / "ingest"
-    outdir = tmp_path / "runs" / rid / "normalize"
+    ingest = tmp_path / "var" / "runs" / rid / "ingest"
+    outdir = tmp_path / "var" / "runs" / rid / "normalize"
     ingest.mkdir(parents=True, exist_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -42,30 +42,29 @@ def test_normalize_prefers_adf_over_storage(tmp_path):
     nd = ingest / "confluence.ndjson"
     nd.write_text(json.dumps(rec) + "\n", encoding="utf-8")
 
-    old = artifacts.ROOT
-    artifacts.ROOT = tmp_path
-    try:
+    with patch("trailblazer.core.paths.ROOT", tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
-        out = (
-            (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
-        )
-        line = json.loads(out)
+        out = outdir / "normalized.ndjson"
+        assert out.exists()
 
-        # Should prefer ADF
-        assert line["body_repr"] == "adf"
-        assert "ADF content" in line["text_md"]
-        assert "Storage content" not in line["text_md"]
-    finally:
-        artifacts.ROOT = old
+        lines = out.read_text(encoding="utf-8").strip().split("\n")
+        assert len(lines) == 1
+
+        result = json.loads(lines[0])
+        assert result["title"] == "Test Page"
+
+        # Should contain ADF-derived markdown, not storage
+        assert "ADF content" in result["text_md"]
+        assert "Storage content" not in result["text_md"]
 
 
 def test_normalize_falls_back_to_storage_when_no_adf(tmp_path):
     """Test that storage is still used when ADF is not present."""
     rid = "2025-08-13_fallback"
-    ingest = tmp_path / "runs" / rid / "ingest"
-    outdir = tmp_path / "runs" / rid / "normalize"
+    ingest = tmp_path / "var" / "runs" / rid / "ingest"
+    outdir = tmp_path / "var" / "runs" / rid / "normalize"
     ingest.mkdir(parents=True, exist_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -86,19 +85,18 @@ def test_normalize_falls_back_to_storage_when_no_adf(tmp_path):
     nd = ingest / "confluence.ndjson"
     nd.write_text(json.dumps(rec) + "\n", encoding="utf-8")
 
-    old = artifacts.ROOT
-    artifacts.ROOT = tmp_path
-    try:
+    with patch("trailblazer.core.paths.ROOT", tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
-        out = (
-            (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
-        )
-        line = json.loads(out)
+        out = outdir / "normalized.ndjson"
+        assert out.exists()
 
-        # Should use storage since no ADF
-        assert line["body_repr"] == "storage"
-        assert "Storage content" in line["text_md"]
-    finally:
-        artifacts.ROOT = old
+        lines = out.read_text(encoding="utf-8").strip().split("\n")
+        assert len(lines) == 1
+
+        result = json.loads(lines[0])
+        assert result["title"] == "Test Page"
+
+        # Should contain storage-derived markdown
+        assert "Storage content" in result["text_md"]

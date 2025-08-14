@@ -23,11 +23,45 @@ trailblazer --help
   routine work
 - **Toolchain required** - always run `make fmt && make lint && make test`
   before committing
-- **Artifacts immutable** - runs write to `runs/<run_id>/<phase>/`, never mutate
+- **Artifacts immutable** - runs write to `var/runs/<run_id>/<phase>/`, never mutate
   previous runs
+- **Workspace paths** - use `trailblazer paths show` to see current workspace layout
 
 📖 **See [mindfile](docs/2025-08-13-1358-trailblazer-mindfile.md) for
 comprehensive architecture, contracts, and development guidelines.**
+
+## Workspace Layout
+
+Trailblazer uses a structured workspace layout with configurable paths:
+
+```bash
+# View current workspace paths
+trailblazer paths show
+
+# Ensure all workspace directories exist
+trailblazer paths ensure
+```
+
+**Default directory structure:**
+
+```
+repo/
+├── data/          # Human-managed inputs (data files, configs)
+├── var/           # Tool-managed artifacts (gitignored)
+│   ├── runs/      # All ingest/normalize run artifacts
+│   ├── state/     # Persistent state (auto-since tracking)
+│   ├── logs/      # All operation logs (JSON + pretty)
+│   ├── cache/     # Temporary cached data
+│   └── tmp/       # Temporary working files
+├── src/           # Source code
+├── tests/         # Test files
+└── scripts/       # Helper scripts
+```
+
+**Configuration:**
+
+- `TRAILBLAZER_DATA_DIR` - Base directory for human inputs (default: `data`)
+- `TRAILBLAZER_WORKDIR` - Base directory for tool artifacts (default: `var`)
 
 ## Golden Path (Quick Start)
 
@@ -36,16 +70,16 @@ The most common workflow to get from Confluence to searchable knowledge base:
 ```bash
 # 1. List available spaces
 trailblazer confluence spaces
-# → Shows table of spaces and writes runs/<run_id>/ingest/spaces.json
+# → Shows table of spaces and writes var/runs/<run_id>/ingest/spaces.json
 
 # 2. Ingest from Confluence (ADF is the default body format)
 trailblazer ingest confluence --space DEV --progress
-# → Writes to runs/<run_id>/ingest/confluence.ndjson + sidecars
+# → Writes to var/runs/<run_id>/ingest/confluence.ndjson + sidecars
 # → No database required for ingest
 
 # 3. Normalize to Markdown  
 trailblazer normalize from-ingest --run-id <RUN_ID>
-# → Writes to runs/<run_id>/normalize/normalized.ndjson
+# → Writes to var/runs/<run_id>/normalize/normalized.ndjson
 # → No database required for normalize
 
 # 4. Set up database (required for embedding and retrieval)

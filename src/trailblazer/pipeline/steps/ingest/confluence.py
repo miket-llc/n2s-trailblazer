@@ -443,9 +443,9 @@ def ingest_confluence(
     # Handle auto-since
     effective_since = since
     if auto_since and (space_keys or space_ids):
-        from pathlib import Path as StatePath
+        from ....core.paths import state
 
-        state_base = StatePath("state/confluence")
+        state_base = state() / "confluence"
         # Use first space for auto-since (could be enhanced to handle multiple)
         first_space_key = (
             space_keys[0]
@@ -1068,9 +1068,9 @@ def ingest_confluence(
 
     # Update state files with auto-since
     if auto_since and last_highwater and (space_keys or space_ids):
-        from pathlib import Path as StatePath
+        from ....core.paths import state
 
-        state_base = StatePath("state/confluence")
+        state_base = state() / "confluence"
         state_base.mkdir(parents=True, exist_ok=True)
 
         spaces_to_update = space_keys or list(space_key_by_id.values())

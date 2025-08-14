@@ -1,9 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 import uuid
-
-ROOT = Path(__file__).resolve().parents[3]  # repo root
-RUNS = ROOT / "runs"
+from .paths import runs
 
 
 def new_run_id() -> str:
@@ -11,10 +9,10 @@ def new_run_id() -> str:
 
 
 def runs_dir() -> Path:
-    return RUNS
+    return runs()
 
 
 def phase_dir(run_id: str, phase: str) -> Path:
-    p = RUNS / run_id / phase
+    p = runs() / run_id / phase
     p.mkdir(parents=True, exist_ok=True)
     return p

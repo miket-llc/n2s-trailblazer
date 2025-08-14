@@ -1,17 +1,17 @@
 """Integration tests for traceability preservation in normalize."""
 
 import json
+from unittest.mock import patch
 from trailblazer.pipeline.steps.normalize.html_to_md import (
     normalize_from_ingest,
 )
-import trailblazer.core.artifacts as artifacts
 
 
 def test_normalize_preserves_traceability_fields(tmp_path):
     """Test that normalized records retain url, space_key, links, and attachments."""
     rid = "2025-08-13_trace"
-    ingest = tmp_path / "runs" / rid / "ingest"
-    outdir = tmp_path / "runs" / rid / "normalize"
+    ingest = tmp_path / "var" / "runs" / rid / "ingest"
+    outdir = tmp_path / "var" / "runs" / rid / "normalize"
     ingest.mkdir(parents=True, exist_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -45,9 +45,7 @@ def test_normalize_preserves_traceability_fields(tmp_path):
     nd = ingest / "confluence.ndjson"
     nd.write_text(json.dumps(rec) + "\n", encoding="utf-8")
 
-    old = artifacts.ROOT
-    artifacts.ROOT = tmp_path
-    try:
+    with patch("trailblazer.core.paths.ROOT", tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
@@ -96,15 +94,12 @@ def test_normalize_preserves_traceability_fields(tmp_path):
         assert "External Link" in text_md
         assert "Internal Page" in text_md
 
-    finally:
-        artifacts.ROOT = old
-
 
 def test_normalize_preserves_adf_traceability(tmp_path):
     """Test that ADF format traceability is preserved in normalize."""
     rid = "2025-08-13_adf_trace"
-    ingest = tmp_path / "runs" / rid / "ingest"
-    outdir = tmp_path / "runs" / rid / "normalize"
+    ingest = tmp_path / "var" / "runs" / rid / "ingest"
+    outdir = tmp_path / "var" / "runs" / rid / "normalize"
     ingest.mkdir(parents=True, exist_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -151,9 +146,7 @@ def test_normalize_preserves_adf_traceability(tmp_path):
     nd = ingest / "confluence.ndjson"
     nd.write_text(json.dumps(rec) + "\n", encoding="utf-8")
 
-    old = artifacts.ROOT
-    artifacts.ROOT = tmp_path
-    try:
+    with patch("trailblazer.core.paths.ROOT", tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
@@ -180,6 +173,3 @@ def test_normalize_preserves_adf_traceability(tmp_path):
         # Verify markdown conversion from ADF
         text_md = normalized["text_md"]
         assert "Visit [example](https://example.com)" in text_md
-
-    finally:
-        artifacts.ROOT = old

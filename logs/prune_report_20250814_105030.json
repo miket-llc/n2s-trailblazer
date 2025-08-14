@@ -1,0 +1,27 @@
+{
+  "candidates": [
+    {
+      "age_days": 60,
+      "modified_at": "2025-06-15T10:50:30.763697",
+      "path": "/private/var/folders/xk/06fsy6js5gv0b48btg253kh40000gn/T/pytest-of-miket/pytest-105/test_prune_dry_run_lists_candi0/var/runs/run-2025-01-05_0800_old3",
+      "run_id": "run-2025-01-05_0800_old3"
+    },
+    {
+      "age_days": 45,
+      "modified_at": "2025-06-30T10:50:30.763171",
+      "path": "/private/var/folders/xk/06fsy6js5gv0b48btg253kh40000gn/T/pytest-of-miket/pytest-105/test_prune_dry_run_lists_candi0/var/runs/run-2025-01-15_1000_old1",
+      "run_id": "run-2025-01-15_1000_old1"
+    }
+  ],
+  "deleted_count": 0,
+  "dry_run": true,
+  "keep": 2,
+  "min_age_days": 30,
+  "protected_runs": [
+    "run-2025-01-10_0900_old2",
+    "run-2025-01-19_1200_new2",
+    "run-2025-01-20_1400_new1"
+  ],
+  "timestamp": "2025-08-14T10:50:30.766735",
+  "total_runs": 5
+}

@@ -8,7 +8,7 @@ from trailblazer.pipeline.steps.ingest.confluence import ingest_confluence
 def test_auto_since_reads_and_updates_state(tmp_path):
     """Test that auto-since reads existing state and updates with new highwater."""
     # Setup state directory and file
-    state_dir = tmp_path / "state" / "confluence"
+    state_dir = tmp_path / "var" / "state" / "confluence"
     state_dir.mkdir(parents=True, exist_ok=True)
 
     state_file = state_dir / "DEV_state.json"
@@ -20,13 +20,8 @@ def test_auto_since_reads_and_updates_state(tmp_path):
     with open(state_file, "w") as f:
         json.dump(initial_state, f)
 
-    # Change to the temp directory so state/ is found
-    import os
-
-    original_cwd = os.getcwd()
-    os.chdir(tmp_path)
-
-    try:
+    # Patch the paths to use our temp directory
+    with patch("trailblazer.core.paths.ROOT", tmp_path):
         # Mock confluence API
         with patch(
             "trailblazer.pipeline.steps.ingest.confluence.ConfluenceClient"
@@ -110,9 +105,6 @@ def test_auto_since_reads_and_updates_state(tmp_path):
             assert updated_state["last_highwater"] == "2025-01-20T09:15:00Z"
             assert updated_state["last_run_id"] == "test-auto-since-run"
             assert "updated_at" in updated_state
-
-    finally:
-        os.chdir(original_cwd)
 
 
 def test_auto_since_warns_on_missing_state(tmp_path):

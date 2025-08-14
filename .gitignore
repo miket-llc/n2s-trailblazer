@@ -10,10 +10,10 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 
+# Workspace directories
+var/
 data/
-runs/
-logs/
-state/
+!data/README.md
 dist/
 build/
 .coverage

@@ -1,17 +1,17 @@
 """Tests for enhanced traceability preservation in normalize step."""
 
 import json
+from unittest.mock import patch
 from trailblazer.pipeline.steps.normalize.html_to_md import (
     normalize_from_ingest,
 )
-import trailblazer.core.artifacts as artifacts
 
 
 def test_normalize_preserves_enhanced_traceability(tmp_path):
     """Test that normalize preserves all enhanced traceability fields."""
     rid = "2025-08-13_enhanced_trace"
-    ingest = tmp_path / "runs" / rid / "ingest"
-    outdir = tmp_path / "runs" / rid / "normalize"
+    ingest = tmp_path / "var" / "runs" / rid / "ingest"
+    outdir = tmp_path / "var" / "runs" / rid / "normalize"
     ingest.mkdir(parents=True, exist_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -85,9 +85,7 @@ def test_normalize_preserves_enhanced_traceability(tmp_path):
     nd = ingest / "confluence.ndjson"
     nd.write_text(json.dumps(rec) + "\n", encoding="utf-8")
 
-    old = artifacts.ROOT
-    artifacts.ROOT = tmp_path
-    try:
+    with patch("trailblazer.core.paths.ROOT", tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
@@ -148,15 +146,12 @@ def test_normalize_preserves_enhanced_traceability(tmp_path):
         text_md = normalized["text_md"]
         assert "Visit [example](https://example.com)" in text_md
 
-    finally:
-        artifacts.ROOT = old
-
 
 def test_normalize_handles_minimal_traceability(tmp_path):
     """Test normalize handles records with minimal traceability fields."""
     rid = "2025-08-13_minimal_trace"
-    ingest = tmp_path / "runs" / rid / "ingest"
-    outdir = tmp_path / "runs" / rid / "normalize"
+    ingest = tmp_path / "var" / "runs" / rid / "ingest"
+    outdir = tmp_path / "var" / "runs" / rid / "normalize"
     ingest.mkdir(parents=True, exist_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -178,9 +173,7 @@ def test_normalize_handles_minimal_traceability(tmp_path):
     nd = ingest / "confluence.ndjson"
     nd.write_text(json.dumps(rec) + "\n", encoding="utf-8")
 
-    old = artifacts.ROOT
-    artifacts.ROOT = tmp_path
-    try:
+    with patch("trailblazer.core.paths.ROOT", tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
@@ -203,15 +196,12 @@ def test_normalize_handles_minimal_traceability(tmp_path):
         assert normalized["links"] == []
         assert normalized["attachments"] == []
 
-    finally:
-        artifacts.ROOT = old
-
 
 def test_normalize_backward_compatibility(tmp_path):
     """Test normalize maintains backward compatibility with old record format."""
     rid = "2025-08-13_compat"
-    ingest = tmp_path / "runs" / rid / "ingest"
-    outdir = tmp_path / "runs" / rid / "normalize"
+    ingest = tmp_path / "var" / "runs" / rid / "ingest"
+    outdir = tmp_path / "var" / "runs" / rid / "normalize"
     ingest.mkdir(parents=True, exist_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -230,9 +220,7 @@ def test_normalize_backward_compatibility(tmp_path):
     nd = ingest / "confluence.ndjson"
     nd.write_text(json.dumps(rec) + "\n", encoding="utf-8")
 
-    old = artifacts.ROOT
-    artifacts.ROOT = tmp_path
-    try:
+    with patch("trailblazer.core.paths.ROOT", tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
@@ -252,6 +240,3 @@ def test_normalize_backward_compatibility(tmp_path):
 
         # Verify no breadcrumbs when ancestors missing
         assert "breadcrumbs" not in normalized
-
-    finally:
-        artifacts.ROOT = old

@@ -1,0 +1,19 @@
+{
+  "candidates": [
+    {
+      "age_days": 55,
+      "modified_at": "2025-06-20T10:49:16.087718",
+      "path": "/private/var/folders/xk/06fsy6js5gv0b48btg253kh40000gn/T/pytest-of-miket/pytest-101/test_prune_protected_by_multip0/var/runs/run-old-unprotected",
+      "run_id": "run-old-unprotected"
+    }
+  ],
+  "deleted_count": 0,
+  "dry_run": true,
+  "keep": 0,
+  "min_age_days": 30,
+  "protected_runs": [
+    "run-old-protected"
+  ],
+  "timestamp": "2025-08-14T10:49:16.090650",
+  "total_runs": 2
+}
