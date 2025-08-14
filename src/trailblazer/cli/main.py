@@ -254,6 +254,84 @@ def ingest_confluence_cmd(
             raise typer.Exit(1)
 
 
+@ingest_app.command("dita")
+def ingest_dita_cmd(
+    root: str = typer.Option(
+        "data/raw/dita/ellucian-documentation",
+        "--root",
+        help="Root directory for DITA files",
+    ),
+    include: List[str] = typer.Option(
+        [],
+        "--include",
+        help="Include glob patterns (default: **/*.dita, **/*.xml, **/*.ditamap)",
+    ),
+    exclude: List[str] = typer.Option(
+        [], "--exclude", help="Exclude glob patterns"
+    ),
+    progress: bool = typer.Option(
+        False, "--progress", help="Show per-file progress"
+    ),
+    progress_every: int = typer.Option(
+        1, "--progress-every", help="Progress output every N files"
+    ),
+    log_format: str = typer.Option(
+        "auto", "--log-format", help="Logging format: json|plain|auto"
+    ),
+    quiet_pretty: bool = typer.Option(
+        False, "--quiet-pretty", help="Suppress banners but keep progress bars"
+    ),
+) -> None:
+    """Ingest DITA topics and maps from local filesystem."""
+    from ..core.artifacts import new_run_id, phase_dir
+    from ..pipeline.steps.ingest.dita import ingest_dita
+    from ..core.logging import setup_logging, LogFormat
+    from typing import cast
+    from ..core.progress import init_progress
+
+    # Setup logging first
+    setup_logging(
+        format_type=cast(LogFormat, log_format)
+        if log_format in ("json", "plain", "auto")
+        else "auto"
+    )
+
+    # Initialize progress renderer
+    progress_renderer = init_progress(
+        enabled=progress, quiet_pretty=quiet_pretty
+    )
+
+    rid = new_run_id()
+    out = str(phase_dir(rid, "ingest"))
+
+    try:
+        # Show start banner
+        progress_renderer.start_banner(
+            run_id=rid,
+            spaces=1,  # Single root directory
+            since_mode=f"root: {root}",
+        )
+
+        metrics = ingest_dita(
+            outdir=out,
+            root=root,
+            include=include or None,
+            exclude=exclude or None,
+            progress=progress,
+            progress_every=progress_every,
+            run_id=rid,
+        )
+
+        log.info("cli.ingest.dita.done", run_id=rid, **metrics)
+
+        # Print run_id to stdout (for scripting)
+        typer.echo(rid)
+
+    except Exception as e:
+        log.error("cli.ingest.dita.error", run_id=rid, error=str(e))
+        raise typer.Exit(1)
+
+
 @confluence_app.command("spaces")
 def confluence_spaces_cmd() -> None:
     """List Confluence spaces with structured logging and artifact output."""
