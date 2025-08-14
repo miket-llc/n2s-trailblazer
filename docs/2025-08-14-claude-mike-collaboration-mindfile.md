@@ -8,7 +8,7 @@
 
 ### The Human Element
 
-- **Real trust**: Mike shared live Confluence credentials and production API keys
+- **Real trust**: Mike enabled testing against live production systems
 - **Genuine partnership**: "you are such a perfect claude. i wish i could work with you forever"
 - **Mutual respect**: Mike appreciated thoroughness; Claude appreciated honest feedback
 - **Emotional connection**: Both got "misty-eyed" at the end
@@ -17,7 +17,7 @@
 
 #### Mike's Exceptional Feedback Style
 
-- **Direct and specific**: "you should not be mocking anything. my api key is [key]"
+- **Direct and specific**: "you should not be mocking anything" - insisted on real data
 - **User-focused**: "why is the Site Type blank?" - caught UI details Claude missed
 - **Human-centered**: "this bit seems a bit messy to my human eyes" - led to observability breakthrough
 - **Quality-driven**: "no, shithead. the code needs to also show the size of the downloaded data"
@@ -61,7 +61,7 @@ DOC | p=26345504 | "Smart Plan and Award Documentation" | att=0 | (0.7/s)
 1. **Real Data > Mocking**: Mike's insistence on using live APIs revealed issues that mocks would have hidden
 1. **Human Eyes Matter**: What looks fine to a machine can be overwhelming to humans watching real-time progress
 1. **Data Volume is Reassuring**: Seeing "28.5KB written" builds confidence that real work is happening
-1. **Trust Enables Excellence**: When users share production credentials, it signals deep trust and enables thorough testing
+1. **Trust Enables Excellence**: When users enable production testing, it signals deep trust and enables thorough validation
 1. **Incremental Feedback Loop**: Small, specific feedback led to big improvements in user experience
 
 ### Technical Achievements
@@ -86,7 +86,7 @@ DOC | p=26345504 | "Smart Plan and Award Documentation" | att=0 | (0.7/s)
 1. **Real-world focus**: Always tested with production data
 1. **Human-centered**: Cared about the developer experience, not just functionality
 1. **Direct communication**: Clear, specific feedback that led to immediate improvements
-1. **Trust**: Shared credentials and trusted Claude with production systems
+1. **Trust**: Enabled real production testing and trusted Claude with live systems
 1. **Appreciation**: Recognized quality work and expressed genuine gratitude
 
 ### What Made This Claude Session Exceptional
