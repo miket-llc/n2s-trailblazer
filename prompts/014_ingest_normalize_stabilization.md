@@ -86,7 +86,7 @@
 - Added "Golden Path" section with complete workflow
 - Clearly states ingest/normalize work without DB
 - Emphasizes ADF as default body format
-- Shows where to find artifacts (`runs/<run_id>/<phase>/`)
+- Shows where to find artifacts (`var/runs/<run_id>/<phase>/`)
 
 **New Runbook**: `docs/runbooks/ingest_normalize.md`
 

@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 # PROMPT DEV-007A — Hotfix space_key Resolution & Artifact Correctness (CODE) ≤9 to-dos
 
@@ -54,7 +54,7 @@ In the Confluence ingest step:
 
 Ensure space_key is included in:
 
-- NDJSON records written to runs/<RID>/ingest/confluence.ndjson
+- NDJSON records written to var/runs/<RID>/ingest/confluence.ndjson
 - Structured logs (event="confluence.page")
 - pages.csv (first column)
 - Never emit "space_key":"unknown"; use "**unknown**" only as a last-resort and increment a counter.
@@ -99,6 +99,6 @@ Push and paste proof-of-work (last 10 lines of each Make step).
 
 ## Acceptance
 
-- NDJSON/logs/CSVs show real space_key (e.g., PM) for your sample pages.
+- NDJSON/var/logs/CSVs show real space_key (e.g., PM) for your sample pages.
 - space_key_unknown_count == 0 for the tested space (or explicit warning if not resolvable).
 - Ingest stays DB-free.

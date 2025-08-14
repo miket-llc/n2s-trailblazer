@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 ## Console UX Policy
 
@@ -83,7 +83,7 @@ Provide a single place to diagnose: trailblazer db doctor.
 
 **No regression:** Before edits, read the module and associated tests; prefer minimal deltas. If complexity is high, refactor in tiny steps with passing tests after each step.
 
-# PROMPT DEV-015 — Path Unification to var/ (runs/state/logs) + trailblazer paths CLI ≤9 to-dos
+# PROMPT DEV-015 — Path Unification to var/ (var/runs/var/state/logs) + trailblazer paths CLI ≤9 to-dos
 
 Save as: prompts/015_path_unification.md
 Work on: MAIN ONLY
@@ -123,13 +123,13 @@ trailblazer paths ensure → create all dirs.
 
 Write-path migration (code)
 
-Replace all writes to runs/, state/, logs/ with paths.runs()/paths.state()/paths.logs().
+Replace all writes to var/runs/, var/state/, var/logs/ with paths.runs()/paths.state()/paths.logs().
 
 No DB imports in ingest/normalize code paths (re-assert).
 
 Legacy read fallback (backcompat)
 
-When reading legacy runs/state/logs, try new locations first (var/\*), then legacy (./runs, ./state, ./logs).
+When reading legacy var/runs/var/state/logs, try new locations first (var/\*), then legacy (./runs, ./state, ./logs).
 
 When writing, always target var/\*.
 
@@ -151,7 +151,7 @@ Unit: paths resolve defaults + env overrides.
 
 Smoke: ingest writes to var/runs/<RID>/ingest; state updates to var/state/….
 
-Legacy read fallback: put a fake legacy run under ./runs/legacy_demo/… and confirm read queries find it.
+Legacy read fallback: put a fake legacy run under ./var/runs/legacy_demo/… and confirm read queries find it.
 
 Docs
 

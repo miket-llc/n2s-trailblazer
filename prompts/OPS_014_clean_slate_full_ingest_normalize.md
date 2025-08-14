@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 ## Console UX Policy
 
@@ -98,20 +98,20 @@ git rev-parse --abbrev-ref HEAD
 make setup && make fmt && make lint && make test && make check-md
 trailblazer ingest confluence --help | grep -i 'body-format' # must show atlas_doc_format as default
 
-Clean-slate: archive & nuke old runs/state/logs (non-interactive)
+Clean-slate: archive & nuke old var/runs/var/state/var/logs (non-interactive)
 
 ```bash
-mkdir -p archive logs state/confluence
+mkdir -p archive var/logs var/state/confluence
 # Archive then clear runs (start from nothing)
-[ -d runs ] && tar -czf "archive/runs_$(date -u +%Y%m%dT%H%M%SZ).tar.gz" runs || true
-rm -rf runs
-mkdir -p runs
+[ -d var/runs ] && tar -czf "archive/runs_$(date -u +%Y%m%dT%H%M%SZ).tar.gz" var/runs || true
+rm -rf var/runs
+mkdir -p var/runs
 # Backup & clear state so no autosince skips
-[ -d state/confluence ] && mkdir -p state/confluence/_backup && \
-  cp -a state/confluence/*_state.json state/confluence/_backup/ 2>/dev/null || true
-rm -f state/confluence/*_state.json
+[ -d var/state/confluence ] && mkdir -p var/state/confluence/_backup && \
+  cp -a var/state/confluence/*_state.json var/state/confluence/_backup/ 2>/dev/null || true
+rm -f var/state/confluence/*_state.json
 # Clear old logs
-find logs -maxdepth 1 -type f -name 'ingest-*' -delete 2>/dev/null || true
+find var/logs -maxdepth 1 -type f -name 'ingest-*' -delete 2>/dev/null || true
 ```
 
 Discover ALL spaces and build manifest (no 20-space shortcuts)
@@ -119,10 +119,10 @@ Discover ALL spaces and build manifest (no 20-space shortcuts)
 ```bash
 RID_SPACES=$(date -u +'%Y%m%dT%H%M%SZ')_spaces
 trailblazer confluence spaces --no-color \
-  1> "logs/spaces-$RID_SPACES.jsonl" \
-  2> "logs/spaces-$RID_SPACES.out"
-jq -r '.[].key' "runs/$RID_SPACES/ingest/spaces.json" | sort -u > state/confluence/spaces.txt
-SPC=$(wc -l < state/confluence/spaces.txt | tr -d ' ')
+  1> "var/logs/spaces-$RID_SPACES.jsonl" \
+  2> "var/logs/spaces-$RID_SPACES.out"
+jq -r '.[].key' "var/runs/$RID_SPACES/ingest/spaces.json" | sort -u > var/state/confluence/spaces.txt
+SPC=$(wc -l < var/state/confluence/spaces.txt | tr -d ' ')
 echo "[INFO] total spaces discovered: $SPC"
 # Hard fail if suspiciously small (accidental sampling)
 test "$SPC" -ge 200 || (echo "[ERROR] too few spaces ($SPC). investigate before proceeding."; exit 2)
@@ -134,7 +134,7 @@ Create a robust Confluence runner (ADF, verbose, resumable, ALL spaces)
 cat > scripts/run_confluence_full.sh <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-SPACES_FILE="state/confluence/spaces.txt"
+SPACES_FILE="var/state/confluence/spaces.txt"
 [ -f "$SPACES_FILE" ] || { echo "Missing $SPACES_FILE"; exit 2; }
 while IFS= read -r SPACE; do
   [ -z "$SPACE" ] && continue
@@ -145,11 +145,11 @@ while IFS= read -r SPACE; do
     --space "$SPACE" \
     --body-format atlas_doc_format \
     --progress --progress-every 5 --no-color \
-    1> "logs/ingest-$RID-$SPACE.jsonl" \
-    2> >(tee -a "logs/ingest-$RID-$SPACE.out") || true
+    1> "var/logs/ingest-$RID-$SPACE.jsonl" \
+    2> >(tee -a "var/logs/ingest-$RID-$SPACE.out") || true
   echo "[DONE ] Confluence space=$SPACE run_id=$RID exit=$?"
   # quick roll-up
-  test -f "runs/$RID/ingest/summary.json" && jq -c '{rid:"'"$RID"'",space:"'"$SPACE"'",pages,attachments,links_total,elapsed_seconds}' "runs/$RID/ingest/summary.json" || true
+  test -f "var/runs/$RID/ingest/summary.json" && jq -c '{rid:"'"$RID"'",space:"'"$SPACE"'",pages,attachments,links_total,elapsed_seconds}' "var/runs/$RID/ingest/summary.json" || true
   sleep 2
 done < "$SPACES_FILE"
 SH
@@ -178,8 +178,8 @@ RID_DITA=$(date -u +'%Y%m%dT%H%M%SZ')_dita_full
 trailblazer ingest dita \
   --root "$DITA_ROOT" \
   --progress --progress-every 5 --no-color \
-  1> "logs/ingest-$RID_DITA-dita.jsonl" \
-  2> >(tee -a "logs/ingest-$RID_DITA-dita.out")
+  1> "var/logs/ingest-$RID_DITA-dita.jsonl" \
+  2> >(tee -a "var/logs/ingest-$RID_DITA-dita.out")
 ```
 
 Normalize the DITA run
@@ -194,17 +194,17 @@ Spot-check artifacts & traceability (prove correctness for both sources)
 ```bash
 # Confluence (latest)
 RID_C=$(ls -1t runs | grep "_full_adf$" | head -n1); echo "[CHK] Confluence run_id=$RID_C"
-test -f "runs/$RID_C/ingest/confluence.ndjson" || { echo "[ERR] missing confluence.ndjson"; exit 3; }
-head -n1 "runs/$RID_C/ingest/confluence.ndjson" | jq '{source_system,id,title,url,body_repr,label_count,ancestor_count,attachment_count}'
-jq -C '. | {pages,attachments,links_total}' "runs/$RID_C/ingest/summary.json"
-head -n1 "runs/$RID_C/normalize/normalized.ndjson" | jq '{id,source_system,body_repr,url,text_md: (.text_md[:100]),links: (.links[0:3]),attachments: (.attachments[0:3]),labels: (.labels[0:5])}'
+test -f "var/runs/$RID_C/ingest/confluence.ndjson" || { echo "[ERR] missing confluence.ndjson"; exit 3; }
+head -n1 "var/runs/$RID_C/ingest/confluence.ndjson" | jq '{source_system,id,title,url,body_repr,label_count,ancestor_count,attachment_count}'
+jq -C '. | {pages,attachments,links_total}' "var/runs/$RID_C/ingest/summary.json"
+head -n1 "var/runs/$RID_C/normalize/normalized.ndjson" | jq '{id,source_system,body_repr,url,text_md: (.text_md[:100]),links: (.links[0:3]),attachments: (.attachments[0:3]),labels: (.labels[0:5])}'
 
 # DITA (full)
 echo "[CHK] DITA run_id=$RID_DITA"
-test -f "runs/$RID_DITA/ingest/dita.ndjson" || { echo "[ERR] missing dita.ndjson"; exit 3; }
-head -n1 "runs/$RID_DITA/ingest/dita.ndjson" | jq '{source_system,id,source_path,doctype,label_count,attachment_count}'
-jq -C '. | {pages,attachments,links_total}' "runs/$RID_DITA/ingest/summary.json"
-head -n1 "runs/$RID_DITA/normalize/normalized.ndjson" | jq '{id,source_system,body_repr,url,text_md: (.text_md[:100]),links: (.links[0:3]),attachments: (.attachments[0:3]),labels: (.labels[0:5])}'
+test -f "var/runs/$RID_DITA/ingest/dita.ndjson" || { echo "[ERR] missing dita.ndjson"; exit 3; }
+head -n1 "var/runs/$RID_DITA/ingest/dita.ndjson" | jq '{source_system,id,source_path,doctype,label_count,attachment_count}'
+jq -C '. | {pages,attachments,links_total}' "var/runs/$RID_DITA/ingest/summary.json"
+head -n1 "var/runs/$RID_DITA/normalize/normalized.ndjson" | jq '{id,source_system,body_repr,url,text_md: (.text_md[:100]),links: (.links[0:3]),attachments: (.attachments[0:3]),labels: (.labels[0:5])}'
 ```
 
 Proof-of-work (paste back)

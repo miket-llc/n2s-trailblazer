@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 # PROMPT OPS-002 — Run Backfill + Incrementals with Observability (OPS)
 
@@ -56,32 +56,32 @@ Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
 
    ```bash
    RID=$(date -u +'%Y%m%dT%H%M%SZ')_spaces
-   trailblazer confluence spaces | tee logs/spaces-$RID.out
-   test -f runs/$RID/ingest/spaces.json && head -n 5 runs/$RID/ingest/spaces.json
+   trailblazer confluence spaces | tee var/logs/spaces-$RID.out
+   test -f var/runs/$RID/ingest/spaces.json && head -n 5 var/runs/$RID/ingest/spaces.json
    ```
 
 1. **Prepare spaces manifest & state dir (untracked).**
 
    ```bash
-   mkdir -p state/confluence logs
-   printf "DEV\nDOC\n" > state/confluence/spaces.txt
+   mkdir -p var/state/confluence logs
+   printf "DEV\nDOC\n" > var/state/confluence/spaces.txt
    ```
 
-   Confirm state/ is git-ignored.
+   Confirm var/state/ is git-ignored.
 
 1. **Backfill one space with visibility.**
 
    ```bash
    RID=$(date -u +'%Y%m%dT%H%M%SZ')_backfill
    SPACE=DEV
-   trailblazer ingest confluence --space "$SPACE" --progress --progress-every 5 2>&1 | tee logs/ingest-$RID-$SPACE.log
-   ls runs/$RID/ingest/{pages.csv,attachments.csv,summary.json} -l
+   trailblazer ingest confluence --space "$SPACE" --progress --progress-every 5 2>&1 | tee var/logs/ingest-$RID-$SPACE.log
+   ls var/runs/$RID/ingest/{pages.csv,attachments.csv,summary.json} -l
    ```
 
    Inspect the last 30 lines of the log for confluence.page and attachment lines.
 
 1. **Write/update high-watermark (auto-since state).**
-   After backfill completes, set state/confluence/${SPACE}\_state.json using the run artifact's max updated_at.
+   After backfill completes, set var/state/confluence/${SPACE}\_state.json using the run artifact's max updated_at.
    (If 007 wrote this automatically, just inspect it.)
 
 1. **Incremental ingest (new/changed only).**
@@ -89,7 +89,7 @@ Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
    ```bash
    RID=$(date -u +'%Y%m%dT%H%M%SZ')_delta
    SPACE=DEV
-   trailblazer ingest confluence --space "$SPACE" --auto-since --progress --progress-every 5 2>&1 | tee logs/ingest-$RID-$SPACE.log
+   trailblazer ingest confluence --space "$SPACE" --auto-since --progress --progress-every 5 2>&1 | tee var/logs/ingest-$RID-$SPACE.log
    ```
 
    Confirm smaller pages.csv vs backfill if little changed; verify the space's state file now shows the newer last_highwater.
@@ -106,14 +106,14 @@ Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
 
    ```bash
    trailblazer ingest diff-deletions --space "$SPACE" --baseline-run <OLD_RID> --current-run $RID
-   trailblazer ops prune-runs --keep 5 --min-age-days 14 --dry-run | tee logs/prune-dry-run.out
+   trailblazer ops prune-runs --keep 5 --min-age-days 14 --dry-run | tee var/logs/prune-dry-run.out
    ```
 
 1. **Proof-of-work (paste back).**
 
-   - tail ~30 lines: logs/ingest-<RID>-<SPACE>.log showing page/attach progress.
-   - head of runs/<RID>/ingest/pages.csv and summary.json.
-   - cat state/confluence/${SPACE}\_state.json.
+   - tail ~30 lines: var/logs/ingest-<RID>-<SPACE>.log showing page/attach progress.
+   - head of var/runs/<RID>/ingest/pages.csv and summary.json.
+   - cat var/state/confluence/${SPACE}\_state.json.
    - output of diff-deletions and the dry-run prune list.
 
 ## Answers to your two concerns (operationalized here)

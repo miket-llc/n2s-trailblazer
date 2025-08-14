@@ -18,7 +18,7 @@ Phase folders under pipeline/steps/: ingest, normalize, enrich, classify, embed,
 
 Confluence adapter using v2 (/wiki/api/v2) for spaces/pages/attachments, Basic auth (email + API token), and v1 CQL for search until v2 supports it.
 
-Data workspace (data/) and run artifacts (runs/) that are gitignored.
+Data workspace (data/) and run artifacts (var/runs/) that are gitignored.
 
 Config via Pydantic Settings; logs via structlog.
 
@@ -69,7 +69,7 @@ data/ (gitignored)
 
 raw/ staged/ processed/ generated/
 
-runs/ (gitignored)
+var/runs/ (gitignored)
 
 src/
 
@@ -195,8 +195,8 @@ __pycache__/
 .DS_Store
 
 data/
-runs/
-logs/
+var/runs/
+var/logs/
 dist/
 build/
 .coverage
@@ -224,7 +224,7 @@ trailblazer run --phases ingest normalize --dry-run
 Principles
 CLI-first, explicit phases (no numeric module names).
 
-Idempotent steps; artifacts under runs/<run_id>/<phase>/.
+Idempotent steps; artifacts under var/runs/<run_id>/<phase>/.
 
 Config via env / configs/pipeline.yaml.
 
@@ -740,13 +740,13 @@ git add -A
 git commit -m "scaffold: python monorepo + Confluence v2 (Basic auth), CLI, phases, tooling"
 git push -u origin scaffold/python-monorepo-v2-confluence
 Acceptance Criteria
-trailblazer run --dry-run --phases ingest creates runs/<run_id>/ingest/confluence.ndjson.
+trailblazer run --dry-run --phases ingest creates var/runs/<run_id>/ingest/confluence.ndjson.
 
 trailblazer version prints 0.1.0.
 
 ruff, black --check, and pytest -q succeed.
 
-data/ and runs/ are untracked by git.
+data/ and var/runs/ are untracked by git.
 
 Confluence client defaults: https://ellucian.atlassian.net/wiki/api/v2, Basic auth, cursor pagination, and v1 CQL helper present.
 

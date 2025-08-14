@@ -41,9 +41,9 @@ Each prompt in this monorepo follows a standard workflow and set of constraints.
 
 **Artifacts and state**
 
-- All pipeline artifacts go to `runs/{run_id}/`
-- State files go to `state/`
-- Logs go to `logs/`
+- All pipeline artifacts go to `var/runs/{run_id}/`
+- State files go to `var/state/`
+- Logs go to `var/logs/`
 - Raw data goes to `data/raw/`
 - Never commit large files or sensitive data
 
@@ -103,8 +103,8 @@ trailblazer ingest confluence \
   --space "$SPACE" \
   --progress --progress-every 5 --no-color \
   --max-pages 500 \
-  1> "logs/ingest-$RID_C-$SPACE.jsonl" \
-  2> >(tee -a "logs/ingest-$RID_C-$SPACE.out")
+  1> "var/logs/ingest-$RID_C-$SPACE.jsonl" \
+  2> >(tee -a "var/logs/ingest-$RID_C-$SPACE.out")
 ```
 
 Pretty progress must be visible in your terminal (stderr). JSON events go to the \*.jsonl file.
@@ -119,62 +119,62 @@ RID_D="$(date -u +'%Y%m%dT%H%M%SZ')_${SUB1}_subset"
 trailblazer ingest dita \
   --root "$DITA_ROOT/$SUB1" \
   --progress --progress-every 5 --no-color \
-  1> "logs/ingest-$RID_D-dita.jsonl" \
-  2> >(tee -a "logs/ingest-$RID_D-dita.out")
+  1> "var/logs/ingest-$RID_D-dita.jsonl" \
+  2> >(tee -a "var/logs/ingest-$RID_D-dita.out")
 ```
 
 ### 4. Verify ingest artifacts exist & are traceable (both runs)
 
 ```bash
 # Confluence
-test -f "runs/$RID_C/ingest/confluence.ndjson"
-test -f "runs/$RID_C/ingest/links.jsonl"
-test -f "runs/$RID_C/ingest/edges.jsonl"
-test -f "runs/$RID_C/ingest/attachments_manifest.jsonl"
-test -f "runs/$RID_C/ingest/ingest_media.jsonl"
-test -f "runs/$RID_C/ingest/labels.jsonl"
-test -f "runs/$RID_C/ingest/breadcrumbs.jsonl"
-test -f "runs/$RID_C/ingest/summary.json"
+test -f "var/runs/$RID_C/ingest/confluence.ndjson"
+test -f "var/runs/$RID_C/ingest/links.jsonl"
+test -f "var/runs/$RID_C/ingest/edges.jsonl"
+test -f "var/runs/$RID_C/ingest/attachments_manifest.jsonl"
+test -f "var/runs/$RID_C/ingest/ingest_media.jsonl"
+test -f "var/runs/$RID_C/ingest/labels.jsonl"
+test -f "var/runs/$RID_C/ingest/breadcrumbs.jsonl"
+test -f "var/runs/$RID_C/ingest/summary.json"
 
 # DITA
-test -f "runs/$RID_D/ingest/dita.ndjson"
-test -f "runs/$RID_D/ingest/links.jsonl"
-test -f "runs/$RID_D/ingest/edges.jsonl"
-test -f "runs/$RID_D/ingest/attachments_manifest.jsonl"
-test -f "runs/$RID_D/ingest/ingest_media.jsonl"
-test -f "runs/$RID_D/ingest/labels.jsonl"
-test -f "runs/$RID_D/ingest/breadcrumbs.jsonl"
-test -f "runs/$RID_D/ingest/summary.json"
+test -f "var/runs/$RID_D/ingest/dita.ndjson"
+test -f "var/runs/$RID_D/ingest/links.jsonl"
+test -f "var/runs/$RID_D/ingest/edges.jsonl"
+test -f "var/runs/$RID_D/ingest/attachments_manifest.jsonl"
+test -f "var/runs/$RID_D/ingest/ingest_media.jsonl"
+test -f "var/runs/$RID_D/ingest/labels.jsonl"
+test -f "var/runs/$RID_D/ingest/breadcrumbs.jsonl"
+test -f "var/runs/$RID_D/ingest/summary.json"
 ```
 
 ### 5. Spot-check structure & traceability (fields present, edges typed)
 
 ```bash
 # Confluence: one document line (ID/URL/body/labels/breadcrumbs)
-head -n1 "runs/$RID_C/ingest/confluence.ndjson" | jq '{source_system,id,title,url,body_repr,label_count,ancestor_count,attachment_count}'
+head -n1 "var/runs/$RID_C/ingest/confluence.ndjson" | jq '{source_system,id,title,url,body_repr,label_count,ancestor_count,attachment_count}'
 # Confluence: link edges and hierarchy edges
-sed -n '1,3p' "runs/$RID_C/ingest/links.jsonl" | jq '{from_page_id,target_type,target_page_id,target_url}'
-sed -n '1,3p' "runs/$RID_C/ingest/edges.jsonl" | jq '.'
+sed -n '1,3p' "var/runs/$RID_C/ingest/links.jsonl" | jq '{from_page_id,target_type,target_page_id,target_url}'
+sed -n '1,3p' "var/runs/$RID_C/ingest/edges.jsonl" | jq '.'
 
 # DITA: one document line (ID/path/doctype/labels)
-head -n1 "runs/$RID_D/ingest/dita.ndjson" | jq '{source_system,id,source_path,doctype,label_count,attachment_count}'
+head -n1 "var/runs/$RID_D/ingest/dita.ndjson" | jq '{source_system,id,source_path,doctype,label_count,attachment_count}'
 # DITA: link edges (internal/external) + conrefs in edges
-sed -n '1,3p' "runs/$RID_D/ingest/links.jsonl" | jq '{from_page_id,target_type,target_page_id,target_url}'
-jq -r 'select(.type=="CONREFS")' "runs/$RID_D/ingest/edges.jsonl" | head
+sed -n '1,3p' "var/runs/$RID_D/ingest/links.jsonl" | jq '{from_page_id,target_type,target_page_id,target_url}'
+jq -r 'select(.type=="CONREFS")' "var/runs/$RID_D/ingest/edges.jsonl" | head
 
 # Roll-ups (both)
-jq -C '. | {pages, attachments, links_total, links_internal, links_external, media_refs_total, labels_total, ancestors_total}' "runs/$RID_C/ingest/summary.json"
-jq -C '. | {pages, attachments, links_total, links_internal, links_external, media_refs_total, labels_total, ancestors_total}' "runs/$RID_D/ingest/summary.json"
+jq -C '. | {pages, attachments, links_total, links_internal, links_external, media_refs_total, labels_total, ancestors_total}' "var/runs/$RID_C/ingest/summary.json"
+jq -C '. | {pages, attachments, links_total, links_internal, links_external, media_refs_total, labels_total, ancestors_total}' "var/runs/$RID_D/ingest/summary.json"
 ```
 
 ### 6. Normalize both runs & verify preservation (no DB)
 
 ```bash
 trailblazer normalize from-ingest --run-id "$RID_C"
-head -n1 "runs/$RID_C/normalize/normalized.ndjson" | jq '{id,source_system,body_repr,url,text_md: (.text_md[:100]),links: (.links[0:3]),attachments: (.attachments[0:3]),labels: (.labels[0:5]),breadcrumbs: (.breadcrumbs[0:5])}'
+head -n1 "var/runs/$RID_C/normalize/normalized.ndjson" | jq '{id,source_system,body_repr,url,text_md: (.text_md[:100]),links: (.links[0:3]),attachments: (.attachments[0:3]),labels: (.labels[0:5]),breadcrumbs: (.breadcrumbs[0:5])}'
 
 trailblazer normalize from-ingest --run-id "$RID_D"
-head -n1 "runs/$RID_D/normalize/normalized.ndjson" | jq '{id,source_system,body_repr,url,text_md: (.text_md[:100]),links: (.links[0:3]),attachments: (.attachments[0:3]),labels: (.labels[0:5]),breadcrumbs: (.breadcrumbs[0:5])}'
+head -n1 "var/runs/$RID_D/normalize/normalized.ndjson" | jq '{id,source_system,body_repr,url,text_md: (.text_md[:100]),links: (.links[0:3]),attachments: (.attachments[0:3]),labels: (.labels[0:5]),breadcrumbs: (.breadcrumbs[0:5])}'
 ```
 
 ### 7. If ANY discrepancy/error occurs → fix utterly (code + tests), then re-run the failing subset
@@ -198,15 +198,15 @@ make fmt && make lint && make test && make check-md
 # Confluence re-run (smaller cap just to confirm)
 RID_C2="$(date -u +'%Y%m%dT%H%M%SZ')_${SPACE}_subset_fix"
 trailblazer ingest confluence --space "$SPACE" --progress --progress-every 5 --no-color --max-pages 200 \
-  1> "logs/ingest-$RID_C2-$SPACE.jsonl" \
-  2> >(tee -a "logs/ingest-$RID_C2-$SPACE.out")
+  1> "var/logs/ingest-$RID_C2-$SPACE.jsonl" \
+  2> >(tee -a "var/logs/ingest-$RID_C2-$SPACE.out")
 trailblazer normalize from-ingest --run-id "$RID_C2"
 
 # DITA re-run (same subfolder)
 RID_D2="$(date -u +'%Y%m%dT%H%M%SZ')_${SUB1}_subset_fix"
 trailblazer ingest dita --root "$DITA_ROOT/$SUB1" --progress --progress-every 5 --no-color \
-  1> "logs/ingest-$RID_D2-dita.jsonl" \
-  2> >(tee -a "logs/ingest-$RID_D2-dita.out")
+  1> "var/logs/ingest-$RID_D2-dita.jsonl" \
+  2> >(tee -a "var/logs/ingest-$RID_D2-dita.out")
 trailblazer normalize from-ingest --run-id "$RID_D2"
 ```
 

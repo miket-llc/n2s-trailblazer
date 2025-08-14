@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 ## Console UX Policy
 
@@ -86,10 +86,10 @@ After the overnight ingest with storage format, we discovered we should have use
 
 **Logic:**
 
-- Read `runs/<RID_A>/ingest/confluence.ndjson` and extract page IDs (and URLs for fallback/space_key check)
+- Read `var/runs/<RID_A>/ingest/confluence.ndjson` and extract page IDs (and URLs for fallback/space_key check)
 - Validate `--space` parameter matches the target space in the source run
 - For each page ID: call v2 `GET /api/v2/pages/{id}?body-format=...` (and attachments via v2 if not already present)
-- Write new RUN_ID B under `runs/<RID_B>/ingest/...`
+- Write new RUN_ID B under `var/runs/<RID_B>/ingest/...`
 - Preserve space_key/space_id; do not mutate RUN_A
 
 ### 2. Artifact Contract

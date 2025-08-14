@@ -18,7 +18,7 @@ Keep existing fields (body_html) if you already write them, but prefer the new f
 
 **Normalize step (normalize_from_ingest):**
 
-- Input: runs/\<run_id>/ingest/confluence.ndjson.
+- Input: var/runs/\<run_id>/ingest/confluence.ndjson.
 
 For each record:
 
@@ -28,7 +28,7 @@ For each record:
 
 - Preserve links (from HTML links or ADF link marks) and attachments (as {filename,url}).
 
-- Output: runs/\<run_id>/normalize/normalized.ndjson (+ metrics.json, manifest.json).
+- Output: var/runs/\<run_id>/normalize/normalized.ndjson (+ metrics.json, manifest.json).
 
 **Runner & CLI:**
 
@@ -449,12 +449,12 @@ Add/adjust:
 Trailblazer converts Confluence bodies to Markdown, supporting both **Storage (XHTML)** and **ADF JSON**.
 
 ```bash
-trailblazer normalize from-ingest --run-id <RUN_ID>    # uses runs/<RUN_ID>/ingest/confluence.ndjson
+trailblazer normalize from-ingest --run-id <RUN_ID>    # uses var/runs/<RUN_ID>/ingest/confluence.ndjson
 # or:
-trailblazer normalize from-ingest --input runs/<RUN_ID>/ingest/confluence.ndjson
+trailblazer normalize from-ingest --input var/runs/<RUN_ID>/ingest/confluence.ndjson
 ````
 
-Outputs → runs/\<RUN_ID>/normalize/:
+Outputs → var/runs/\<RUN_ID>/normalize/:
 
 - normalized.ndjson (one record per page, with body_repr, text_md, links, attachments)
 

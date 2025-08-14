@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 ## Console UX Policy
 
@@ -85,7 +85,7 @@ From each topic/map XML, extract outbound refs and classify:
 conref, conkeyref → structural edges (write to edges.jsonl with type:"CONREFS").
 
 Normalize URLs (strip tracking; keep #anchors). Resolve internal to our IDs (topic:<relpath>[#id], map:<relpath>).
-Output: runs/<RID>/ingest/links.jsonl (one edge per line) with fields:
+Output: var/runs/<RID>/ingest/links.jsonl (one edge per line) with fields:
 from_page_id, from_url:null, target_type:"external|dita|confluence", target_page_id|null, target_url, anchor|null, text|null, rel:"links_to".
 
 ### Aggregate labels and metadata from XML (prolog) and map context
@@ -116,7 +116,7 @@ Keep both fields alongside XML-derived labels (do not overwrite).
 
 ### Write metadata sidecar (compact, one line per doc)
 
-New file runs/<RID>/ingest/meta.jsonl with:
+New file var/runs/<RID>/ingest/meta.jsonl with:
 
 ```json
 {"page_id":"topic:...","collection":"gen_help","path_tags":["gen","help","release"],"labels":["oxygen","dita","product-docs", "..."],"meta":{"audience":"implementer","product":"Navigate","platform":"SaaS","keywords":["..."],"otherprops":{"status":"approved"},"resource_app":"...", "critdates":{"created":"...","modified":"..."}, "authors":["..."], "map_titles":["Plan Map","..."]}}
@@ -126,7 +126,7 @@ Note: don't duplicate heavy values already present in dita.ndjson—this sidecar
 
 ### Counters in summary.json (augment, don't break)
 
-Update runs/<RID>/ingest/summary.json to include:
+Update var/runs/<RID>/ingest/summary.json to include:
 
 labels_total, meta_records (count of lines in meta.jsonl), and keep existing links\_\* counters.
 
@@ -181,10 +181,10 @@ Paste proof-of-work (last ~10 lines of each Make step) in your reply.
 
 ## Acceptance (must all pass)
 
-runs/<RID>/ingest/meta.jsonl exists with one compact line per DITA doc; values match XML prolog + directory hints + map context (titles).
+var/runs/<RID>/ingest/meta.jsonl exists with one compact line per DITA doc; values match XML prolog + directory hints + map context (titles).
 
-runs/<RID>/ingest/summary.json includes labels_total, meta_records, and prior link counters.
+var/runs/<RID>/ingest/summary.json includes labels_total, meta_records, and prior link counters.
 
-runs/<RID>/normalize/normalized.ndjson for DITA preserves labels, meta{}, collection, and path_tags, in addition to links/attachments/breadcrumbs.
+var/runs/<RID>/normalize/normalized.ndjson for DITA preserves labels, meta{}, collection, and path_tags, in addition to links/attachments/breadcrumbs.
 
 No regressions to 013A artifacts; Confluence ingest/normalize untouched; ingest stays DB-free; all tests pass.

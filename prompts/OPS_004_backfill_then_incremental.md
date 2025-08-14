@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 # PROMPT OPS-004 — Run a Real Backfill + Incremental (No DB during ingest) ≤9 to-dos
 
@@ -61,15 +61,15 @@ CONFLUENCE_BODY_FORMAT=storage   # or atlas_doc_format
 
 ```bash
 RID=$(date -u +'%Y%m%dT%H%M%SZ')_spaces
-trailblazer confluence spaces | tee logs/spaces-$RID.out
-test -f runs/$RID/ingest/spaces.json && head -n 3 runs/$RID/ingest/spaces.json
+trailblazer confluence spaces | tee var/logs/spaces-$RID.out
+test -f var/runs/$RID/ingest/spaces.json && head -n 3 var/runs/$RID/ingest/spaces.json
 ```
 
 ### 3. Prepare space manifest + state dir (untracked)
 
 ```bash
-mkdir -p state/confluence logs
-printf "DEV\nDOC\n" > state/confluence/spaces.txt
+mkdir -p var/state/confluence logs
+printf "DEV\nDOC\n" > var/state/confluence/spaces.txt
 ```
 
 ### 4. FULL BACKFILL (no debug, no max limit)
@@ -79,7 +79,7 @@ Pick one space to prove it actually downloads pages & attachments:
 ```bash
 SPACE=DEV
 RID=$(date -u +'%Y%m%dT%H%M%SZ')_backfill
-trailblazer ingest confluence --space "$SPACE" --progress --progress-every 10 2>&1 | tee logs/ingest-$RID-$SPACE.log
+trailblazer ingest confluence --space "$SPACE" --progress --progress-every 10 2>&1 | tee var/logs/ingest-$RID-$SPACE.log
 ```
 
 Do not pass --since for backfill.
@@ -87,7 +87,7 @@ Do not pass --since for backfill.
 Verify artifacts exist:
 
 ```bash
-ls -l runs/$RID/ingest/{confluence.ndjson,pages.csv,attachments.csv,summary.json}
+ls -l var/runs/$RID/ingest/{confluence.ndjson,pages.csv,attachments.csv,summary.json}
 ```
 
 ### 5. Enforce "empty run = error"
@@ -96,13 +96,13 @@ If the run produced 0 pages, the CLI must have exited with non-zero unless --all
 
 ### 6. Write/update high-watermark (auto-since)
 
-After backfill, ensure state/confluence/${SPACE}\_state.json contains last_highwater and last_run_id. Print it.
+After backfill, ensure var/state/confluence/${SPACE}\_state.json contains last_highwater and last_run_id. Print it.
 
 ### 7. INCREMENTAL RUN (only updated)
 
 ```bash
 RID=$(date -u +'%Y%m%dT%H%M%SZ')_delta
-trailblazer ingest confluence --space "$SPACE" --auto-since --progress --progress-every 10 2>&1 | tee logs/ingest-$RID-$SPACE.log
+trailblazer ingest confluence --space "$SPACE" --auto-since --progress --progress-every 10 2>&1 | tee var/logs/ingest-$RID-$SPACE.log
 ```
 
 Confirm (via pages.csv row count and logs) that fewer items are fetched than in backfill (unless there were many updates).
@@ -122,10 +122,10 @@ trailblazer ask "What is Navigate to SaaS?" --top-k 8 --max-chunks-per-doc 2 --p
 
 ### 9. Proof-of-work
 
-Paste: last ~30 lines from logs/ingest-$RID-$SPACE.log (showing page progress + attachment counts).
+Paste: last ~30 lines from var/logs/ingest-$RID-$SPACE.log (showing page progress + attachment counts).
 
-Head of runs/$RID/ingest/pages.csv and summary.json.
+Head of var/runs/$RID/ingest/pages.csv and summary.json.
 
-Contents of state/confluence/${SPACE}\_state.json.
+Contents of var/state/confluence/${SPACE}\_state.json.
 
 Incremental run pages.csv row count vs backfill.

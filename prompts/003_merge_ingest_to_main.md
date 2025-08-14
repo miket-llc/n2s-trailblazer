@@ -15,7 +15,7 @@ Runner: call the real ingest on the ingest phase.
 
 Tests: add smoke + pagination unit tests (no network).
 
-Docs: README section for ingest; ensure .gitignore ignores data/ and runs/.
+Docs: README section for ingest; ensure .gitignore ignores data/ and var/runs/.
 
 Validation: run make fmt && make lint && make test and a small CLI smoke run.
 
@@ -119,7 +119,7 @@ Run:
 trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z --max-pages 10
 ````
 
-Artifacts appear under runs/\<run_id>/ingest/.
+Artifacts appear under var/runs/\<run_id>/ingest/.
 
 ````
 

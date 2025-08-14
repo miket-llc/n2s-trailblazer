@@ -15,7 +15,7 @@ ______________________________________________________________________
 1. **Ingest step:** Fetch pages from one or more spaces (by **space keys** or **space ids**), optional **delta** (`--since`), collect **attachments**, and write **NDJSON** artifacts.
 1. **CLI:** Add `trailblazer ingest confluence ...` command to run the step directly.
 1. **Runner:** Keep `pipeline.run` behavior (ingest phase calls the same function).
-1. **Idempotent:** Re-running with the same args should not error; output goes under `runs/<run_id>/ingest/`.
+1. **Idempotent:** Re-running with the same args should not error; output goes under `var/runs/<run_id>/ingest/`.
 1. **Tests & docs:** Minimal tests + README updates.
 
 ______________________________________________________________________
@@ -180,7 +180,7 @@ trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z
 trailblazer ingest confluence --space-id 123456
 ````
 
-Artifacts appear under `runs/<run_id>/ingest/`.
+Artifacts appear under `var/runs/<run_id>/ingest/`.
 
 ````
 
@@ -211,8 +211,8 @@ ______________________________________________________________________
 
 - `trailblazer ingest confluence --space SOMEKEY --since 2025-08-01T00:00:00Z` runs and creates:
 
-  - `runs/<run_id>/ingest/confluence.ndjson` (≥1 line if any pages match)
-  - `runs/<run_id>/ingest/metrics.json` and `manifest.json`
+  - `var/runs/<run_id>/ingest/confluence.ndjson` (≥1 line if any pages match)
+  - `var/runs/<run_id>/ingest/metrics.json` and `manifest.json`
 
 - `trailblazer run --phases ingest --dry-run` still works (no network).
 
@@ -255,7 +255,7 @@ ______________________________________________________________________
 ## After this lands
 
 - We'll do **Prompt 002 — Normalize HTML→Markdown** (deterministic normalization, link preservation, attachment mapping).
-- We'll also add a tiny **state/hwm** file in a later prompt to remember per-space cursors.
+- We'll also add a tiny **var/state/hwm** file in a later prompt to remember per-space cursors.
 
 ______________________________________________________________________
 

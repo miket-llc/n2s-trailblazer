@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 ## Console UX Policy
 
@@ -76,7 +76,7 @@ ______________________________________________________________________
 
 ## Context (read me first — you're likely a fresh instance)
 
-Trailblazer = our AI-powered knowledge base builder for Ellucian/Navigate to SaaS. It ingests Confluence, normalizes content, later embeds into Postgres+pgvector, supports retrieval and doc generation, with immutable artifacts under runs/\<RUN_ID>/….
+Trailblazer = our AI-powered knowledge base builder for Ellucian/Navigate to SaaS. It ingests Confluence, normalizes content, later embeds into Postgres+pgvector, supports retrieval and doc generation, with immutable artifacts under var/runs/\<RUN_ID>/….
 
 **Separation of concerns (non-negotiable):**
 

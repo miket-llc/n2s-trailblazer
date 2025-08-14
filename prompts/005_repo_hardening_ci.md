@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 # PROMPT 005 — Repo Hardening + Normalize Finalization + CI (Non-Regression, ≤9 to-dos)
 
@@ -85,12 +85,12 @@ ______________________________________________________________________
 - [ ] **Secrets & hygiene.**
 
   - Ensure `configs/dev.env.example` contains **placeholders only** (no real email/token).
-  - Confirm `.gitignore` ignores: `runs/`, `data/`, `.venv/`, `.env`, `__pycache__/`, `.pytest_cache/`, `.mypy_cache/`, `.DS_Store`.
+  - Confirm `.gitignore` ignores: `var/runs/`, `data/`, `.venv/`, `.env`, `__pycache__/`, `.pytest_cache/`, `.mypy_cache/`, `.DS_Store`.
   - Run a local secret scan and fix if anything flags (rotate & scrub history if needed).
 
 - [ ] **Normalize phase (verify or complete; don't rewrite existing).**
 
-  - If Normalize is already implemented, **verify**: reads `runs/<RID>/ingest/confluence.ndjson`; outputs `runs/<RID>/normalize/normalized.ndjson` with `text_md`, `links[]`, `attachments[]`, `body_repr`, plus `metrics.json` & `manifest.json`.
+  - If Normalize is already implemented, **verify**: reads `var/runs/<RID>/ingest/confluence.ndjson`; outputs `var/runs/<RID>/normalize/normalized.ndjson` with `text_md`, `links[]`, `attachments[]`, `body_repr`, plus `metrics.json` & `manifest.json`.
   - If missing parts: **finish minimally** without undoing previous work. Support **Storage (XHTML/HTML)** now; if `body_repr=="adf"` exists, route through the ADF converter (from 004 Rev A/B), otherwise skip with a warning count in metrics.
 
 - [ ] **Tests (determinism + format paths).**
@@ -168,7 +168,7 @@ jobs:
 __pycache__/
 .pytest_cache/
 .mypy_cache/
-runs/
+var/runs/
 data/
 .DS_Store
 ```

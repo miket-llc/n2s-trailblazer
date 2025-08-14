@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 ______________________________________________________________________
 
@@ -52,7 +52,7 @@ Provide a deterministic, offline-safe **dense retrieval** over the `chunk_embedd
 
 - A small retrieval module (query → embedding → top-k chunks).
 - A **CLI** command: `trailblazer ask "<question>"` with options.
-- Artifacts (JSON/JSONL) under `runs/<run_id>/ask/…` for traceability.
+- Artifacts (JSON/JSONL) under `var/runs/<run_id>/ask/…` for traceability.
 - Tests that run **without network** (default **dummy** embedder).
 
 Hybrid (keyword) and rerankers can be layered later (006B).
@@ -85,7 +85,7 @@ ______________________________________________________________________
 - [ ] **Ask CLI.**
   Add `trailblazer ask "<question>"`:
 
-  - Options: `--top-k 8`, `--max-chunks-per-doc 3`, `--provider dummy`, `--max-chars 6000`, `--format text|json`, `--out <dir>` (default `runs/<run_id>/ask/`), `--db-url` (optional override).
+  - Options: `--top-k 8`, `--max-chunks-per-doc 3`, `--provider dummy`, `--max-chars 6000`, `--format text|json`, `--out <dir>` (default `var/runs/<run_id>/ask/`), `--db-url` (optional override).
 
   - Behavior:
 
@@ -97,7 +97,7 @@ ______________________________________________________________________
   Expose a simple session factory in `src/trailblazer/db/engine.py` if not already present: `get_session(DB_URL)` and metadata import for tables. Do **not** change existing table names or schemas.
 
 - [ ] **Runner (optional wiring).**
-  You may add a phase alias `retrieve` that calls the same code and drops artifacts into `runs/<run_id>/ask/`. Keep `ask` as the primary entrypoint.
+  You may add a phase alias `retrieve` that calls the same code and drops artifacts into `var/runs/<run_id>/ask/`. Keep `ask` as the primary entrypoint.
 
 - [ ] **Tests (offline; SQLite).**
 
@@ -111,7 +111,7 @@ ______________________________________________________________________
   ```bash
   # DB initialized and embeddings loaded from 005B
   trailblazer ask "How do I configure SSO in Navigate to SaaS?" --top-k 8 --max-chunks-per-doc 3 --provider dummy
-  # artifacts → runs/<RUN_ID>/ask/
+  # artifacts → var/runs/<RUN_ID>/ask/
   ```
 
   Note: default provider is **dummy** for offline safety; configure `EMBED_PROVIDER` and `DB_URL` for production.
@@ -154,7 +154,7 @@ ______________________________________________________________________
 
 ## Acceptance Criteria
 
-- `trailblazer ask "<question>"` runs end-to-end on a small DB produced by 005B (or a test fixture), writes artifacts under `runs/<run_id>/ask/`, and prints a useful summary.
+- `trailblazer ask "<question>"` runs end-to-end on a small DB produced by 005B (or a test fixture), writes artifacts under `var/runs/<run_id>/ask/`, and prints a useful summary.
 - Ranking is deterministic and stable across runs (with dummy provider).
 - Tests pass offline on SQLite.
 - `make fmt && make lint && make test && make check-md` are green with **zero IDE linter errors**.

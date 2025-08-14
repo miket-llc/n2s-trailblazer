@@ -17,7 +17,7 @@ ______________________________________________________________________
 1. **CLI**: Add `trailblazer ingest confluence …` with options for spaces/ids/since/body-format/max-pages.
 1. **Runner**: Keep phase execution working; if `ingest` runs via `runner`, it should call the same function.
 1. **Tests**: Add smoke tests with fakes for pagination and mapping; no network required.
-1. **Docs**: Update README; ensure `.gitignore` ignores `data/` and `runs/`.
+1. **Docs**: Update README; ensure `.gitignore` ignores `data/` and `var/runs/`.
 
 ______________________________________________________________________
 
@@ -29,7 +29,7 @@ ______________________________________________________________________
 
   ```
   data/
-  runs/
+  var/runs/
   ```
 
 - If `docs/trailblazer-mindfile.md` is missing, add it from our last message (keep it brief if needed).
@@ -517,7 +517,7 @@ Run:
 trailblazer ingest confluence --space DEV --since 2025-08-01T00:00:00Z --max-pages 10
 ````
 
-Artifacts: `runs/<run_id>/ingest/`.
+Artifacts: `var/runs/<run_id>/ingest/`.
 
 ````
 
@@ -539,9 +539,9 @@ ______________________________________________________________________
 
 - `trailblazer ingest confluence --space <KEY> --since <ISO>` writes:
 
-  - `runs/<run_id>/ingest/confluence.ndjson` (≥1 line when pages exist)
-  - `runs/<run_id>/ingest/metrics.json` with counts
-  - `runs/<run_id>/ingest/manifest.json`
+  - `var/runs/<run_id>/ingest/confluence.ndjson` (≥1 line when pages exist)
+  - `var/runs/<run_id>/ingest/metrics.json` with counts
+  - `var/runs/<run_id>/ingest/manifest.json`
 
 - `trailblazer run --phases ingest` works (uses same function).
 

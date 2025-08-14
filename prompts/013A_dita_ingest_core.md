@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 ## Console UX Policy
 
@@ -72,7 +72,7 @@ Provide a single place to diagnose: trailblazer db doctor.
 Save as: prompts/013A_dita_ingest_core.md
 Work on: MAIN ONLY
 Before you start: paste the entire prompts/000_shared_guardrails.md verbatim at the top (do not modify).
-Context: You are adding a DITA/Oxygen Content Fusion ingest adapter that reads from data/raw/dita/ellucian-documentation/… and writes graph-ready artifacts under runs/<RID>/ingest/. Ingest remains DB-free.
+Context: You are adding a DITA/Oxygen Content Fusion ingest adapter that reads from data/raw/dita/ellucian-documentation/… and writes graph-ready artifacts under var/runs/<RID>/ingest/. Ingest remains DB-free.
 
 MANDATORY review & plan (not counted): List files you'll touch, outline a tiny change plan, and confirm no regressions (Confluence ingest/normalize untouched; ADF default intact).
 
@@ -148,7 +148,7 @@ feat(ingest-dita): topics/maps → dita.ndjson + media/attachments + hierarchy/l
 
 Acceptance
 
-runs/<RID>/ingest/dita.ndjson exists with one line per topic/map (fields as specified).
+var/runs/<RID>/ingest/dita.ndjson exists with one line per topic/map (fields as specified).
 
 Sidecars present: attachments_manifest.jsonl, ingest_media.jsonl, edges.jsonl, labels.jsonl, breadcrumbs.jsonl, summary.json.
 

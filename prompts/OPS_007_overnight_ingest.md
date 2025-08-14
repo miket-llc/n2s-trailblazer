@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 ## Console UX Policy
 
@@ -89,12 +89,12 @@ grep -E 'CONFLUENCE_(BASE_URL|EMAIL|API_TOKEN)' .env configs/dev.env.example
 ```bash
 RID=$(date -u +'%Y%m%dT%H%M%SZ')_spaces
 trailblazer confluence spaces --no-color \
-  1> "logs/spaces-$RID.jsonl" \
-  2> "logs/spaces-$RID.out"
+  1> "var/logs/spaces-$RID.jsonl" \
+  2> "var/logs/spaces-$RID.out"
 # build/curate the space list
-mkdir -p state/confluence
-jq -r '.[].key' "runs/$RID/ingest/spaces.json" | sort -u > state/confluence/spaces.txt
-sed -n '1,20p' state/confluence/spaces.txt   # edit this file to the spaces you want tonight
+mkdir -p var/state/confluence
+jq -r '.[].key' "var/runs/$RID/ingest/spaces.json" | sort -u > var/state/confluence/spaces.txt
+sed -n '1,20p' var/state/confluence/spaces.txt   # edit this file to the spaces you want tonight
 ```
 
 ### 3. Plan the run (separate logs, resumable)
@@ -110,7 +110,7 @@ mkdir -p scripts logs
 cat > scripts/overnight_ingest.sh <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-SPACES_FILE="state/confluence/spaces.txt"
+SPACES_FILE="var/state/confluence/spaces.txt"
 [ -f "$SPACES_FILE" ] || { echo "Missing $SPACES_FILE"; exit 2; }
 while IFS= read -r SPACE; do
   [ -z "$SPACE" ] && continue
@@ -122,11 +122,11 @@ while IFS= read -r SPACE; do
     --progress --progress-every 5 \
     --checkpoint-every 150 --checkpoint-secs 60 \
     --no-color \
-    1> "logs/ingest-$RID-$SPACE.jsonl" \
-    2> "logs/ingest-$RID-$SPACE.out" || true
+    1> "var/logs/ingest-$RID-$SPACE.jsonl" \
+    2> "var/logs/ingest-$RID-$SPACE.out" || true
   echo "[DONE ] $SPACE run_id=$RID exit=$?"
   # quick sanity: show summary line if present
-  test -f "runs/$RID/ingest/summary.json" && jq -c '{space: "'$SPACE'", pages, attachments, elapsed}' "runs/$RID/ingest/summary.json" || true
+  test -f "var/runs/$RID/ingest/summary.json" && jq -c '{space: "'$SPACE'", pages, attachments, elapsed}' "var/runs/$RID/ingest/summary.json" || true
   # be polite to the API between spaces
   sleep 3
 done < "$SPACES_FILE"
@@ -146,21 +146,21 @@ tmux ls
 **nohup:**
 
 ```bash
-nohup bash scripts/overnight_ingest.sh > logs/overnight.console 2>&1 & disown
-tail -f logs/overnight.console
+nohup bash scripts/overnight_ingest.sh > var/logs/overnight.console 2>&1 & disown
+tail -f var/logs/overnight.console
 ```
 
 ### 6. Observe live progress (human)
 
 ```bash
-tail -f logs/*-$(date -u +'%Y%m%dT').*-*.out
+tail -f var/logs/*-$(date -u +'%Y%m%dT').*-*.out
 # The .out files should show STAGE banners, periodic [PROGRESS] lines, and a [DONE] summary per space.
 ```
 
 ### 7. Observe machine logs (JSON)
 
 ```bash
-tail -f logs/*-$(date -u +'%Y%m%dT').*-*.jsonl | jq '.event? // "line"'
+tail -f var/logs/*-$(date -u +'%Y%m%dT').*-*.jsonl | jq '.event? // "line"'
 # You should see confluence.page / confluence.attachments events streaming.
 ```
 
@@ -170,22 +170,22 @@ For any space that got interrupted, find the last run id and re-run with `--resu
 
 ```bash
 SPACE=PM
-LAST_RID=$(ls -1t logs/ingest-*-$SPACE.jsonl | head -n1 | sed -E 's#logs/ingest-(.*)-'"$SPACE"'\.jsonl#\1#')
+LAST_RID=$(ls -1t var/logs/ingest-*-$SPACE.jsonl | head -n1 | sed -E 's#var/logs/ingest-(.*)-'"$SPACE"'\.jsonl#\1#')
 NEW_RID=$(date -u +'%Y%m%dT%H%M%SZ')_${SPACE}_resume
 trailblazer ingest confluence --space "$SPACE" --resume-from "$LAST_RID" --progress --no-color \
-  1> "logs/ingest-$NEW_RID-$SPACE.jsonl" \
-  2> "logs/ingest-$NEW_RID-$SPACE.out"
+  1> "var/logs/ingest-$NEW_RID-$SPACE.jsonl" \
+  2> "var/logs/ingest-$NEW_RID-$SPACE.out"
 ```
 
 ### 9. Morning verification
 
 ```bash
 for RID in $(ls -1t runs | head -n10); do
-  test -f runs/$RID/ingest/summary.json && jq -c '{rid:"'$RID'", pages, attachments, elapsed}' runs/$RID/ingest/summary.json
+  test -f var/runs/$RID/ingest/summary.json && jq -c '{rid:"'$RID'", pages, attachments, elapsed}' var/runs/$RID/ingest/summary.json
 done
 # spot-check NDJSON & sidecars
 RID=$(ls -1t runs | head -n1)
-wc -l "runs/$RID/ingest/confluence.ndjson"
-head -n3 "runs/$RID/ingest/pages.csv"
-jq -C '. | {pages, attachments, total_estimate, checkpoints_written, resume_from}' "runs/$RID/ingest/summary.json"
+wc -l "var/runs/$RID/ingest/confluence.ndjson"
+head -n3 "var/runs/$RID/ingest/pages.csv"
+jq -C '. | {pages, attachments, total_estimate, checkpoints_written, resume_from}' "var/runs/$RID/ingest/summary.json"
 ```

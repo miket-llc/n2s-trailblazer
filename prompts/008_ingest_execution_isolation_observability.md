@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 # PROMPT DEV-008 — Ingest Execution & Isolation Fix + Observability (CODE) ≤9 to-dos
 
@@ -85,11 +85,11 @@ New command: trailblazer confluence spaces.
 
 Print table: ID KEY NAME TYPE STATUS.
 
-Emit runs/\<RUN_ID>/ingest/spaces.json (array with id,key,name,type,status,homepage_id) and structured logs event=confluence.space.
+Emit var/runs/\<RUN_ID>/ingest/spaces.json (array with id,key,name,type,status,homepage_id) and structured logs event=confluence.space.
 
 ### 5. Sidecars for observability
 
-Write in runs/\<RUN_ID>/ingest/:
+Write in var/runs/\<RUN_ID>/ingest/:
 
 - pages.csv: space_key,page_id,title,version,updated_at,attachments_count,url
 - attachments.csv: page_id,filename,media_type,file_size,download_url
@@ -97,13 +97,13 @@ Write in runs/\<RUN_ID>/ingest/:
 
 ### 6. Auto-since via state (no duplicate logic)
 
-Add --auto-since: read state/confluence/<SPACE>\_state.json and use last_highwater as --since.
+Add --auto-since: read var/state/confluence/<SPACE>\_state.json and use last_highwater as --since.
 
 After a successful run, update that file (last_highwater = max updated_at seen, last_run_id).
 
 ### 7. Seen IDs + diff deletions (no DB deletes yet)
 
-During ingest, write runs/\<RUN_ID>/ingest/seen_page_ids.json (per space).
+During ingest, write var/runs/\<RUN_ID>/ingest/seen_page_ids.json (per space).
 
 New CLI: trailblazer ingest diff-deletions --space <KEY> --baseline-run \<RID_A> --current-run \<RID_B> → write deleted_ids.json and print the count.
 

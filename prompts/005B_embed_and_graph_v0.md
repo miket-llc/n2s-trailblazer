@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 # PROMPT 005B — Embed & Graph v0 (Chunk → Embed → Load DB) ≤9 to-dos
 
@@ -86,7 +86,7 @@ Loader: normalized → DB (idempotent).
 
 Add src/trailblazer/pipeline/steps/embed/loader.py:
 
-Read runs/\<RUN_ID>/normalize/normalized.ndjson.
+Read var/runs/\<RUN_ID>/normalize/normalized.ndjson.
 
 For each document: upsert documents, chunk with chunker, upsert chunks, embed each chunk, upsert chunk_embeddings.
 

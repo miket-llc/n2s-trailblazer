@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 # PROMPT 007 — Confluence Ingest Observability + Auto-Since + Prune (CODE) ≤ 9 to-dos
 
@@ -52,7 +52,7 @@ Console (pretty): columns ID KEY NAME TYPE STATUS.
 
 Structured log per space: event=confluence.space, fields=id,key,name,type,status,homepage_id.
 
-Write runs/\<RUN_ID>/ingest/spaces.json (array of spaces).
+Write var/runs/\<RUN_ID>/ingest/spaces.json (array of spaces).
 
 ### Per-page progress & attachment visibility (logs + optional pretty)
 
@@ -67,7 +67,7 @@ DEV | p=12345 | "Title" | att=3 | 2025-08-10T12:00:00Z.
 
 ### Ingest sidecars (CSV + JSON)
 
-In runs/\<RUN_ID>/ingest/ export:
+In var/runs/\<RUN_ID>/ingest/ export:
 
 pages.csv: space_key,page_id,title,version,updated_at,attachments_count,url.
 
@@ -79,7 +79,7 @@ summary.json: per-space totals (pages,attachments,empty_bodies,avg_chars) + run_
 
 Add --auto-since to trailblazer ingest confluence.
 
-If present, read state/confluence/<SPACE>\_state.json and use last_highwater for --since.
+If present, read var/state/confluence/<SPACE>\_state.json and use last_highwater for --since.
 
 After successful run, update that file with last_highwater (max updated_at seen) and last_run_id.
 
@@ -87,7 +87,7 @@ If missing, warn and proceed without --since.
 
 ### Seen IDs + diff-deletions (no DB deletes yet)
 
-During ingest, write runs/\<RUN_ID>/ingest/seen_page_ids.json (per space).
+During ingest, write var/runs/\<RUN_ID>/ingest/seen_page_ids.json (per space).
 New CLI:
 trailblazer ingest diff-deletions --space <KEY> --baseline-run \<RID_A> --current-run \<RID_B>
 → write deleted_ids.json (IDs in baseline not in current) under the current run's ingest dir and print a count.
@@ -96,11 +96,11 @@ trailblazer ingest diff-deletions --space <KEY> --baseline-run \<RID_A> --curren
 
 New CLI: trailblazer ops prune-runs --keep N --min-age-days D [--dry-run].
 
-Exclude newest N and any RIDs referenced by state/confluence/\*.json.
+Exclude newest N and any RIDs referenced by var/state/confluence/\*.json.
 
 Default dry-run; require explicit flag to delete.
 
-Emit prune_report.json under logs/ (or reports/).
+Emit prune_report.json under var/logs/ (or reports/).
 
 ### README — Observability & Ops
 

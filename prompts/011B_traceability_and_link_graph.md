@@ -33,7 +33,7 @@ make test      # pytest -q
 
 Confluence: Cloud v2 + Basic auth. Use v1 CQL only to prefilter when --since is set. Bodies/attachments fetched via v2.
 
-Artifacts immutable: write to runs/run-id/phase/…; never mutate previous runs.
+Artifacts immutable: write to var/runs/run-id/phase/…; never mutate previous runs.
 
 ## Console UX Policy
 
@@ -104,7 +104,7 @@ For Confluence links, parse `/spaces/<KEY>/pages/<ID>/...` → `target_page_id`.
 
 Store this page-level list temporarily (don't bloat the page object).
 
-### 3. Write Traceability Sidecars (Deterministic) in `runs/<RID>/ingest/`
+### 3. Write Traceability Sidecars (Deterministic) in `var/runs/<RID>/ingest/`
 
 **links.jsonl** — one edge per line:
 
