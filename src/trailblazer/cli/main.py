@@ -2,6 +2,9 @@ import typer
 from typing import List, Optional
 from datetime import datetime
 from urllib.parse import urlparse
+from pathlib import Path
+import subprocess
+import sys
 from ..core.logging import setup_logging, log
 from ..core.config import SETTINGS
 from ..pipeline.runner import run as run_pipeline
@@ -1105,6 +1108,500 @@ def ensure() -> None:
 
     paths.ensure_all()
     typer.echo("✅ All workspace directories created")
+
+
+# ========== Thin Wrapper Commands ==========
+
+
+def _validate_workspace_only() -> None:
+    """Validate that we're only writing to var/ workspace."""
+    from ..core import paths
+
+    # Ensure workspace directories exist
+    paths.ensure_all()
+
+    # Check for legacy output paths that should not exist (data/ is OK as source)
+    legacy_paths = ["./runs", "./state", "./logs"]
+    for path in legacy_paths:
+        if Path(path).exists():
+            typer.echo(
+                f"❌ Error: Legacy output path '{path}' exists. All data must be under var/",
+                err=True,
+            )
+            typer.echo(
+                "Please run 'trailblazer paths ensure' and migrate data to var/",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+
+def _get_confluence_spaces() -> List[str]:
+    """Get list of all Confluence spaces using the existing command."""
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "trailblazer.cli.main",
+                "confluence",
+                "spaces",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        # Parse space keys from the output - assuming JSON format
+        import json
+
+        spaces = []
+        for line in result.stdout.strip().split("\n"):
+            if line.strip():
+                try:
+                    space_data = json.loads(line)
+                    if "key" in space_data:
+                        spaces.append(space_data["key"])
+                except json.JSONDecodeError:
+                    continue
+
+        if not spaces:
+            typer.echo("⚠️  No Confluence spaces found", err=True)
+            typer.echo(
+                "💡 Check your Confluence credentials in .env:", err=True
+            )
+            typer.echo(
+                "   CONFLUENCE_BASE_URL=https://your-site.atlassian.net/wiki",
+                err=True,
+            )
+            typer.echo("   CONFLUENCE_EMAIL=your-email@company.com", err=True)
+            typer.echo("   CONFLUENCE_API_TOKEN=your-token", err=True)
+            typer.echo("   Try: trailblazer confluence spaces", err=True)
+
+        return spaces
+    except subprocess.CalledProcessError as e:
+        typer.echo("❌ Failed to enumerate Confluence spaces", err=True)
+        typer.echo(f"   Error: {e}", err=True)
+        typer.echo("💡 Troubleshooting:", err=True)
+        typer.echo("   1. Check Confluence credentials in .env file", err=True)
+        typer.echo(
+            "   2. Test connection: trailblazer confluence spaces", err=True
+        )
+        typer.echo("   3. Verify CONFLUENCE_BASE_URL format", err=True)
+        raise typer.Exit(1)
+
+
+def _get_runs_needing_normalization() -> List[str]:
+    """Get list of run IDs that need normalization."""
+    from ..core import paths
+
+    runs_dir = paths.runs()
+    runs_needing_norm = []
+
+    if not runs_dir.exists():
+        return []
+
+    for run_dir in runs_dir.iterdir():
+        if not run_dir.is_dir():
+            continue
+
+        ingest_dir = run_dir / "ingest"
+        normalize_dir = run_dir / "normalize"
+
+        # Check if ingest exists but normalize doesn't
+        if ingest_dir.exists() and not normalize_dir.exists():
+            # Check for either confluence.ndjson or dita.ndjson
+            if (ingest_dir / "confluence.ndjson").exists() or (
+                ingest_dir / "dita.ndjson"
+            ).exists():
+                runs_needing_norm.append(run_dir.name)
+
+    return sorted(runs_needing_norm)
+
+
+@app.command()
+def plan(
+    confluence: bool = typer.Option(
+        True, "--confluence/--no-confluence", help="Plan Confluence ingestion"
+    ),
+    dita: bool = typer.Option(
+        True, "--dita/--no-dita", help="Plan DITA ingestion"
+    ),
+) -> None:
+    """
+    Dry-run preview showing what would be ingested (no writes).
+
+    This command shows you exactly what 'trailblazer ingest-all' would process
+    without actually performing any ingestion. Use this to verify your setup
+    before running the full pipeline.
+
+    Example:
+        trailblazer plan                    # Preview everything
+        trailblazer plan --no-dita          # Preview only Confluence
+        trailblazer plan --no-confluence    # Preview only DITA
+    """
+    _validate_workspace_only()
+
+    typer.echo("🔍 Trailblazer Ingestion Plan (dry-run preview)")
+    typer.echo("=" * 50)
+
+    total_items = 0
+
+    if confluence:
+        typer.echo("\n📋 Confluence Spaces:")
+        try:
+            spaces = _get_confluence_spaces()
+            typer.echo(f"   Total spaces: {len(spaces)}")
+            if spaces:
+                typer.echo("   Sample spaces:", err=True)
+                for space in spaces[:5]:
+                    typer.echo(f"     - {space}", err=True)
+                if len(spaces) > 5:
+                    typer.echo(
+                        f"     ... and {len(spaces) - 5} more", err=True
+                    )
+            total_items += len(spaces)
+        except typer.Exit:
+            typer.echo("   ⚠️  Could not enumerate spaces", err=True)
+
+    if dita:
+        typer.echo("\n📄 DITA Files:")
+        dita_root = Path("data/raw/dita/ellucian-documentation")
+        if dita_root.exists():
+            dita_files = (
+                list(dita_root.glob("**/*.xml"))
+                + list(dita_root.glob("**/*.dita"))
+                + list(dita_root.glob("**/*.ditamap"))
+            )
+            typer.echo(f"   Total files: {len(dita_files)}")
+            total_items += len(dita_files)
+        else:
+            typer.echo("   ⚠️  DITA root not found", err=True)
+
+    typer.echo(f"\n📊 Total items to process: {total_items}")
+    typer.echo("🔄 To execute: trailblazer ingest-all")
+    typer.echo("📝 No files will be written in this preview")
+
+
+@app.command()
+def ingest_all(
+    confluence: bool = typer.Option(
+        True, "--confluence/--no-confluence", help="Ingest Confluence"
+    ),
+    dita: bool = typer.Option(True, "--dita/--no-dita", help="Ingest DITA"),
+    progress: bool = typer.Option(
+        True, "--progress/--no-progress", help="Show progress"
+    ),
+    progress_every: int = typer.Option(
+        10, "--progress-every", help="Progress frequency"
+    ),
+    no_color: bool = typer.Option(
+        False, "--no-color", help="Disable colored output"
+    ),
+    since: Optional[str] = typer.Option(
+        None, "--since", help="ISO timestamp for delta ingestion"
+    ),
+    auto_since: bool = typer.Option(
+        False, "--auto-since", help="Auto-detect since from state"
+    ),
+    max_pages: Optional[int] = typer.Option(
+        None, "--max-pages", help="Debug: limit pages"
+    ),
+    from_scratch: bool = typer.Option(
+        False, "--from-scratch", help="Clear var/state before starting"
+    ),
+) -> None:
+    """
+    Ingest all Confluence spaces and DITA files with enforced ADF format.
+
+    This is the main command for full data ingestion. It:
+    • Calls 'trailblazer ingest confluence' for every space (ADF enforced)
+    • Calls 'trailblazer ingest dita' for all XML files
+    • Creates a session index showing all commands executed
+    • Validates workspace is var/ only
+
+    Progress and logs are forwarded from underlying commands.
+    Run 'trailblazer plan' first to preview what will be processed.
+
+    Examples:
+        trailblazer ingest-all                    # Full ingestion
+        trailblazer ingest-all --from-scratch     # Clear state first
+        trailblazer ingest-all --no-dita          # Confluence only
+        trailblazer ingest-all --since 2025-01-01T00:00:00Z  # Delta mode
+    """
+    _validate_workspace_only()
+
+    if from_scratch:
+        from ..core import paths
+        import shutil
+
+        state_dir = paths.state()
+        if state_dir.exists():
+            shutil.rmtree(state_dir)
+            typer.echo("🗑️  Cleared var/state for fresh start")
+        paths.ensure_all()
+
+    session_id = datetime.now().strftime("%Y%m%dT%H%M%SZ")
+    index_file = Path(f"var/runs/INDEX-{session_id}.md")
+
+    typer.echo(f"🚀 Starting full ingestion session: {session_id}")
+    typer.echo(f"📋 Session index: {index_file}")
+
+    # Create session index
+    with open(index_file, "w") as f:
+        f.write(f"# Ingestion Session {session_id}\n\n")
+        f.write(f"Started: {datetime.now().isoformat()}\n\n")
+        f.write("## Commands Executed\n\n")
+
+    total_runs = 0
+
+    if confluence:
+        typer.echo("\n📋 Ingesting Confluence spaces...")
+        spaces = _get_confluence_spaces()
+
+        for space in spaces:
+            # Build command
+            cmd = [
+                sys.executable,
+                "-m",
+                "trailblazer.cli.main",
+                "ingest",
+                "confluence",
+                "--space",
+                space,
+                "--body-format",
+                "atlas_doc_format",  # Enforce ADF
+            ]
+
+            if progress:
+                cmd.append("--progress")
+            if progress_every != 10:
+                cmd.extend(["--progress-every", str(progress_every)])
+            if no_color:
+                cmd.append("--no-color")
+            if since:
+                cmd.extend(["--since", since])
+            if auto_since:
+                cmd.append("--auto-since")
+            if max_pages:
+                cmd.extend(["--max-pages", str(max_pages)])
+
+            # Log to session index
+            with open(index_file, "a") as f:
+                f.write(f"### Confluence Space: {space}\n")
+                f.write(f"```bash\n{' '.join(cmd)}\n```\n\n")
+
+            typer.echo(f"▶️  Ingesting space: {space}")
+            typer.echo(f"   Command: {' '.join(cmd)}", err=True)
+
+            try:
+                subprocess.run(cmd, check=True)
+                total_runs += 1
+                typer.echo(f"✅ Completed space: {space}")
+            except subprocess.CalledProcessError as e:
+                typer.echo(
+                    f"❌ Failed space: {space} (exit {e.returncode})", err=True
+                )
+
+    if dita:
+        typer.echo("\n📄 Ingesting DITA files...")
+
+        # Build command
+        cmd = [
+            sys.executable,
+            "-m",
+            "trailblazer.cli.main",
+            "ingest",
+            "dita",
+            "--root",
+            "data/raw/dita/ellucian-documentation",
+        ]
+
+        if progress:
+            cmd.append("--progress")
+        if progress_every != 10:
+            cmd.extend(["--progress-every", str(progress_every)])
+        if no_color:
+            cmd.append("--no-color")
+
+        # Log to session index
+        with open(index_file, "a") as f:
+            f.write("### DITA Files\n")
+            f.write(f"```bash\n{' '.join(cmd)}\n```\n\n")
+
+        typer.echo("▶️  Ingesting DITA files")
+        typer.echo(f"   Command: {' '.join(cmd)}", err=True)
+
+        try:
+            subprocess.run(cmd, check=True)
+            total_runs += 1
+            typer.echo("✅ Completed DITA ingestion")
+        except subprocess.CalledProcessError as e:
+            typer.echo(
+                f"❌ Failed DITA ingestion (exit {e.returncode})", err=True
+            )
+
+    # Finalize session index
+    with open(index_file, "a") as f:
+        f.write("## Summary\n\n")
+        f.write(f"- Total successful runs: {total_runs}\n")
+        f.write(f"- Completed: {datetime.now().isoformat()}\n")
+        f.write("- All data under: var/\n")
+        f.write("- ADF format enforced for Confluence\n")
+
+    typer.echo("\n🎉 Ingestion session complete!")
+    typer.echo(f"📊 Total runs: {total_runs}")
+    typer.echo(f"📋 Session index: {index_file}")
+
+
+@app.command()
+def normalize_all(
+    progress: bool = typer.Option(
+        True, "--progress/--no-progress", help="Show progress"
+    ),
+) -> None:
+    """
+    Normalize all runs that are missing normalized output.
+
+    Scans var/runs/ for ingest directories that don't have corresponding
+    normalize directories and processes them using 'trailblazer normalize from-ingest'.
+
+    This is typically run after 'trailblazer ingest-all' to complete the pipeline.
+    Normalization converts raw ingested data to the unified format used downstream.
+
+    Examples:
+        trailblazer normalize-all           # Normalize everything needed
+        trailblazer normalize-all --no-progress  # Quiet mode
+    """
+    _validate_workspace_only()
+
+    runs_to_normalize = _get_runs_needing_normalization()
+
+    if not runs_to_normalize:
+        typer.echo("✅ All runs are already normalized")
+        return
+
+    typer.echo(
+        f"🔄 Found {len(runs_to_normalize)} runs needing normalization:"
+    )
+    for run_id in runs_to_normalize:
+        typer.echo(f"  - {run_id}")
+
+    typer.echo()
+
+    successful = 0
+    for run_id in runs_to_normalize:
+        cmd = [
+            sys.executable,
+            "-m",
+            "trailblazer.cli.main",
+            "normalize",
+            "from-ingest",
+            "--run-id",
+            run_id,
+        ]
+
+        typer.echo(f"▶️  Normalizing: {run_id}")
+        if progress:
+            typer.echo(f"   Command: {' '.join(cmd)}", err=True)
+
+        try:
+            subprocess.run(cmd, check=True, capture_output=not progress)
+            successful += 1
+            typer.echo(f"✅ Completed: {run_id}")
+        except subprocess.CalledProcessError as e:
+            typer.echo(f"❌ Failed: {run_id} (exit {e.returncode})", err=True)
+
+    typer.echo(
+        f"\n📊 Normalization complete: {successful}/{len(runs_to_normalize)} successful"
+    )
+
+
+@app.command()
+def status() -> None:
+    """
+    Show quick status of last runs and totals.
+
+    Displays an overview of your workspace including:
+    • Total runs and recent activity
+    • Breakdown by source (Confluence vs DITA)
+    • Normalization status and pending work
+    • Disk usage summary
+
+    Use this to check progress and see what needs attention.
+
+    Example:
+        trailblazer status    # Show current workspace status
+    """
+    _validate_workspace_only()
+
+    from ..core import paths
+
+    typer.echo("📊 Trailblazer Status")
+    typer.echo("=" * 30)
+
+    # Check runs directory
+    runs_dir = paths.runs()
+    if not runs_dir.exists():
+        typer.echo("📁 No runs directory found")
+        return
+
+    # Get all runs
+    all_runs = sorted(
+        [d.name for d in runs_dir.iterdir() if d.is_dir()], reverse=True
+    )
+
+    if not all_runs:
+        typer.echo("📁 No runs found")
+        return
+
+    typer.echo(f"📂 Total runs: {len(all_runs)}")
+    typer.echo(f"🕐 Latest: {all_runs[0]}")
+
+    # Analyze recent runs
+    confluence_runs = []
+    dita_runs = []
+    normalized_runs = []
+
+    for run_id in all_runs[:10]:  # Check last 10 runs
+        run_dir = runs_dir / run_id
+        ingest_dir = run_dir / "ingest"
+        normalize_dir = run_dir / "normalize"
+
+        if (ingest_dir / "confluence.ndjson").exists():
+            confluence_runs.append(run_id)
+        if (ingest_dir / "dita.ndjson").exists():
+            dita_runs.append(run_id)
+        if normalize_dir.exists():
+            normalized_runs.append(run_id)
+
+    typer.echo(f"\n📋 Recent Confluence runs: {len(confluence_runs)}")
+    if confluence_runs:
+        typer.echo(f"   Latest: {confluence_runs[0]}")
+
+    typer.echo(f"📄 Recent DITA runs: {len(dita_runs)}")
+    if dita_runs:
+        typer.echo(f"   Latest: {dita_runs[0]}")
+
+    typer.echo(f"🔄 Normalized runs: {len(normalized_runs)}")
+
+    # Check for runs needing normalization
+    needs_norm = _get_runs_needing_normalization()
+    if needs_norm:
+        typer.echo(f"⚠️  Runs needing normalization: {len(needs_norm)}")
+        typer.echo("   Run: trailblazer normalize-all")
+    else:
+        typer.echo("✅ All runs normalized")
+
+    # Show workspace usage
+    import shutil
+
+    total, used, free = shutil.disk_usage(runs_dir)
+    runs_size = sum(
+        f.stat().st_size for f in runs_dir.rglob("*") if f.is_file()
+    )
+
+    typer.echo("\n💾 Workspace usage:")
+    typer.echo(f"   Runs data: {runs_size / (1024**2):.1f} MB")
+    typer.echo(f"   Disk free: {free / (1024**3):.1f} GB")
 
 
 if __name__ == "__main__":

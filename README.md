@@ -100,6 +100,26 @@ trailblazer ask "How do I configure SSO?" --provider dummy
 - **Artifacts**: Find all outputs in `runs/<run_id>/<phase>/`
 - **Observability**: Rich progress, NDJSON event logs, and assurance reports
 
+## Simple Workflow
+
+The easiest way to ingest all your data:
+
+```bash
+# 1. Preview what would be ingested (no writes)
+trailblazer plan
+
+# 2. Ingest everything with enforced ADF format  
+trailblazer ingest-all --from-scratch
+
+# 3. Normalize all ingested data
+trailblazer normalize-all
+
+# 4. Check status and results
+trailblazer status
+```
+
+These wrapper commands handle workspace validation, ADF enforcement, progress forwarding, and session tracking automatically. For advanced usage, see [`scripts/examples.md`](scripts/examples.md) or use the underlying `trailblazer ingest` and `trailblazer normalize` commands directly.
+
 ## What You'll See
 
 **Rich Progress Output:**
