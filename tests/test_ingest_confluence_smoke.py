@@ -90,5 +90,28 @@ def test_ingest_writes_ndjson(tmp_path, monkeypatch):
     rec = json.loads(lines[0])
     assert rec["id"] == "p1"
     assert rec["attachments"][0]["filename"] == "file.png"
+
+    # Verify all required traceability fields from prompt
+    required_fields = [
+        "id",
+        "url",
+        "space_id",
+        "space_key",
+        "version",
+        "created_at",
+        "updated_at",
+        "labels",
+        "ancestors",
+        "attachments",
+        "content_sha256",
+    ]
+    for field in required_fields:
+        assert field in rec, f"Required field '{field}' missing from output"
+
+    # Verify attachment structure includes filename and download_url
+    if rec["attachments"]:
+        att = rec["attachments"][0]
+        assert "filename" in att
+        assert "download_url" in att
     m = json.loads((out / "metrics.json").read_text())
     assert m["pages"] == 2

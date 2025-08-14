@@ -15,6 +15,11 @@ from trailblazer.adapters.dita import (
     _generate_topic_id,
     _generate_map_id,
     _extract_labels_from_prolog,
+    _extract_enhanced_metadata_from_prolog,
+    _extract_links_from_element,
+    _normalize_url,
+    _classify_link_type,
+    _resolve_dita_reference,
 )
 
 
@@ -419,3 +424,323 @@ def test_map_without_keydefs(temp_dir):
     doc = parse_map(map_file)
     assert doc.keydefs == {}
     assert len(doc.hierarchy) == 2
+
+
+# Test enhanced metadata extraction
+def test_extract_enhanced_metadata_from_prolog():
+    """Test enhanced metadata extraction from prolog."""
+    prolog_xml = """<prolog>
+        <metadata>
+            <keywords>
+                <keyword>api</keyword>
+                <keyword>reference</keyword>
+            </keywords>
+            <othermeta name="status" content="reviewed"/>
+        </metadata>
+        <resourceid appname="MyApp"/>
+        <critdates created="2023-01-15" modified="2023-03-20"/>
+        <author>John Doe</author>
+        <authorinformation>
+            <personname>
+                <firstname>Jane</firstname>
+                <lastname>Smith</lastname>
+            </personname>
+        </authorinformation>
+        <data name="version" value="1.2"/>
+    </prolog>"""
+
+    tree = etree.fromstring(prolog_xml.encode("utf-8"))
+    metadata = _extract_enhanced_metadata_from_prolog(tree)
+
+    assert metadata["keywords"] == ["api", "reference"]
+    assert metadata["resource_app"] == "MyApp"
+    assert metadata["critdates"]["created"] == "2023-01-15"
+    assert metadata["critdates"]["modified"] == "2023-03-20"
+    assert "John Doe" in metadata["authors"]
+    assert "Jane Smith" in metadata["authors"]
+    assert metadata["data_pairs"]["version"] == "1.2"
+
+
+def test_extract_enhanced_metadata_with_attributes():
+    """Test enhanced metadata extraction with audience/product attributes."""
+    prolog_xml = """<prolog>
+        <metadata audience="implementer" product="Navigate" platform="SaaS" otherprops="status=approved">
+            <keywords>
+                <keyword>configuration</keyword>
+            </keywords>
+        </metadata>
+    </prolog>"""
+
+    tree = etree.fromstring(prolog_xml.encode("utf-8"))
+    metadata = _extract_enhanced_metadata_from_prolog(tree)
+
+    assert metadata["audience"] == "implementer"
+    assert metadata["product"] == "Navigate"
+    assert metadata["platform"] == "SaaS"
+    assert metadata["otherprops"]["status"] == "approved"
+    assert metadata["keywords"] == ["configuration"]
+
+
+def test_normalize_url():
+    """Test URL normalization functionality."""
+    # Test tracking parameter removal
+    url_with_tracking = "https://example.com/page?utm_source=test&utm_medium=email&content=actual"
+    normalized = _normalize_url(url_with_tracking)
+    assert "utm_source" not in normalized
+    assert "utm_medium" not in normalized
+    assert "content=actual" in normalized
+
+    # Test anchor preservation
+    url_with_anchor = "https://example.com/page#section1"
+    normalized = _normalize_url(url_with_anchor)
+    assert "#section1" in normalized
+
+    # Test empty/None handling
+    assert _normalize_url("") == ""
+    assert _normalize_url(None) is None
+
+
+def test_classify_link_type():
+    """Test link type classification."""
+    # External HTTP links
+    assert _classify_link_type("https://example.com") == "external"
+    assert _classify_link_type("http://example.com") == "external"
+
+    # Confluence links
+    assert (
+        _classify_link_type("https://mycompany.confluence.com/page")
+        == "confluence"
+    )
+    assert (
+        _classify_link_type("https://mycompany.atlassian.net/wiki")
+        == "confluence"
+    )
+
+    # DITA internal links
+    assert _classify_link_type("concepts/intro.dita") == "dita"
+    assert _classify_link_type("maps/user-guide.ditamap") == "dita"
+    assert _classify_link_type("reference.xml") == "dita"
+
+    # Key references
+    assert _classify_link_type("product-key", is_keyref=True) == "dita"
+
+    # Other external
+    assert _classify_link_type("mailto:test@example.com") == "external"
+    assert _classify_link_type("ftp://files.example.com") == "external"
+
+
+def test_resolve_dita_reference(temp_dir):
+    """Test DITA reference resolution."""
+    # Create a simple file structure
+    concepts_dir = temp_dir / "concepts"
+    concepts_dir.mkdir()
+    intro_file = concepts_dir / "intro.dita"
+    intro_file.write_text(
+        "<?xml version='1.0'?><topic><title>Intro</title></topic>"
+    )
+
+    current_file = temp_dir / "current.dita"
+
+    # Test relative reference resolution
+    resolved = _resolve_dita_reference(
+        "concepts/intro.dita", current_file, temp_dir
+    )
+    assert resolved == "topic:concepts/intro"
+
+    # Test with anchor
+    resolved = _resolve_dita_reference(
+        "concepts/intro.dita#section1", current_file, temp_dir
+    )
+    assert resolved == "topic:concepts/intro#section1"
+
+    # Test map reference
+    resolved = _resolve_dita_reference(
+        "concepts/intro.ditamap", current_file, temp_dir
+    )
+    assert resolved == "map:concepts/intro"
+
+    # Test reference (doesn't need to exist)
+    resolved = _resolve_dita_reference(
+        "nonexistent/file.dita", current_file, temp_dir
+    )
+    assert resolved == "topic:nonexistent/file"
+
+    # Test external URL (should return None)
+    resolved = _resolve_dita_reference(
+        "https://example.com", current_file, temp_dir
+    )
+    assert resolved is None
+
+
+def test_extract_links_from_element(temp_dir):
+    """Test comprehensive link extraction from XML elements."""
+    xml_content = """<topic>
+        <body>
+            <p>External link: <xref href="https://example.com">Example</xref></p>
+            <p>Internal link: <xref href="concepts/intro.dita">Introduction</xref></p>
+            <p>Key reference: <xref keyref="product-name">Product</xref></p>
+            <p>Link element: <link href="https://docs.example.com">Documentation</link></p>
+            <p conref="shared.dita#shared/disclaimer">Disclaimer</p>
+            <p>Content key ref: <ph conkeyref="keys/company-name">Company</ph></p>
+        </body>
+    </topic>"""
+
+    tree = etree.fromstring(xml_content.encode("utf-8"))
+    current_file = temp_dir / "test.dita"
+
+    # Create referenced file for resolution testing
+    concepts_dir = temp_dir / "concepts"
+    concepts_dir.mkdir()
+    intro_file = concepts_dir / "intro.dita"
+    intro_file.write_text(
+        "<?xml version='1.0'?><topic><title>Intro</title></topic>"
+    )
+
+    links = _extract_links_from_element(tree, current_file, temp_dir)
+
+    # Should extract all link types
+    assert len(links) >= 6
+
+    # Check external links
+    external_links = [link for link in links if link.target_type == "external"]
+    assert len(external_links) == 2
+    assert any(
+        link.target_url == "https://example.com" for link in external_links
+    )
+    assert any(
+        link.target_url == "https://docs.example.com"
+        for link in external_links
+    )
+
+    # Check DITA internal links
+    dita_links = [
+        link for link in links if link.target_type == "dita" and link.href
+    ]
+    assert len(dita_links) >= 1
+    assert any(
+        link.target_page_id == "topic:concepts/intro" for link in dita_links
+    )
+
+    # Check key references
+    key_refs = [link for link in links if link.keyref]
+    assert len(key_refs) >= 2
+    assert any(link.keyref == "product-name" for link in key_refs)
+    assert any(link.keyref == "keys/company-name" for link in key_refs)
+
+    # Check content references
+    conrefs = [
+        link for link in links if link.element_type in ("conref", "conkeyref")
+    ]
+    assert len(conrefs) >= 2
+    assert any(link.conref == "shared.dita" for link in conrefs)
+
+
+def test_parse_topic_enhanced_features(temp_dir):
+    """Test topic parsing with enhanced metadata and links."""
+    topic_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <concept id="enhanced_concept" xml:lang="en-US">
+        <title>Enhanced Concept Topic</title>
+        <prolog>
+            <metadata audience="implementer" product="Navigate" platform="SaaS">
+                <keywords>
+                    <keyword>configuration</keyword>
+                    <keyword>setup</keyword>
+                </keywords>
+            </metadata>
+            <resourceid appname="ConfigApp"/>
+            <critdates created="2023-01-15" modified="2023-03-20"/>
+            <author>Technical Writer</author>
+        </prolog>
+        <conbody>
+            <p>See also: <xref href="related-topic.dita">Related Topic</xref></p>
+            <p>External ref: <xref href="https://docs.example.com">Documentation</xref></p>
+            <p>Key ref: <xref keyref="product-name">Product Name</xref></p>
+        </conbody>
+    </concept>"""
+
+    topic_file = temp_dir / "enhanced.dita"
+    topic_file.write_text(topic_xml)
+
+    doc = parse_topic(topic_file)
+
+    # Check enhanced metadata
+    assert hasattr(doc, "enhanced_metadata")
+    assert doc.enhanced_metadata["audience"] == "implementer"
+    assert doc.enhanced_metadata["product"] == "Navigate"
+    assert doc.enhanced_metadata["platform"] == "SaaS"
+    assert "configuration" in doc.enhanced_metadata["keywords"]
+    assert "setup" in doc.enhanced_metadata["keywords"]
+    assert doc.enhanced_metadata["resource_app"] == "ConfigApp"
+    assert doc.enhanced_metadata["critdates"]["created"] == "2023-01-15"
+    assert "Technical Writer" in doc.enhanced_metadata["authors"]
+
+    # Check enhanced links
+    assert hasattr(doc, "links")
+    assert len(doc.links) >= 3
+
+    # Find specific link types
+    external_links = [
+        link for link in doc.links if link.target_type == "external"
+    ]
+    dita_links = [
+        link for link in doc.links if link.target_type == "dita" and link.href
+    ]
+    key_refs = [link for link in doc.links if link.keyref]
+
+    assert len(external_links) >= 1
+    assert len(dita_links) >= 1
+    assert len(key_refs) >= 1
+
+    # Check specific links
+    assert any(
+        link.target_url == "https://docs.example.com"
+        for link in external_links
+    )
+    assert any(link.href == "related-topic.dita" for link in dita_links)
+    assert any(link.keyref == "product-name" for link in key_refs)
+
+
+def test_parse_map_enhanced_features(temp_dir):
+    """Test map parsing with enhanced metadata and links."""
+    map_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <map id="enhanced_map" xml:lang="en-US">
+        <title>Enhanced User Guide</title>
+        <prolog>
+            <metadata audience="end-user" product="Navigate">
+                <keywords>
+                    <keyword>user-guide</keyword>
+                    <keyword>documentation</keyword>
+                </keywords>
+            </metadata>
+            <author>Documentation Team</author>
+        </prolog>
+        <keydef keys="product-name" href="concepts/product.dita"/>
+        <topicref href="introduction.dita" navtitle="Introduction">
+            <topicref href="getting-started.dita" navtitle="Getting Started"/>
+        </topicref>
+        <topicref href="https://support.example.com" navtitle="External Support" scope="external"/>
+    </map>"""
+
+    map_file = temp_dir / "enhanced.ditamap"
+    map_file.write_text(map_xml)
+
+    doc = parse_map(map_file)
+
+    # Check enhanced metadata
+    assert hasattr(doc, "enhanced_metadata")
+    assert doc.enhanced_metadata["audience"] == "end-user"
+    assert doc.enhanced_metadata["product"] == "Navigate"
+    assert "user-guide" in doc.enhanced_metadata["keywords"]
+    assert "Documentation Team" in doc.enhanced_metadata["authors"]
+
+    # Check enhanced links
+    assert hasattr(doc, "links")
+
+    # Should extract links from topicref elements
+    external_links = [
+        link for link in doc.links if link.target_type == "external"
+    ]
+    assert len(external_links) >= 1
+    assert any(
+        "support.example.com" in link.target_url for link in external_links
+    )

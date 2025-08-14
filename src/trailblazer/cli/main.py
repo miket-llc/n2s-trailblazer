@@ -126,7 +126,8 @@ def ingest_confluence_cmd(
         False, "--auto-since", help="Auto-read since from state files"
     ),
     body_format: str = typer.Option(
-        None, help="storage or atlas_doc_format [default: atlas_doc_format]"
+        "atlas_doc_format",
+        help="Body format: storage or atlas_doc_format (default: atlas_doc_format)",
     ),
     max_pages: Optional[int] = typer.Option(
         None, help="Stop after N pages (debug)"
@@ -197,7 +198,7 @@ def ingest_confluence_cmd(
             space_ids=space_id or None,
             since=dt,
             auto_since=auto_since,
-            body_format=body_format or SETTINGS.CONFLUENCE_BODY_FORMAT,
+            body_format=body_format,
             max_pages=max_pages,
             progress=progress,
             progress_every=progress_every,
@@ -791,8 +792,10 @@ def ask(
     ),
 ) -> None:
     """Ask a question using dense retrieval over embedded chunks."""
-    # Run database preflight check first
-    _run_db_preflight_check()
+    # Run database preflight check only if not using custom db_url
+    # When db_url is provided, the retriever will handle db connection validation
+    if not db_url:
+        _run_db_preflight_check()
 
     import json
     import time

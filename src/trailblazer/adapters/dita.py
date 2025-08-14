@@ -10,6 +10,7 @@ Parses DITA topics (concept, task, reference) and ditamaps to extract:
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import hashlib
+import urllib.parse
 from lxml import etree  # type: ignore
 from dataclasses import dataclass
 from ..core.logging import log
@@ -27,6 +28,21 @@ class MediaRef:
 
 
 @dataclass
+class LinkRef:
+    """Link reference extracted from DITA content."""
+
+    href: Optional[str]
+    keyref: Optional[str]
+    conref: Optional[str]
+    target_type: str  # "external", "dita", "confluence"
+    target_page_id: Optional[str]
+    target_url: Optional[str]
+    anchor: Optional[str]
+    text: Optional[str]
+    element_type: str  # "xref", "link", "conref", "conkeyref"
+
+
+@dataclass
 class TopicDoc:
     """Parsed DITA topic document."""
 
@@ -40,6 +56,8 @@ class TopicDoc:
     keyrefs: List[str]
     conrefs: List[str]
     labels: List[str]
+    links: List[LinkRef]  # Enhanced link extraction
+    enhanced_metadata: Dict[str, Any]  # Structured metadata from prolog
 
 
 @dataclass
@@ -62,11 +80,143 @@ class MapDoc:
     keydefs: Dict[str, str]
     hierarchy: List[MapRef]
     labels: List[str]
+    links: List[LinkRef]  # Enhanced link extraction
+    enhanced_metadata: Dict[str, Any]  # Structured metadata from prolog
 
 
 def _normalize_path(path: str) -> str:
     """Normalize path separators to forward slashes and lowercase."""
     return str(Path(path).as_posix()).lower()
+
+
+def _normalize_url(url: str) -> str:
+    """Normalize URL by removing tracking parameters and fragments."""
+    if not url:
+        return url
+
+    # Parse URL
+    parsed = urllib.parse.urlparse(url)
+
+    # Remove common tracking parameters
+    tracking_params = {
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "gclid",
+        "fbclid",
+        "msclkid",
+        "_ga",
+        "_gac",
+        "mc_cid",
+        "mc_eid",
+    }
+
+    if parsed.query:
+        query_params = urllib.parse.parse_qs(
+            parsed.query, keep_blank_values=True
+        )
+        filtered_params = {
+            k: v for k, v in query_params.items() if k not in tracking_params
+        }
+        new_query = urllib.parse.urlencode(filtered_params, doseq=True)
+    else:
+        new_query = ""
+
+    # Reconstruct URL without tracking params but keep fragment/anchor
+    normalized = urllib.parse.urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            parsed.fragment,
+        )
+    )
+
+    return normalized
+
+
+def _classify_link_type(href: str, is_keyref: bool = False) -> str:
+    """Classify link as external, dita internal, or confluence."""
+    if not href:
+        return "external"
+
+    # If it's a keyref, treat as DITA internal for now
+    if is_keyref:
+        return "dita"
+
+    # Check if it's an external URL
+    if href.startswith(("http://", "https://", "ftp://", "mailto:")):
+        if "confluence" in href.lower() or "atlassian" in href.lower():
+            return "confluence"
+        return "external"
+
+    # If it ends with DITA extensions, it's internal DITA
+    if href.endswith((".dita", ".ditamap", ".xml")):
+        return "dita"
+
+    # If it's a relative path without extension, likely DITA
+    if not href.startswith("/") and "." not in Path(href).suffix:
+        return "dita"
+
+    # Default to external for other cases
+    return "external"
+
+
+def _resolve_dita_reference(
+    href: str, current_file_path: Path, root_dir: Path
+) -> Optional[str]:
+    """Resolve DITA internal reference to our standard ID format."""
+    if not href or href.startswith(("http://", "https://")):
+        return None
+
+    try:
+        # Extract anchor if present in href
+        anchor = None
+        clean_href = href
+        if "#" in href:
+            clean_href, anchor = href.split("#", 1)
+
+        # Handle relative paths
+        if not clean_href.startswith("/"):
+            # Resolve relative to current file directory
+            resolved_path = current_file_path.parent / clean_href
+        else:
+            # Absolute path relative to root
+            resolved_path = root_dir / clean_href.lstrip("/")
+
+        # Get relative path from root (don't require file to exist)
+        try:
+            if resolved_path.is_absolute():
+                rel_path = resolved_path.relative_to(root_dir)
+            else:
+                rel_path = resolved_path
+        except ValueError:
+            # Path is outside root directory, try as relative
+            rel_path = Path(clean_href)
+
+        # Normalize path and create ID
+        path_str = str(rel_path)
+        normalized_path = Path(path_str).with_suffix("").as_posix().lower()
+
+        # Determine if it's a map or topic
+        if (
+            path_str.endswith(".ditamap")
+            or "map" in Path(path_str).stem.lower()
+        ):
+            page_id = f"map:{normalized_path}"
+        else:
+            page_id = f"topic:{normalized_path}"
+            if anchor:
+                page_id += f"#{anchor}"
+
+        return page_id
+
+    except Exception:
+        return None
 
 
 def _generate_topic_id(relpath: str, element_id: Optional[str] = None) -> str:
@@ -92,14 +242,22 @@ def _extract_text_content(element: etree._Element) -> str:
     # Get all text content, including from child elements
     text_parts = []
     if element.text:
-        text_parts.append(element.text)
+        text_parts.append(element.text.strip())
 
     for child in element:
-        text_parts.append(_extract_text_content(child))
+        child_text = _extract_text_content(child)
+        if child_text:
+            text_parts.append(child_text)
         if child.tail:
-            text_parts.append(child.tail)
+            text_parts.append(child.tail.strip())
 
-    return " ".join(text_parts).strip()
+    # Join with single spaces and normalize whitespace
+    result = " ".join(text_parts)
+    # Replace multiple whitespace with single space
+    import re
+
+    result = re.sub(r"\s+", " ", result)
+    return result.strip()
 
 
 def _extract_media_from_element(
@@ -148,6 +306,279 @@ def _extract_media_from_element(
         _extract_media_from_element(
             child, child_path, media_list, order_counter
         )
+
+
+def _extract_enhanced_metadata_from_prolog(
+    prolog: Optional[etree._Element],
+) -> Dict[str, Any]:
+    """Extract enhanced structured metadata from DITA prolog."""
+    metadata: Dict[str, Any] = {
+        "audience": None,
+        "product": None,
+        "platform": None,
+        "keywords": [],
+        "otherprops": {},
+        "resource_app": None,
+        "critdates": {"created": None, "modified": None},
+        "authors": [],
+        "data_pairs": {},
+    }
+    keywords_list = metadata["keywords"]  # type: List[str]
+    authors_list = metadata["authors"]  # type: List[str]
+
+    if prolog is None:
+        return metadata
+
+    # Extract keywords
+    for keywords in prolog.xpath(".//keywords"):
+        for keyword in keywords.xpath(".//keyword"):
+            text = _extract_text_content(keyword)
+            if text:
+                keywords_list.append(text)
+
+    # Extract audience, product, platform from various elements
+    for meta in prolog.xpath(
+        ".//*[@audience or @product or @platform or @otherprops]"
+    ):
+        if meta.get("audience"):
+            metadata["audience"] = meta.get("audience")
+        if meta.get("product"):
+            metadata["product"] = meta.get("product")
+        if meta.get("platform"):
+            metadata["platform"] = meta.get("platform")
+        if meta.get("otherprops"):
+            # Parse otherprops as key=value pairs
+            otherprops_str = meta.get("otherprops", "")
+            for prop in otherprops_str.split():
+                if "=" in prop:
+                    key, value = prop.split("=", 1)
+                    metadata["otherprops"][key] = value
+                else:
+                    metadata["otherprops"][prop] = "true"
+
+    # Extract resourceid/@appname
+    for resourceid in prolog.xpath(".//resourceid[@appname]"):
+        metadata["resource_app"] = resourceid.get("appname")
+
+    # Extract critdates
+    for critdates in prolog.xpath(".//critdates"):
+        created = critdates.get("created")
+        modified = critdates.get("modified")
+        if created:
+            metadata["critdates"]["created"] = created
+        if modified:
+            metadata["critdates"]["modified"] = modified
+
+    # Extract authors
+    for author in prolog.xpath(".//author"):
+        author_text = _extract_text_content(author)
+        if author_text:
+            authors_list.append(author_text)
+
+    for authorinfo in prolog.xpath(".//authorinformation"):
+        for personname in authorinfo.xpath(".//personname"):
+            name_text = _extract_text_content(personname)
+            if name_text:
+                authors_list.append(name_text)
+
+    # Extract data pairs
+    for data in prolog.xpath(".//data[@name and @value]"):
+        name = data.get("name")
+        value = data.get("value")
+        if name and value:
+            metadata["data_pairs"][name] = value
+
+    return metadata
+
+
+def _extract_links_from_element(
+    element: etree._Element, current_file_path: Path, root_dir: Path
+) -> List[LinkRef]:
+    """Extract and classify links from XML element."""
+    links = []
+
+    # Extract xref elements with href
+    for xref in element.xpath(".//xref[@href]"):
+        href = xref.get("href")
+        text = _extract_text_content(xref)
+
+        # Extract anchor from href
+        anchor = None
+        if "#" in href:
+            href_parts = href.split("#", 1)
+            href = href_parts[0]
+            anchor = href_parts[1]
+
+        target_type = _classify_link_type(href)
+        target_page_id = None
+        target_url = href
+
+        if target_type == "dita":
+            target_page_id = _resolve_dita_reference(
+                href, current_file_path, root_dir
+            )
+            target_url = None
+        else:
+            target_url = _normalize_url(href)
+
+        links.append(
+            LinkRef(
+                href=href,
+                keyref=None,
+                conref=None,
+                target_type=target_type,
+                target_page_id=target_page_id,
+                target_url=target_url,
+                anchor=anchor,
+                text=text,
+                element_type="xref",
+            )
+        )
+
+    # Extract xref elements with keyref
+    for xref in element.xpath(".//xref[@keyref]"):
+        keyref = xref.get("keyref")
+        text = _extract_text_content(xref)
+
+        links.append(
+            LinkRef(
+                href=None,
+                keyref=keyref,
+                conref=None,
+                target_type="dita",
+                target_page_id=None,  # Will be resolved later with keydef context
+                target_url=None,
+                anchor=None,
+                text=text,
+                element_type="xref",
+            )
+        )
+
+    # Extract link elements with href
+    for link in element.xpath(".//link[@href]"):
+        href = link.get("href")
+        text = _extract_text_content(link)
+
+        # Extract anchor from href
+        anchor = None
+        if "#" in href:
+            href_parts = href.split("#", 1)
+            href = href_parts[0]
+            anchor = href_parts[1]
+
+        target_type = _classify_link_type(href)
+        target_page_id = None
+        target_url = href
+
+        if target_type == "dita":
+            target_page_id = _resolve_dita_reference(
+                href, current_file_path, root_dir
+            )
+            target_url = None
+        else:
+            target_url = _normalize_url(href)
+
+        links.append(
+            LinkRef(
+                href=href,
+                keyref=None,
+                conref=None,
+                target_type=target_type,
+                target_page_id=target_page_id,
+                target_url=target_url,
+                anchor=anchor,
+                text=text,
+                element_type="link",
+            )
+        )
+
+    # Extract conref elements (structural references)
+    for elem in element.xpath(".//*[@conref]"):
+        conref = elem.get("conref")
+
+        # Extract anchor from conref
+        anchor = None
+        if "#" in conref:
+            conref_parts = conref.split("#", 1)
+            conref = conref_parts[0]
+            anchor = conref_parts[1]
+
+        target_page_id = _resolve_dita_reference(
+            conref, current_file_path, root_dir
+        )
+
+        links.append(
+            LinkRef(
+                href=None,
+                keyref=None,
+                conref=conref,
+                target_type="dita",
+                target_page_id=target_page_id,
+                target_url=None,
+                anchor=anchor,
+                text=None,
+                element_type="conref",
+            )
+        )
+
+    # Extract conkeyref elements (structural key references)
+    for elem in element.xpath(".//*[@conkeyref]"):
+        conkeyref = elem.get("conkeyref")
+
+        links.append(
+            LinkRef(
+                href=None,
+                keyref=conkeyref,
+                conref=None,
+                target_type="dita",
+                target_page_id=None,  # Will be resolved later with keydef context
+                target_url=None,
+                anchor=None,
+                text=None,
+                element_type="conkeyref",
+            )
+        )
+
+    # Extract topicref elements with href (for maps)
+    for topicref in element.xpath(".//topicref[@href]"):
+        href = topicref.get("href")
+        navtitle = topicref.get("navtitle")
+        scope = topicref.get("scope", "local")
+
+        # Extract anchor from href
+        anchor = None
+        if "#" in href:
+            href_parts = href.split("#", 1)
+            href = href_parts[0]
+            anchor = href_parts[1]
+
+        # Determine target type based on scope and href
+        if scope == "external" or href.startswith(("http://", "https://")):
+            target_type = _classify_link_type(href)
+            target_page_id = None
+            target_url = _normalize_url(href)
+        else:
+            target_type = "dita"
+            target_page_id = _resolve_dita_reference(
+                href, current_file_path, root_dir
+            )
+            target_url = None
+
+        links.append(
+            LinkRef(
+                href=href,
+                keyref=None,
+                conref=None,
+                target_type=target_type,
+                target_page_id=target_page_id,
+                target_url=target_url,
+                anchor=anchor,
+                text=navtitle,
+                element_type="topicref",
+            )
+        )
+
+    return links
 
 
 def _extract_labels_from_prolog(prolog: Optional[etree._Element]) -> List[str]:
@@ -261,6 +692,9 @@ def parse_topic(file_path: Path) -> TopicDoc:
             for meta in prolog.xpath(".//metadata/*"):
                 prolog_metadata[meta.tag] = _extract_text_content(meta)
 
+        # Extract enhanced metadata from prolog
+        enhanced_metadata = _extract_enhanced_metadata_from_prolog(prolog)
+
         # Extract labels from prolog
         labels = _extract_labels_from_prolog(prolog)
 
@@ -286,26 +720,31 @@ def parse_topic(file_path: Path) -> TopicDoc:
                 body, "/topic/body", media_list, order_counter
             )
 
-        # Extract cross-references
+        # Extract cross-references (backward compatibility)
         xrefs = []
         for xref in root.xpath(".//xref[@href]"):
             href = xref.get("href")
             if href:
                 xrefs.append(href)
 
-        # Extract key references
+        # Extract key references (backward compatibility)
         keyrefs = []
         for elem in root.xpath(".//*[@keyref]"):
             keyref = elem.get("keyref")
             if keyref:
                 keyrefs.append(keyref)
 
-        # Extract content references
+        # Extract content references (backward compatibility)
         conrefs = []
         for elem in root.xpath(".//*[@conref]"):
             conref = elem.get("conref")
             if conref:
                 conrefs.append(conref)
+
+        # Extract enhanced links from entire document
+        # Need to provide root_dir context which will be set by caller
+        root_dir = file_path.parent  # Temporary, will be updated by caller
+        links = _extract_links_from_element(root, file_path, root_dir)
 
         return TopicDoc(
             id=doc_id,
@@ -318,6 +757,8 @@ def parse_topic(file_path: Path) -> TopicDoc:
             keyrefs=keyrefs,
             conrefs=conrefs,
             labels=labels,
+            links=links,
+            enhanced_metadata=enhanced_metadata,
         )
 
     except Exception as e:
@@ -365,12 +806,22 @@ def parse_map(file_path: Path) -> MapDoc:
         if prolog is not None:
             labels = _extract_labels_from_prolog(prolog)
 
+        # Extract enhanced metadata from prolog
+        enhanced_metadata = _extract_enhanced_metadata_from_prolog(prolog)
+
+        # Extract enhanced links from entire document
+        # Need to provide root_dir context which will be set by caller
+        root_dir = file_path.parent  # Temporary, will be updated by caller
+        links = _extract_links_from_element(root, file_path, root_dir)
+
         return MapDoc(
             id=doc_id,
             title=title,
             keydefs=keydefs,
             hierarchy=hierarchy,
             labels=labels,
+            links=links,
+            enhanced_metadata=enhanced_metadata,
         )
 
     except Exception as e:

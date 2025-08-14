@@ -10,6 +10,7 @@ import json
 import hashlib
 import os
 import fnmatch
+import re
 from typing import Dict, List, Optional, Any, Iterator
 from ....adapters.dita import (
     parse_topic,
@@ -285,6 +286,200 @@ def _build_hierarchy_and_write_edges(
     return ancestors_total
 
 
+def _compute_directory_context(
+    source_path: str, root_dir: Path
+) -> Dict[str, Any]:
+    """Compute collection and path_tags from source_path under ellucian-documentation."""
+    context: Dict[str, Any] = {"collection": None, "path_tags": []}
+
+    try:
+        # Convert to Path and make relative to root
+        path = Path(source_path)
+        if path.is_absolute():
+            rel_path = path.relative_to(root_dir)
+        else:
+            rel_path = path
+
+        # Find ellucian-documentation in the path
+        parts = rel_path.parts
+        ellucian_idx = None
+        for i, part in enumerate(parts):
+            if "ellucian-documentation" in part:
+                ellucian_idx = i
+                break
+
+        if ellucian_idx is not None and ellucian_idx + 1 < len(parts):
+            # Collection is the first subfolder after ellucian-documentation
+            context["collection"] = parts[ellucian_idx + 1]
+        elif len(parts) > 1:
+            # If no ellucian-documentation found but we have multiple parts,
+            # use the first directory as collection
+            context["collection"] = parts[0]
+
+        # Path tags are unique lowercased segments, excluding stopwords
+        stopwords = {
+            "docs",
+            "images",
+            "assets",
+            "common",
+            "master",
+            "dita",
+            "xml",
+            "content",
+        }
+        path_tags = set()
+
+        for part in parts:
+            # Remove file extension from the last part (filename)
+            part_name = Path(part).stem if "." in part else part
+            # Split on common separators and lowercase
+            segments = re.split(r"[-_\s]+", part_name.lower())
+            for segment in segments:
+                if segment and segment not in stopwords and len(segment) > 2:
+                    path_tags.add(segment)
+
+        context["path_tags"] = sorted(list(path_tags))
+
+    except Exception:
+        # If path parsing fails, return empty context
+        pass
+
+    return context
+
+
+def _aggregate_labels_and_metadata(
+    doc: TopicDoc | MapDoc,
+    source_path: str,
+    root_dir: Path,
+    map_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Aggregate labels and metadata from XML prolog, map context, and directory hints."""
+
+    # Start with enhanced metadata
+    metadata = doc.enhanced_metadata.copy()
+
+    # Compute directory context
+    dir_context = _compute_directory_context(source_path, root_dir)
+    if dir_context["collection"]:
+        metadata["collection"] = dir_context["collection"]
+
+    # Combine all labels
+    labels = set(doc.labels)  # Start with XML-derived labels
+
+    # Add directory-based path tags as labels
+    for tag in dir_context["path_tags"]:
+        labels.add(tag)
+
+    # Add collection as label if present
+    if dir_context["collection"]:
+        labels.add(dir_context["collection"])
+
+    # Add metadata values as labels where appropriate
+    if metadata.get("audience"):
+        labels.add(f"audience:{metadata['audience']}")
+    if metadata.get("product"):
+        labels.add(f"product:{metadata['product']}")
+    if metadata.get("platform"):
+        labels.add(f"platform:{metadata['platform']}")
+
+    # Add keywords as labels
+    for keyword in metadata.get("keywords", []):
+        labels.add(keyword)
+
+    # Add otherprops as labels
+    for key, value in metadata.get("otherprops", {}).items():
+        labels.add(f"{key}:{value}")
+
+    # Add map context if provided
+    if map_context:
+        metadata["map_titles"] = map_context.get("map_titles", [])
+        # Add map titles as potential labels
+        for title in metadata["map_titles"]:
+            labels.add(f"map:{title.lower().replace(' ', '-')}")
+
+    return {
+        "labels": sorted(list(labels)),
+        "meta": metadata,
+        "collection": dir_context["collection"],
+        "path_tags": dir_context["path_tags"],
+    }
+
+
+def _write_links_sidecar(
+    outdir: Path, all_docs: List[TopicDoc | MapDoc], root_dir: Path
+) -> Dict[str, int]:
+    """Write links.jsonl with classified and normalized links."""
+    links_path = outdir / "links.jsonl"
+
+    stats = {
+        "total": 0,
+        "external": 0,
+        "dita": 0,
+        "confluence": 0,
+        "conrefs": 0,
+    }
+
+    with open(links_path, "w") as f:
+        for doc in all_docs:
+            # Extract source path for relative path calculation (unused for now)
+            # source_path = None
+            # if hasattr(doc, 'id'):
+            #     if doc.id.startswith("topic:"):
+            #         source_path = doc.id[6:] + ".dita"
+            #     elif doc.id.startswith("map:"):
+            #         source_path = doc.id[4:] + ".ditamap"
+
+            for link in doc.links:
+                stats["total"] += 1
+
+                # Count by type
+                if link.element_type in ("conref", "conkeyref"):
+                    stats["conrefs"] += 1
+                else:
+                    stats[link.target_type] += 1
+
+                # Create link record
+                link_record = {
+                    "from_page_id": doc.id,
+                    "from_url": None,
+                    "target_type": link.target_type,
+                    "target_page_id": link.target_page_id,
+                    "target_url": link.target_url,
+                    "anchor": link.anchor,
+                    "text": link.text,
+                    "rel": "CONREFS"
+                    if link.element_type in ("conref", "conkeyref")
+                    else "links_to",
+                }
+
+                f.write(json.dumps(link_record) + "\n")
+
+    return stats
+
+
+def _write_metadata_sidecar(
+    outdir: Path,
+    all_docs: List[TopicDoc | MapDoc],
+    aggregated_metadata: List[Dict[str, Any]],
+    root_dir: Path,
+) -> int:
+    """Write meta.jsonl with compact metadata records."""
+    meta_path = outdir / "meta.jsonl"
+
+    with open(meta_path, "w") as f:
+        for doc, meta_data in zip(all_docs, aggregated_metadata):
+            record = {
+                "page_id": doc.id,
+                "collection": meta_data["collection"],
+                "path_tags": meta_data["path_tags"],
+                "labels": meta_data["labels"],
+                "meta": meta_data["meta"],
+            }
+            f.write(json.dumps(record) + "\n")
+
+    return len(all_docs)
+
+
 def _write_labels_and_edges(
     outdir: Path, all_docs: List[TopicDoc | MapDoc]
 ) -> int:
@@ -375,6 +570,20 @@ def ingest_dita(
                 map_doc.id = (
                     f"map:{Path(rel_path).with_suffix('').as_posix().lower()}"
                 )
+
+                # Update link resolution with correct root_dir context
+                for link in map_doc.links:
+                    if (
+                        link.target_type == "dita"
+                        and link.href
+                        and not link.target_page_id
+                    ):
+                        from ....adapters.dita import _resolve_dita_reference
+
+                        link.target_page_id = _resolve_dita_reference(
+                            link.href, file_path, root_dir
+                        )
+
                 maps.append(map_doc)
 
                 record = _create_dita_record(
@@ -392,6 +601,20 @@ def ingest_dita(
                     topic_doc.id = f"{base_id}#{element_id}"
                 else:
                     topic_doc.id = base_id
+
+                # Update link resolution with correct root_dir context
+                for link in topic_doc.links:
+                    if (
+                        link.target_type == "dita"
+                        and link.href
+                        and not link.target_page_id
+                    ):
+                        from ....adapters.dita import _resolve_dita_reference
+
+                        link.target_page_id = _resolve_dita_reference(
+                            link.href, file_path, root_dir
+                        )
+
                 topics.append(topic_doc)
 
                 record = _create_dita_record(
@@ -418,6 +641,42 @@ def ingest_dita(
         for record in all_records:
             f.write(json.dumps(record) + "\n")
 
+    # Aggregate metadata for all documents
+    all_docs = topics + maps
+    aggregated_metadata = []
+
+    # Build map context for topics (map titles from breadcrumbs)
+    map_context_by_topic: Dict[str, Any] = {}
+    for map_doc in maps:
+        for ref in map_doc.hierarchy:
+            if ref.href:
+                # Try to match with topic paths
+                href_path = str(Path(ref.href).with_suffix("")).lower()
+                for topic in topics:
+                    topic_path = topic.id.replace("topic:", "")
+                    if "#" in topic_path:
+                        topic_path = topic_path.split("#")[0]
+                    if topic_path == href_path:
+                        if topic.id not in map_context_by_topic:
+                            map_context_by_topic[topic.id] = {"map_titles": []}
+                        map_context_by_topic[topic.id]["map_titles"].append(
+                            map_doc.title
+                        )
+
+    # Aggregate metadata for each document
+    for doc in all_docs:
+        source_path = None
+        if doc.id.startswith("topic:"):
+            source_path = doc.id[6:] + ".dita"
+        elif doc.id.startswith("map:"):
+            source_path = doc.id[4:] + ".ditamap"
+
+        map_context = map_context_by_topic.get(doc.id, None)
+        meta_data = _aggregate_labels_and_metadata(
+            doc, source_path or "", root_dir, map_context
+        )
+        aggregated_metadata.append(meta_data)
+
     # Write sidecar files
     media_refs_total = _write_media_sidecars(
         outdir_path, topics, topic_records
@@ -425,7 +684,39 @@ def ingest_dita(
     ancestors_total = _build_hierarchy_and_write_edges(
         outdir_path, maps, topics, topic_records, root_dir
     )
-    labels_total = _write_labels_and_edges(outdir_path, topics + maps)
+
+    # Write enhanced links sidecar
+    links_stats = _write_links_sidecar(outdir_path, all_docs, root_dir)
+
+    # Write metadata sidecar
+    meta_records = _write_metadata_sidecar(
+        outdir_path, all_docs, aggregated_metadata, root_dir
+    )
+
+    # Update labels to use aggregated labels
+    labels_total = 0
+    labels_path = outdir_path / "labels.jsonl"
+    edges_path = outdir_path / "edges.jsonl"
+
+    with (
+        open(labels_path, "w") as labels_f,
+        open(edges_path, "a") as edges_f,
+    ):  # Append to edges file
+        for doc, meta_data in zip(all_docs, aggregated_metadata):
+            page_id = doc.id
+            for label in meta_data["labels"]:
+                # Write label entry
+                label_entry = {"page_id": page_id, "label": label}
+                labels_f.write(json.dumps(label_entry) + "\n")
+                labels_total += 1
+
+                # Write label edge
+                edge = {
+                    "type": "LABELED_AS",
+                    "src": page_id,
+                    "dst": f"label:{label}",
+                }
+                edges_f.write(json.dumps(edge) + "\n")
 
     # Write summary
     ended_at = datetime.now(timezone.utc)
@@ -438,6 +729,12 @@ def ingest_dita(
         "media_refs_total": media_refs_total,
         "labels_total": labels_total,
         "ancestors_total": ancestors_total,
+        "meta_records": meta_records,
+        "links_total": links_stats["total"],
+        "links_external": links_stats["external"],
+        "links_dita": links_stats["dita"],
+        "links_confluence": links_stats["confluence"],
+        "links_conrefs": links_stats["conrefs"],
         "sources": ["dita"],
         "topics": len(topics),
         "maps": len(maps),
@@ -448,6 +745,28 @@ def ingest_dita(
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2)
 
+    # Count top 10 label terms for summary
+    from collections import Counter
+
+    all_labels = []
+    for meta_data in aggregated_metadata:
+        all_labels.extend(meta_data["labels"])
+
+    top_labels = Counter(all_labels).most_common(10)
+
+    # Emit structured log event for metadata summary
+    log.info(
+        "ingest.dita_meta_summary",
+        run_id=run_id,
+        meta_records=meta_records,
+        labels_total=labels_total,
+        top_labels=[
+            {"label": label, "count": count} for label, count in top_labels
+        ],
+        links_total=links_stats["total"],
+        links_by_type=links_stats,
+    )
+
     log.info(
         "dita.ingest.complete",
         run_id=run_id,
@@ -455,6 +774,8 @@ def ingest_dita(
         maps=len(maps),
         media_refs=media_refs_total,
         labels=labels_total,
+        meta_records=meta_records,
+        links_total=links_stats["total"],
     )
 
     return summary

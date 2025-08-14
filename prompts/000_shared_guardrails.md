@@ -66,3 +66,19 @@ Ingest/normalize must not require a DB.
 No silent fallback to SQLite in runtime code paths. Fail fast with an actionable message if Postgres isn't configured.
 
 Provide a single place to diagnose: trailblazer db doctor.
+
+## Additional Global Rules
+
+**Tests:** No merges to main with any failing tests. If tests fail, fix tests or the code; do not comment out or delete tests unless replaced by better coverage in the same PR.
+
+**DB policy:** Ingest & normalize must not require a DB. Postgres/pgvector is only for retrieval/indexing phases; CLI preflights for DB must not gate ingest/normalize.
+
+**Body format:** Confluence default body_format is atlas_doc_format (ADF). Storage/XHTML handling stays for backward compatibility and normalization.
+
+**Traceability:** Always persist id, url, space_id/key/name (if available), version, created_at, updated_at, labels, ancestors/breadcrumbs, attachments (with filenames + download URLs), links, and content_sha256 throughout ingest → normalize.
+
+**Observability:** All long-running CLIs must stream clean, structured progress (banners, per-phase counters, ETA) and print the run_id at completion.
+
+**Cursor limit:** Keep prompts ≤10 to-dos; chunk work if needed.
+
+**No regression:** Before edits, read the module and associated tests; prefer minimal deltas. If complexity is high, refactor in tiny steps with passing tests after each step.

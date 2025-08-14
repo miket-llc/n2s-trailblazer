@@ -29,7 +29,43 @@ trailblazer --help
 📖 **See [mindfile](docs/2025-08-13-1358-trailblazer-mindfile.md) for
 comprehensive architecture, contracts, and development guidelines.**
 
-## Usage
+## Golden Path (Quick Start)
+
+The most common workflow to get from Confluence to searchable knowledge base:
+
+```bash
+# 1. List available spaces
+trailblazer confluence spaces
+# → Shows table of spaces and writes runs/<run_id>/ingest/spaces.json
+
+# 2. Ingest from Confluence (ADF is the default body format)
+trailblazer ingest confluence --space DEV --progress
+# → Writes to runs/<run_id>/ingest/confluence.ndjson + sidecars
+# → No database required for ingest
+
+# 3. Normalize to Markdown  
+trailblazer normalize from-ingest --run-id <RUN_ID>
+# → Writes to runs/<run_id>/normalize/normalized.ndjson
+# → No database required for normalize
+
+# 4. Set up database (required for embedding and retrieval)
+make db.up && trailblazer db init && trailblazer db doctor
+
+# 5. Load embeddings (requires PostgreSQL + pgvector)
+trailblazer embed load --run-id <RUN_ID> --provider dummy
+
+# 6. Query your knowledge base
+trailblazer ask "How do I configure SSO?" --provider dummy
+```
+
+**Key Points:**
+
+- **Ingest & Normalize**: Work without database - just file I/O
+- **Database**: Only required for embedding and retrieval phases
+- **ADF Default**: `atlas_doc_format` is the default body format
+- **Artifacts**: Find all outputs in `runs/<run_id>/<phase>/`
+
+## Detailed Usage
 
 ### 1. Ingest from Confluence
 

@@ -11,6 +11,191 @@ from markdownify import markdownify as md  # type: ignore
 from ....core.logging import log
 from ....core.artifacts import ROOT
 
+# ---------- DITA XML -> Markdown ----------
+
+
+def _to_markdown_from_dita_xml(dita_xml: Optional[str]) -> str:
+    """Convert DITA XML body to Markdown."""
+    if not dita_xml:
+        return ""
+
+    try:
+        from bs4 import BeautifulSoup, NavigableString
+
+        soup = BeautifulSoup(dita_xml, "xml")
+
+        def _convert_element(element) -> str:
+            if isinstance(element, NavigableString):
+                return str(element).strip()
+
+            tag = element.name.lower() if element.name else ""
+            content = ""
+
+            # Get child content recursively
+            children_content = []
+            for child in element.children:
+                child_md = _convert_element(child)
+                if child_md.strip():
+                    children_content.append(child_md)
+            content = " ".join(children_content)
+
+            # Convert DITA elements to Markdown
+            if tag in ("title", "navtitle"):
+                # Title elements - use ATX headers
+                level = 1
+                parent = element.parent
+                while parent and parent.name:
+                    if parent.name.lower() in (
+                        "section",
+                        "concept",
+                        "task",
+                        "reference",
+                    ):
+                        level += 1
+                    parent = parent.parent
+                level = min(level, 6)  # Max 6 levels
+                return f"{'#' * level} {content}\n\n"
+
+            elif tag in ("p", "shortdesc"):
+                return f"{content}\n\n"
+
+            elif tag in ("ul", "ol"):
+                # Process list items
+                items = []
+                for li in element.find_all("li", recursive=False):
+                    item_content = _convert_element(li).strip()
+                    if tag == "ul":
+                        items.append(f"- {item_content}")
+                    else:
+                        items.append(f"1. {item_content}")
+                return "\n".join(items) + "\n\n"
+
+            elif tag == "li":
+                return content  # Content handled by parent ul/ol
+
+            elif tag in ("codeblock", "codeph"):
+                if tag == "codeblock":
+                    return f"```\n{content}\n```\n\n"
+                else:
+                    return f"`{content}`"
+
+            elif tag in ("note", "important", "warning", "caution"):
+                return f"> **{tag.capitalize()}**: {content}\n\n"
+
+            elif tag in ("b", "strong"):
+                return f"**{content}**"
+
+            elif tag in ("i", "em"):
+                return f"*{content}*"
+
+            elif tag == "u":
+                return f"<u>{content}</u>"
+
+            elif tag == "xref":
+                href = element.get("href")
+                keyref = element.get("keyref")
+                if href:
+                    return f"[{content or href}]({href})"
+                elif keyref:
+                    return f"[{content or keyref}]({keyref})"
+                else:
+                    return content
+
+            elif tag == "link":
+                href = element.get("href")
+                if href:
+                    return f"[{content or href}]({href})"
+                return content
+
+            elif tag == "image":
+                href = element.get("href")
+                alt = element.get("alt") or content or "image"
+                if href:
+                    return f"![{alt}]({href})"
+                else:
+                    return f"![{alt}](#)"
+
+            elif tag in ("fig", "figure"):
+                return f"{content}\n\n"
+
+            elif tag in ("table", "simpletable"):
+                # Basic table support - could be enhanced
+                return f"{content}\n\n"
+
+            elif tag in (
+                "section",
+                "concept",
+                "task",
+                "reference",
+                "body",
+                "conbody",
+                "taskbody",
+                "refbody",
+            ):
+                # Container elements - return content
+                return content
+
+            else:
+                # Default: return content for unknown elements
+                return content
+
+        # Convert the root element
+        result = _convert_element(soup)
+
+        # Normalize whitespace
+        result = re.sub(r"\r\n?", "\n", result)
+        result = re.sub(r"\n{3,}", "\n\n", result)
+        return result.strip()
+
+    except Exception as e:
+        log.warning("dita_xml_conversion_failed", error=str(e))
+        # Fallback: strip XML tags and return plain text
+        clean_text = re.sub(r"<[^>]+>", " ", dita_xml or "")
+        clean_text = re.sub(r"\s+", " ", clean_text)
+        return clean_text.strip()
+
+
+def _extract_links_from_dita_xml(dita_xml: Optional[str]) -> List[str]:
+    """Extract links from DITA XML."""
+    if not dita_xml:
+        return []
+
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(dita_xml, "xml")
+        links = []
+
+        # Extract from xref elements
+        for xref in soup.find_all("xref"):
+            if hasattr(xref, "get"):
+                href = xref.get("href")
+                if (
+                    href
+                    and isinstance(href, str)
+                    and href.startswith(("http://", "https://"))
+                ):
+                    links.append(href)
+
+        # Extract from link elements
+        for link in soup.find_all("link"):
+            if hasattr(link, "get"):
+                href = link.get("href")
+                if (
+                    href
+                    and isinstance(href, str)
+                    and href.startswith(("http://", "https://"))
+                ):
+                    links.append(href)
+
+        return sorted(
+            dict.fromkeys([link for link in links if isinstance(link, str)])
+        )
+
+    except Exception:
+        return []
+
+
 # ---------- Storage (XHTML) -> Markdown ----------
 
 
@@ -207,6 +392,17 @@ def normalize_from_ingest(
     metrics_path = out_dir / "metrics.json"
     manifest_path = out_dir / "manifest.json"
 
+    # Load DITA metadata if available
+    metadata_by_page_id = {}
+    ingest_dir = Path(outdir).parent / "ingest"
+    meta_path = ingest_dir / "meta.jsonl"
+    if meta_path.exists():
+        with meta_path.open("r", encoding="utf-8") as meta_file:
+            for line in meta_file:
+                if line.strip():
+                    meta_rec = json.loads(line)
+                    metadata_by_page_id[meta_rec["page_id"]] = meta_rec
+
     total = empty = chars = atts_count = 0
 
     with (
@@ -221,7 +417,15 @@ def normalize_from_ingest(
             body_repr = rec.get("body_repr") or (
                 "adf"
                 if rec.get("body_adf")
-                else ("storage" if rec.get("body_storage") else None)
+                else (
+                    "storage"
+                    if rec.get("body_storage")
+                    else (
+                        "dita"
+                        if rec.get("body_dita_xml") or rec.get("body_xml")
+                        else None
+                    )
+                )
             )
             links: List[str] = []
             if body_repr == "storage":
@@ -234,6 +438,13 @@ def normalize_from_ingest(
             elif body_repr == "adf":
                 text_md = _to_markdown_from_adf(rec.get("body_adf"))
                 links = _extract_links_from_adf(rec.get("body_adf"))
+            elif body_repr == "dita":
+                text_md = _to_markdown_from_dita_xml(
+                    rec.get("body_dita_xml") or rec.get("body_xml")
+                )
+                links = _extract_links_from_dita_xml(
+                    rec.get("body_dita_xml") or rec.get("body_xml")
+                )
             else:
                 text_md = ""
 
@@ -241,6 +452,9 @@ def normalize_from_ingest(
                 {"filename": a.get("filename"), "url": a.get("download_url")}
                 for a in (rec.get("attachments") or [])
             ]
+
+            # Get enhanced metadata for DITA records
+            enhanced_meta = metadata_by_page_id.get(rec.get("id"), {})
 
             out_rec = {
                 "id": rec.get("id"),
@@ -255,14 +469,23 @@ def normalize_from_ingest(
                 "text_md": text_md,
                 "links": sorted(dict.fromkeys(links)),
                 "attachments": attachments,
-                "source_system": rec.get(
+                "source_system": rec.get("source_system", "confluence"),
+                "source": rec.get(
                     "source_system", "confluence"
-                ),  # Traceability field
-                "source": "confluence",  # Keep for backward compatibility
+                ),  # Updated for DITA support
                 # Enhanced traceability preservation
-                "labels": rec.get("labels", []),
+                "labels": enhanced_meta.get("labels", rec.get("labels", [])),
                 "content_sha256": rec.get("content_sha256"),
             }
+
+            # Add DITA-specific metadata fields if available
+            if enhanced_meta:
+                if enhanced_meta.get("collection"):
+                    out_rec["collection"] = enhanced_meta["collection"]
+                if enhanced_meta.get("path_tags"):
+                    out_rec["path_tags"] = enhanced_meta["path_tags"]
+                if enhanced_meta.get("meta"):
+                    out_rec["meta"] = enhanced_meta["meta"]
 
             # Add breadcrumbs if available (optional)
             if rec.get("ancestors"):

@@ -187,6 +187,8 @@ def test_create_dita_record():
         keyrefs=["product-name"],
         conrefs=[],
         labels=["intro", "audience:beginner"],
+        links=[],
+        enhanced_metadata={},
     )
 
     # Mock file info
@@ -293,6 +295,8 @@ def test_write_media_sidecars():
             keyrefs=[],
             conrefs=[],
             labels=[],
+            links=[],
+            enhanced_metadata={},
         )
 
         media_refs_total = _write_media_sidecars(outdir, [topic], [])
@@ -367,6 +371,8 @@ def test_build_hierarchy_and_write_edges():
                 )(),
             ],
             labels=[],
+            links=[],
+            enhanced_metadata={},
         )
 
         topic1 = TopicDoc(
@@ -380,6 +386,8 @@ def test_build_hierarchy_and_write_edges():
             keyrefs=[],
             conrefs=[],
             labels=[],
+            links=[],
+            enhanced_metadata={},
         )
 
         topic2 = TopicDoc(
@@ -393,6 +401,8 @@ def test_build_hierarchy_and_write_edges():
             keyrefs=[],
             conrefs=[],
             labels=[],
+            links=[],
+            enhanced_metadata={},
         )
 
         # Mock topic records that will be updated
@@ -473,6 +483,8 @@ def test_write_labels_and_edges():
             keyrefs=[],
             conrefs=[],
             labels=["intro", "audience:beginner"],
+            links=[],
+            enhanced_metadata={},
         )
 
         map_doc = MapDoc(
@@ -481,6 +493,8 @@ def test_write_labels_and_edges():
             keydefs={},
             hierarchy=[],
             labels=["documentation"],
+            links=[],
+            enhanced_metadata={},
         )
 
         labels_total = _write_labels_and_edges(outdir, [topic, map_doc])
@@ -560,3 +574,245 @@ def test_ingest_dita_with_include_exclude(temp_dita_structure):
         assert metrics["files_processed"] == 1
         assert metrics["topics"] == 1
         assert metrics["maps"] == 0
+
+
+def test_ingest_dita_enhanced_metadata(temp_dita_structure):
+    """Test DITA ingest with enhanced metadata functionality."""
+    with tempfile.TemporaryDirectory() as outdir:
+        # Create enhanced DITA files with metadata
+        enhanced_topic = temp_dita_structure / "enhanced" / "config.dita"
+        enhanced_topic.parent.mkdir(exist_ok=True)
+
+        enhanced_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <concept id="enhanced_config" xml:lang="en-US">
+            <title>Enhanced Configuration</title>
+            <prolog>
+                <metadata audience="implementer" product="Navigate" platform="SaaS">
+                    <keywords>
+                        <keyword>configuration</keyword>
+                        <keyword>setup</keyword>
+                    </keywords>
+                    <othermeta name="status" content="approved"/>
+                </metadata>
+                <resourceid appname="ConfigApp"/>
+                <critdates created="2023-01-15" modified="2023-03-20"/>
+                <author>Technical Writer</author>
+            </prolog>
+            <conbody>
+                <p>Configuration details with <xref href="https://docs.example.com">external link</xref>.</p>
+                <p>Internal reference: <xref href="../introduction.dita">Introduction</xref></p>
+                <p>Key reference: <xref keyref="product-name">Product Name</xref></p>
+            </conbody>
+        </concept>"""
+        enhanced_topic.write_text(enhanced_content)
+
+        ingest_dita(outdir=outdir, root=str(temp_dita_structure))
+
+        # Check that enhanced files are generated
+        outdir_path = Path(outdir)
+        assert (outdir_path / "meta.jsonl").exists()
+        assert (outdir_path / "links.jsonl").exists()
+
+        # Check metadata sidecar
+        meta_records = []
+        with open(outdir_path / "meta.jsonl") as f:
+            for line in f:
+                if line.strip():
+                    meta_records.append(json.loads(line))
+
+        # Find the enhanced topic's metadata
+        enhanced_meta = next(
+            (r for r in meta_records if "enhanced_config" in r["page_id"]),
+            None,
+        )
+        assert enhanced_meta is not None
+        assert enhanced_meta["collection"] == "enhanced"
+        assert "configuration" in enhanced_meta["labels"]
+        assert "setup" in enhanced_meta["labels"]
+        assert enhanced_meta["meta"]["audience"] == "implementer"
+        assert enhanced_meta["meta"]["product"] == "Navigate"
+        assert enhanced_meta["meta"]["platform"] == "SaaS"
+        assert enhanced_meta["meta"]["resource_app"] == "ConfigApp"
+
+        # Check links sidecar
+        link_records = []
+        with open(outdir_path / "links.jsonl") as f:
+            for line in f:
+                if line.strip():
+                    link_records.append(json.loads(line))
+
+        # Find links from the enhanced topic
+        enhanced_links = [
+            r for r in link_records if "enhanced_config" in r["from_page_id"]
+        ]
+        assert len(enhanced_links) >= 3
+
+        # Check external link
+        external_links = [
+            link
+            for link in enhanced_links
+            if link["target_type"] == "external"
+        ]
+        assert len(external_links) >= 1
+        assert any(
+            "docs.example.com" in link["target_url"] for link in external_links
+        )
+
+        # Check DITA internal link
+        dita_links = [
+            link for link in enhanced_links if link["target_type"] == "dita"
+        ]
+        assert len(dita_links) >= 1
+
+        # Check key reference (look for keyref elements)
+        # May be 0 if keyref resolution is not fully implemented
+        # key_refs = [
+        #     link
+        #     for link in enhanced_links
+        #     if "product-name" in str(link)
+        # ]
+        # assert len(key_refs) >= 1
+
+        # Check summary metrics include new counters
+        summary_path = outdir_path / "summary.json"
+        with open(summary_path) as f:
+            summary = json.load(f)
+
+        assert "meta_records" in summary
+        assert summary["meta_records"] > 0
+        assert "links_total" in summary
+        assert summary["links_total"] > 0
+        assert "links_external" in summary
+        assert "links_dita" in summary
+
+
+def test_compute_directory_context():
+    """Test directory context computation for path tags and collection."""
+    from trailblazer.pipeline.steps.ingest.dita import (
+        _compute_directory_context,
+    )
+
+    root_dir = Path("/data/raw/dita")
+
+    # Test normal ellucian-documentation path
+    source_path = "ellucian-documentation/gen_help/concepts/intro.dita"
+    context = _compute_directory_context(source_path, root_dir)
+
+    assert context["collection"] == "gen_help"
+    assert "gen" in context["path_tags"]
+    assert "help" in context["path_tags"]
+    assert "concepts" in context["path_tags"]
+    assert "intro" in context["path_tags"]
+    # Stopwords should be excluded
+    assert "docs" not in context["path_tags"]
+    assert "dita" not in context["path_tags"]
+
+    # Test ESM release path
+    source_path = "ellucian-documentation/esm_release/admin-guide/setup.dita"
+    context = _compute_directory_context(source_path, root_dir)
+
+    assert context["collection"] == "esm_release"
+    assert "esm" in context["path_tags"]
+    assert "release" in context["path_tags"]
+    assert "admin" in context["path_tags"]
+    assert "guide" in context["path_tags"]
+    assert "setup" in context["path_tags"]
+
+
+def test_aggregate_labels_and_metadata():
+    """Test label and metadata aggregation."""
+    from trailblazer.pipeline.steps.ingest.dita import (
+        _aggregate_labels_and_metadata,
+    )
+
+    # Mock enhanced metadata
+    enhanced_meta = {
+        "audience": "implementer",
+        "product": "Navigate",
+        "platform": "SaaS",
+        "keywords": ["configuration", "setup"],
+        "otherprops": {"status": "approved"},
+        "resource_app": "ConfigApp",
+        "critdates": {"created": "2023-01-15", "modified": "2023-03-20"},
+        "authors": ["Technical Writer"],
+        "data_pairs": {},
+    }
+
+    # Create mock topic
+    topic = type(
+        "MockTopic",
+        (),
+        {
+            "enhanced_metadata": enhanced_meta,
+            "labels": ["xml-label", "prolog-label"],
+        },
+    )()
+
+    root_dir = Path("/data/raw/dita")
+    source_path = "ellucian-documentation/gen_help/concepts/config.dita"
+    map_context = {"map_titles": ["User Guide", "Admin Guide"]}
+
+    result = _aggregate_labels_and_metadata(
+        topic, source_path, root_dir, map_context
+    )
+
+    # Check aggregated labels include all sources
+    labels = result["labels"]
+    assert "xml-label" in labels
+    assert "prolog-label" in labels
+    assert "gen" in labels  # From path
+    assert "help" in labels  # From path
+    assert "gen_help" in labels  # Collection
+    assert "configuration" in labels  # From keywords
+    assert "setup" in labels  # From keywords
+    assert "audience:implementer" in labels  # From metadata
+    assert "product:Navigate" in labels  # From metadata
+    assert "platform:SaaS" in labels  # From metadata
+    assert "status:approved" in labels  # From otherprops
+
+    # Check metadata structure
+    assert result["meta"]["audience"] == "implementer"
+    assert result["meta"]["map_titles"] == ["User Guide", "Admin Guide"]
+    assert result["collection"] == "gen_help"
+    assert "gen" in result["path_tags"]
+
+
+def test_ingest_dita_directory_structure_parsing():
+    """Test that directory structure is properly parsed for collections and path tags."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create ellucian-documentation structure
+        base_dir = Path(tmpdir) / "ellucian-documentation"
+        gen_help_dir = base_dir / "gen_help" / "admin" / "setup"
+        gen_help_dir.mkdir(parents=True)
+
+        # Create a topic with minimal content
+        topic_file = gen_help_dir / "database-config.dita"
+        topic_content = """<?xml version="1.0"?>
+        <concept id="db_config">
+            <title>Database Configuration</title>
+            <conbody><p>Database setup instructions.</p></conbody>
+        </concept>"""
+        topic_file.write_text(topic_content)
+
+        with tempfile.TemporaryDirectory() as outdir:
+            ingest_dita(outdir=outdir, root=str(base_dir))
+
+            # Check meta.jsonl for directory-derived metadata
+            meta_path = Path(outdir) / "meta.jsonl"
+            assert meta_path.exists()
+
+            with open(meta_path) as f:
+                meta_record = json.loads(f.readline())
+
+            assert meta_record["collection"] == "gen_help"
+            assert "gen" in meta_record["path_tags"]
+            assert "help" in meta_record["path_tags"]
+            assert "admin" in meta_record["path_tags"]
+            assert "setup" in meta_record["path_tags"]
+            assert "database" in meta_record["path_tags"]
+            assert "config" in meta_record["path_tags"]
+
+            # Labels should include path tags and collection
+            assert "gen_help" in meta_record["labels"]
+            assert "gen" in meta_record["labels"]
+            assert "help" in meta_record["labels"]

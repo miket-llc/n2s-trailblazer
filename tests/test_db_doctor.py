@@ -148,7 +148,8 @@ def test_db_doctor_connection_failure():
                 "Database doctor failed: Connection refused" in result.stderr
             )
             assert (
-                "Check TRAILBLAZER_DB_URL in your .env file" in result.stderr
+                "1. Check TRAILBLAZER_DB_URL in your .env file"
+                in result.stdout
             )
 
 
