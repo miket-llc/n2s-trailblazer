@@ -71,7 +71,7 @@ get_runs_to_embed() {
       jq --argjson total_runs "$total_runs" --argjson total_docs "$total_docs" \
          '.total_runs=$total_runs | .total_docs=$total_docs' \
          "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
-      
+
       # Add docs_planned for existing temp file
       while IFS=: read -r rid docs; do
         jq --arg rid "$rid" --argjson docs "$docs" '
@@ -80,7 +80,7 @@ get_runs_to_embed() {
           | .runs[$rid].status = (.runs[$rid].status // "planned")
         ' "$PROGRESS_FILE" > "$PROGRESS_FILE.tmp" && mv "$PROGRESS_FILE.tmp" "$PROGRESS_FILE"
       done < "$runs_file"
-      
+
       echo "$runs_file"
       return 0
     fi
@@ -154,7 +154,7 @@ if [[ "${1:-}" == "--list-only" ]]; then
   runs_file=$(get_runs_to_embed)
   total_runs=$(wc -l < "$runs_file")
   total_docs=$(awk -F: '{sum += $2} END {print sum}' "$runs_file")
-  
+
   echo "✅ Found $total_runs runs with $total_docs total documents"
   echo "📄 Runs file: $runs_file"
   echo "📊 Progress tracking initialized: $PROGRESS_FILE"

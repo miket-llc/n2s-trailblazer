@@ -92,7 +92,7 @@ PY
   # Pretty ETA
   ETA_STR=$(python3 - <<PY "$ETA_SEC"
 import sys,datetime
-s=int(sys.argv[1]); 
+s=int(sys.argv[1]);
 print(str(datetime.timedelta(seconds=s)))
 PY
 )
@@ -101,7 +101,7 @@ PY
   echo "docs: $DOCS_EMBEDDED / $DOCS_PLANNED   elapsed: ${ELAPSED}s   rate(ewma): $(printf '%.2f' "$DOCS_RATE_EWMA") docs/s   active_workers: $ACTIVE_WORKERS   ETA: ${ETA_STR}"
 
   echo "---- recent runs ----"
-  jq -r '.runs | to_entries | sort_by(.value.completed_at) | reverse | .[0:8][] 
+  jq -r '.runs | to_entries | sort_by(.value.completed_at) | reverse | .[0:8][]
     | "\(.key)  \(.value.status // "unknown")  docs=\(.value.docs_embedded // 0) chunks=\(.value.chunks_embedded // 0) dur=\(.value.duration_seconds // 0)s err=\(.value.error // "")"' "$PROGRESS" || true
 
   echo "---- tail of active logs ----"
