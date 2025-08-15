@@ -119,7 +119,7 @@ ______________________________________________________________________
 
 # PROMPT OPS-REEMBED-001 — Re-embed Entire Corpus with OpenAI (Serial, Observable)
 
-**Save as:** prompts/OPS_REEMBED_001_openai.md  
+**Save as:** prompts/OPS_REEMBED_001_openai.md\
 **Branch:** main
 
 ## Guardrails Addendum

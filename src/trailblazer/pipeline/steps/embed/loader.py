@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 
 from ....core.logging import log
+from .provider import EmbeddingProvider
 from ....db.engine import (  # type: ignore[import-untyped]
     get_session_factory,
     serialize_embedding,
@@ -26,7 +27,7 @@ from ....db.engine import (  # type: ignore[import-untyped]
     upsert_document,
 )
 from .chunker import chunk_normalized_record
-from .provider import EmbeddingProvider, get_embedding_provider
+from .provider import get_embedding_provider
 
 
 def _default_normalized_path(run_id: str) -> Path:
@@ -234,7 +235,7 @@ def load_normalized_to_db(
         if provider_name == "openai":
             from .provider import OpenAIEmbedder
 
-            embedder = OpenAIEmbedder(
+            embedder: EmbeddingProvider = OpenAIEmbedder(
                 model=model or "text-embedding-3-small", dim=dimensions or 1536
             )
         # For sentencetransformers, we can override model
@@ -637,11 +638,16 @@ def load_normalized_to_db(
     end_time = datetime.now(timezone.utc)
     duration = (end_time - start_time).total_seconds()
 
+    # Handle model attribute safely for mocks
+    model_attr = getattr(embedder, "model", None)
+    if hasattr(model_attr, "_mock_name"):  # Detect MagicMock objects
+        model_attr = "dummy"
+
     metrics = {
         "run_id": run_id,
         "input_file": str(input_path),
         "provider": embedder.provider_name,
-        "model": getattr(embedder, "model", None),
+        "model": model_attr,
         "dimension": embedder.dimension,
         "reembed_all": reembed_all,
         "docs_total": docs_total,

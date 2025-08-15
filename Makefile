@@ -66,6 +66,8 @@ reembed.openai.pilot:
 	    done | sort -t: -k2 -nr | sed -n '1,2p' > var/temp_runs_to_embed.txt
 	@WORKERS=$${WORKERS:-2} bash scripts/embed_dispatch.sh var/temp_runs_to_embed.txt
 
+# run with 2 workers by default
+# override: WORKERS=3 make reembed.openai.all
 reembed.openai.all:
 	@echo "[ALL] building runs file (all enriched runs)"
 	@ls -1t var/runs | grep -E '_full_adf$$|_dita_full$$' \

@@ -22,7 +22,7 @@ make check-md  # markdownlint
 
 **No DB in Ingest:** Event logging and assurance generation MUST NOT require database connectivity - all observability is file-based under var/.
 
----
+______________________________________________________________________
 
 ## Guardrails Addendum (OPS-EMBED-ALL-FINAL)
 
@@ -30,7 +30,7 @@ DB Policy: There is ONE runtime DB: Postgres + pgvector. No SQLite anywhere in r
 
 No Pagers: Set PAGER=cat and LESS=-RFX in the session; pass pager-off flags if tools support them. All output must stream; do not invoke interactive pagers.
 
----
+______________________________________________________________________
 
 # PROMPT OPS-EMBED-ALL-FINAL — Embed All Runs (pgvector), Serial & Observable (Gated on Enrichment)
 

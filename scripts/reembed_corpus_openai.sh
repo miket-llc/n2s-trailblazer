@@ -107,6 +107,16 @@ get_runs_to_embed() {
       jq --argjson total_runs "$total_runs" --argjson total_docs "$total_docs" \
          '.total_runs=$total_runs | .total_docs=$total_docs' \
          "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
+      
+      # Add docs_planned for existing temp file
+      while IFS=: read -r rid docs; do
+        jq --arg rid "$rid" --argjson docs "$docs" '
+          .runs[$rid] = (.runs[$rid] // {})
+          | .runs[$rid].docs_planned = $docs
+          | .runs[$rid].status = (.runs[$rid].status // "planned")
+        ' "$PROGRESS_FILE" > "$PROGRESS_FILE.tmp" && mv "$PROGRESS_FILE.tmp" "$PROGRESS_FILE"
+      done < "$runs_file"
+      
       echo "$runs_file"
       return 0
     fi
@@ -143,6 +153,21 @@ get_runs_to_embed() {
        --argjson total_docs "$total_docs" \
        '.total_runs = $total_runs | .total_docs = $total_docs' \
        "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
+
+    # After computing $runs_file, $total_runs, $total_docs …
+    # Write a runs_plan map { run_id: {docs_planned: N, status:"planned"} }
+    jq -n --argfile p "$PROGRESS_FILE" '
+      $p as $base
+      | $base
+    ' > "$PROGRESS_FILE.tmp" && mv "$PROGRESS_FILE.tmp" "$PROGRESS_FILE"
+
+    while IFS=: read -r rid docs; do
+      jq --arg rid "$rid" --argjson docs "$docs" '
+        .runs[$rid] = (.runs[$rid] // {})
+        | .runs[$rid].docs_planned = $docs
+        | .runs[$rid].status = (.runs[$rid].status // "planned")
+      ' "$PROGRESS_FILE" > "$PROGRESS_FILE.tmp" && mv "$PROGRESS_FILE.tmp" "$PROGRESS_FILE"
+    done < "$runs_file"
 
     echo "$runs_file"
 }
@@ -183,34 +208,34 @@ embed_run() {
 
     # Start monitoring log file for page-by-page progress
     echo "  📋 Monitoring progress (Ctrl+C to stop monitoring, embedding continues)..."
-    
+
     # Function to monitor and show page titles
     monitor_embedding_progress() {
         local log_file="$1"
         local error_file="$2"
         local run_id="$3"
-        
+
         # Show a few sample page titles from this run first
         echo "  📄 Sample pages in this run:"
         if [ -f "var/runs/$run_id/normalize/normalized.ndjson" ]; then
             head -3 "var/runs/$run_id/normalize/normalized.ndjson" | jq -r '.title' | sed 's/^/    • /'
         fi
         echo
-        
+
         # Monitor the error file for progress updates
         tail -f "$error_file" 2>/dev/null &
         local tail_pid=$!
-        
+
         # Wait for the command to complete
         wait $embed_pid 2>/dev/null
         local result=$?
-        
+
         # Stop monitoring
         kill $tail_pid 2>/dev/null
-        
+
         return $result
     }
-    
+
     # Run embedding in background so we can monitor it
     (source .venv/bin/activate && \
      trailblazer embed load \
@@ -223,11 +248,11 @@ embed_run() {
        1> "$log_file" \
        2> "$error_file") &
     local embed_pid=$!
-    
+
     # Monitor progress
     monitor_embedding_progress "$log_file" "$error_file" "$run_id"
     local result=$?
-    
+
     if [ $result -eq 0 ]; then
 
         local end_time=$(date +%s)
@@ -247,6 +272,14 @@ embed_run() {
             echo "  ⚠️  Warning: No assurance file found"
             update_progress "$run_id" "completed" "$docs_count" "unknown" "$duration"
         fi
+
+        # After reading embed_assurance.json (or if missing), update per-run entry
+        jq --arg run_id "$run_id" \
+           --argjson docs "${docs_embedded:-0}" \
+           --argjson chunks "${chunks_embedded:-0}" \
+           '.runs[$run_id].docs_embedded = ($docs)
+            | .runs[$run_id].chunks_embedded = ($chunks)' \
+           "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
 
         return 0
     else

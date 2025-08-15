@@ -101,7 +101,9 @@ class OpenAIEmbedder(EmbeddingProvider):
             model=self.model,
             input=text,
             dimensions=(
-                self.dim if self.model.startswith("text-embedding-3") else None
+                self.dim
+                if self.model.startswith("text-embedding-3")
+                else openai.NOT_GIVEN
             ),
         )
         return response.data[0].embedding
@@ -120,7 +122,9 @@ class OpenAIEmbedder(EmbeddingProvider):
             model=self.model,
             input=texts,
             dimensions=(
-                self.dim if self.model.startswith("text-embedding-3") else None
+                self.dim
+                if self.model.startswith("text-embedding-3")
+                else openai.NOT_GIVEN
             ),
         )
         return [data.embedding for data in response.data]
