@@ -2046,6 +2046,28 @@ def enrich_all(
     typer.echo(f"📊 All {total_runs} runs have been enriched!")
 
 
+@app.command("monitor")
+def monitor_cmd(
+    run_id: Optional[str] = typer.Option(
+        None, "--run", help="Run ID to monitor (default: latest)"
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="JSON output for CI dashboards"
+    ),
+    interval: float = typer.Option(
+        2.0, "--interval", help="Refresh interval in seconds"
+    ),
+) -> None:
+    """Monitor running processes with live TUI or JSON output."""
+    from ..obs.monitor import TrailblazerMonitor
+
+    monitor = TrailblazerMonitor(
+        run_id=run_id, json_mode=json_output, refresh_interval=interval
+    )
+
+    monitor.run()
+
+
 @ops_app.command("monitor")
 def ops_monitor_cmd(
     interval: int = typer.Option(

@@ -1,0 +1,2 @@
+{"id": "doc1", "title": "Test Doc 1", "collection": "test", "quality_flags": []}
+{"id": "doc2", "title": "Test Doc 2", "collection": "test", "quality_flags": ["short"]}

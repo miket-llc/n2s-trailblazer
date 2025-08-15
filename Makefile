@@ -1,4 +1,4 @@
-.PHONY: setup lint test fmt md check-md ci db.up db.down db.wait reembed.openai reembed.openai.pilot reembed.openai.all embed.monitor embed.kill
+.PHONY: setup lint test fmt md check-md ci db.up db.down db.wait reembed.openai reembed.openai.pilot reembed.openai.all embed.monitor embed.kill enrich.all
 
 setup:
 	python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]" && pre-commit install
@@ -45,7 +45,7 @@ db.wait:
 	echo "PostgreSQL failed to become ready after 60 seconds"; \
 	exit 1
 
-# OpenAI corpus re-embedding
+# OpenAI corpus re-embedding (CLI-based)
 reembed.openai:
 	@echo "🚀 Starting OpenAI corpus re-embedding..."
 	@echo "Prerequisites:"
@@ -54,7 +54,7 @@ reembed.openai:
 	@echo "  - Database running (make db.up)"
 	@echo "  - Virtual environment activated"
 	@echo
-	@echo "Running: scripts/reembed_corpus_openai.sh"
+	@echo "Running: trailblazer embed load with OpenAI provider"
 	@scripts/reembed_corpus_openai.sh
 
 reembed.openai.pilot:
