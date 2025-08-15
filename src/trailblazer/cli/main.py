@@ -8,6 +8,7 @@ import sys
 from ..core.logging import setup_logging, log
 from ..core.config import SETTINGS
 from ..pipeline.runner import run as run_pipeline
+from ..core.config import Settings
 
 app = typer.Typer(add_completion=False, help="Trailblazer CLI")
 ingest_app = typer.Typer(help="Ingestion commands")
@@ -95,15 +96,267 @@ def version() -> None:
 
 @app.command()
 def run(
+    config_file: Optional[str] = typer.Option(
+        None,
+        "--config",
+        help="Config file (.trailblazer.yaml auto-discovered)",
+    ),
     phases: Optional[List[str]] = typer.Option(
         None, "--phases", help="Subset of phases to run, in order"
+    ),
+    reset: Optional[str] = typer.Option(
+        None, "--reset", help="Reset scope: artifacts|embeddings|all"
+    ),
+    resume: bool = typer.Option(
+        False, "--resume", help="Resume from last incomplete run"
+    ),
+    since: Optional[str] = typer.Option(
+        None, "--since", help="Override since timestamp"
+    ),
+    workers: Optional[int] = typer.Option(
+        None, "--workers", help="Override worker count"
+    ),
+    provider: Optional[str] = typer.Option(
+        None, "--provider", help="Override embedding provider"
+    ),
+    model: Optional[str] = typer.Option(
+        None, "--model", help="Override embedding model"
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Do not execute; just scaffold outputs"
     ),
+    yes: bool = typer.Option(False, "--yes", help="Skip confirmation prompts"),
 ) -> None:
-    rid = run_pipeline(phases=phases, dry_run=dry_run)
-    log.info("cli.run.done", run_id=rid)
+    """
+    Run the end-to-end N2S pipeline with config-first approach.
+
+    Golden Path: ingest → normalize → enrich → embed → compose → playbook
+
+    Config precedence: config file < env vars < CLI flags
+    """
+
+    # Load config with proper precedence
+    try:
+        settings = Settings.load_config(config_file)
+        log.info("config.loaded", config_file=config_file or "auto-discovered")
+    except Exception as e:
+        typer.echo(f"❌ Config error: {e}", err=True)
+        raise typer.Exit(1)
+
+    # Override settings with CLI flags (highest precedence)
+    if phases:
+        settings.PIPELINE_PHASES = phases
+    if since:
+        settings.CONFLUENCE_SINCE = since
+    if workers:
+        settings.PIPELINE_WORKERS = workers
+    if provider:
+        settings.EMBED_PROVIDER = provider
+    if model:
+        settings.EMBED_MODEL = model
+
+    # Handle reset operations
+    if reset:
+        _handle_reset(reset, settings, yes, dry_run)
+        if not resume:  # If not resuming, exit after reset
+            return
+
+    # Handle resume logic
+    run_id = None
+    if resume:
+        run_id = _find_resumable_run(settings)
+        if run_id:
+            typer.echo(f"🔄 Resuming run: {run_id}", err=True)
+        else:
+            typer.echo("ℹ️  No resumable run found, starting fresh", err=True)
+
+    # Execute pipeline
+    rid = run_pipeline(
+        phases=settings.PIPELINE_PHASES,
+        dry_run=dry_run,
+        run_id=run_id,
+        settings=settings,
+    )
+
+    log.info("cli.run.done", run_id=rid, phases=settings.PIPELINE_PHASES)
+    typer.echo(rid)  # For scripting
+
+
+def _handle_reset(
+    reset_scope: str, settings: Settings, yes: bool, dry_run: bool
+) -> None:
+    """Handle reset operations with confirmation and reporting."""
+    import json
+    import shutil
+    from datetime import datetime, timezone
+    from pathlib import Path
+    from typing import Dict, Any
+    from ..core.artifacts import runs_dir, new_run_id
+    from ..db.engine import get_engine
+
+    valid_scopes = ["artifacts", "embeddings", "all"]
+    if reset_scope not in valid_scopes:
+        typer.echo(
+            f"❌ Invalid reset scope: {reset_scope}. Use: {', '.join(valid_scopes)}",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    # Prepare reset report
+    reset_id = new_run_id()
+    report_dir = Path(f"var/reports/{reset_id}")
+    report_dir.mkdir(parents=True, exist_ok=True)
+    reset_report = report_dir / "reset.md"
+
+    report: Dict[str, Any] = {
+        "reset_id": reset_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "scope": reset_scope,
+        "dry_run": dry_run,
+        "actions": [],
+    }
+
+    # Confirm reset unless --yes
+    if not yes and not dry_run:
+        typer.echo(f"⚠️  About to reset scope: {reset_scope}")
+        if reset_scope in ["artifacts", "all"]:
+            typer.echo("   This will delete run artifacts under var/runs/")
+        if reset_scope in ["embeddings", "all"]:
+            typer.echo("   This will clear embeddings from the database")
+        confirm = typer.confirm("Continue?")
+        if not confirm:
+            typer.echo("Reset cancelled", err=True)
+            raise typer.Exit(0)
+
+    try:
+        # Reset artifacts
+        if reset_scope in ["artifacts", "all"]:
+            runs_base = runs_dir()
+            if runs_base.exists():
+                if not dry_run:
+                    shutil.rmtree(runs_base)
+                    runs_base.mkdir(parents=True)
+                report["actions"].append(
+                    {
+                        "type": "artifacts_cleared",
+                        "path": str(runs_base),
+                        "completed": not dry_run,
+                    }
+                )
+                typer.echo(
+                    f"🗑️  {'Would clear' if dry_run else 'Cleared'} artifacts: {runs_base}"
+                )
+
+        # Reset embeddings
+        if reset_scope in ["embeddings", "all"]:
+            if settings.TRAILBLAZER_DB_URL:
+                try:
+                    # Temporarily set the global SETTINGS for get_engine()
+                    from ..core.config import SETTINGS
+
+                    old_db_url = SETTINGS.TRAILBLAZER_DB_URL
+                    SETTINGS.TRAILBLAZER_DB_URL = settings.TRAILBLAZER_DB_URL
+                    engine = get_engine()
+                    SETTINGS.TRAILBLAZER_DB_URL = old_db_url
+                    if not dry_run:
+                        # Clear embeddings tables
+                        from sqlalchemy import text
+
+                        with engine.connect() as conn:
+                            conn.execute(
+                                text(
+                                    "TRUNCATE TABLE IF EXISTS embeddings CASCADE"
+                                )
+                            )
+                            conn.execute(
+                                text("TRUNCATE TABLE IF EXISTS chunks CASCADE")
+                            )
+                            conn.execute(
+                                text(
+                                    "TRUNCATE TABLE IF EXISTS documents CASCADE"
+                                )
+                            )
+                            conn.commit()
+                    report["actions"].append(
+                        {
+                            "type": "embeddings_cleared",
+                            "database": settings.TRAILBLAZER_DB_URL.split("@")[
+                                -1
+                            ],  # Hide credentials
+                            "completed": not dry_run,
+                        }
+                    )
+                    typer.echo(
+                        f"🗑️  {'Would clear' if dry_run else 'Cleared'} embeddings from database"
+                    )
+                except Exception as e:
+                    report["actions"].append(
+                        {"type": "embeddings_clear_failed", "error": str(e)}
+                    )
+                    typer.echo(f"❌ Failed to clear embeddings: {e}", err=True)
+            else:
+                typer.echo(
+                    "⚠️  No database URL configured, skipping embeddings reset"
+                )
+
+        # Write reset report
+        with open(reset_report, "w") as f:
+            f.write(f"# Reset Report: {reset_id}\n\n")
+            f.write(f"**Timestamp:** {report['timestamp']}\n")
+            f.write(f"**Scope:** {reset_scope}\n")
+            f.write(f"**Dry Run:** {dry_run}\n\n")
+            f.write("## Actions Taken\n\n")
+            for action in report["actions"]:
+                f.write(
+                    f"- **{action['type']}**: {action.get('path', action.get('database', 'N/A'))}\n"
+                )
+                if "error" in action:
+                    f.write(f"  - Error: {action['error']}\n")
+
+        # Also write JSON for automation
+        with open(report_dir / "reset.json", "w") as f:
+            json.dump(report, f, indent=2)
+
+        typer.echo(f"📄 Reset report: {reset_report}")
+
+    except Exception as e:
+        typer.echo(f"❌ Reset failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
+def _find_resumable_run(settings: Settings) -> Optional[str]:
+    """Find the most recent incomplete run that can be resumed."""
+    from ..core.artifacts import runs_dir, phase_dir
+
+    runs_base = runs_dir()
+    if not runs_base.exists():
+        return None
+
+    # Get all run directories sorted by modification time (newest first)
+    run_dirs = [d for d in runs_base.iterdir() if d.is_dir()]
+    run_dirs.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+
+    for run_dir in run_dirs[:5]:  # Check last 5 runs
+        run_id = run_dir.name
+
+        # Check if this run is incomplete (missing final phase)
+        final_phases = [
+            "embed",
+            "compose",
+            "create",
+        ]  # Any of these could be final
+        has_final_phase = any(
+            phase_dir(run_id, phase).exists()
+            for phase in final_phases
+            if phase in settings.PIPELINE_PHASES
+        )
+
+        if not has_final_phase:
+            # Check if it has at least ingest phase
+            if phase_dir(run_id, "ingest").exists():
+                return run_id
+
+    return None
 
 
 @app.command()

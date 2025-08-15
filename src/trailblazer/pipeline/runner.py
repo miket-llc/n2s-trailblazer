@@ -1,13 +1,17 @@
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from .dag import DEFAULT_PHASES, validate_phases
 from ..core.artifacts import new_run_id, phase_dir
 from ..core.logging import log
+
+if TYPE_CHECKING:
+    from ..core.config import Settings
 
 
 def run(
     phases: Optional[List[str]] = None,
     dry_run: bool = False,
     run_id: Optional[str] = None,
+    settings: Optional["Settings"] = None,
 ) -> str:
     phases = validate_phases(phases or DEFAULT_PHASES)
     rid = run_id or new_run_id()
@@ -17,14 +21,16 @@ def run(
         outdir = phase_dir(rid, phase)
         log.info("phase.start", phase=phase, out=str(outdir), run_id=rid)
         if not dry_run:
-            _execute_phase(phase, out=str(outdir))
+            _execute_phase(phase, out=str(outdir), settings=settings)
         log.info("phase.end", phase=phase, run_id=rid)
 
     log.info("pipeline.run.end", run_id=rid)
     return rid
 
 
-def _execute_phase(phase: str, out: str) -> None:
+def _execute_phase(
+    phase: str, out: str, settings: Optional["Settings"] = None
+) -> None:
     if phase == "ingest":
         from .steps.ingest.confluence import ingest_confluence
         from ..core.config import SETTINGS
