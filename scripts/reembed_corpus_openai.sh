@@ -38,6 +38,104 @@ COST_LOG="var/reembed_cost.log"
 # Create log directory
 mkdir -p "$LOG_DIR"
 
+# Initialize progress tracking
+init_progress() {
+    if [ ! -f "$PROGRESS_FILE" ]; then
+        cat > "$PROGRESS_FILE" << EOF
+{
+  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "total_runs": 0,
+  "completed_runs": 0,
+  "failed_runs": 0,
+  "total_docs": 0,
+  "total_chunks": 0,
+  "estimated_cost": 0.0,
+  "runs": {}
+}
+EOF
+    fi
+}
+
+# Get runs worth embedding (exclude empty templates)
+get_runs_to_embed() {
+    echo "=== Identifying runs worth embedding ===" >&2
+
+    local runs_file="var/temp_runs_to_embed.txt"
+    if [ -s "$runs_file" ]; then
+      echo "Using existing $runs_file" >&2
+      # ensure sorted largest-first by the count column if present
+      sort -t: -k2 -nr "$runs_file" -o "$runs_file" || true
+      # update totals in progress file
+      local total_runs=$(wc -l < "$runs_file")
+      local total_docs=$(awk -F: '{sum += $2} END {print sum}' "$runs_file")
+      jq --argjson total_runs "$total_runs" --argjson total_docs "$total_docs" \
+         '.total_runs=$total_runs | .total_docs=$total_docs' \
+         "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
+      
+      # Add docs_planned for existing temp file
+      while IFS=: read -r rid docs; do
+        jq --arg rid "$rid" --argjson docs "$docs" '
+          .runs[$rid] = (.runs[$rid] // {})
+          | .runs[$rid].docs_planned = $docs
+          | .runs[$rid].status = (.runs[$rid].status // "planned")
+        ' "$PROGRESS_FILE" > "$PROGRESS_FILE.tmp" && mv "$PROGRESS_FILE.tmp" "$PROGRESS_FILE"
+      done < "$runs_file"
+      
+      echo "$runs_file"
+      return 0
+    fi
+
+    for run in $(ls -1t var/runs | grep -v '^INDEX' | grep -v '^logs$' | grep -v '^nonexistent-run-id$' | grep -v '^test'); do
+        if [ -f "var/runs/$run/enrich/enriched.jsonl" ]; then
+            local size=$(wc -l < "var/runs/$run/enrich/enriched.jsonl")
+            if [ $size -gt 0 ]; then
+                # Check if this is an empty template
+                local title=$(cat "var/runs/$run/normalize/normalized.ndjson" | jq -r '.title' 2>/dev/null | head -1)
+                local text_length=$(cat "var/runs/$run/normalize/normalized.ndjson" | jq -r '.text_md' 2>/dev/null | head -1 | wc -c)
+
+                # Skip only confirmed empty templates
+                if [ "$text_length" != 114 ] || [ "$title" != "Overview" ]; then
+                    if [ "$text_length" != 172 ] || [ "$title" != "Descripción general" ]; then
+                        echo "$run:$size" >> "$runs_file"
+                    fi
+                fi
+            fi
+        fi
+    done
+
+    # Sort by document count (largest first for efficiency)
+    sort -t: -k2 -nr "$runs_file" > "${runs_file}.sorted" && mv "${runs_file}.sorted" "$runs_file"
+
+    local total_runs=$(wc -l < "$runs_file")
+    local total_docs=$(awk -F: '{sum += $2} END {print sum}' "$runs_file")
+
+    echo "Found $total_runs runs with $total_docs total documents"
+    echo "Runs file: $runs_file"
+
+    # Update progress file with totals
+    jq --argjson total_runs "$total_runs" \
+       --argjson total_docs "$total_docs" \
+       '.total_runs = $total_runs | .total_docs = $total_docs' \
+       "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
+
+    # After computing $runs_file, $total_runs, $total_docs …
+    # Write a runs_plan map { run_id: {docs_planned: N, status:"planned"} }
+    jq -n --argfile p "$PROGRESS_FILE" '
+      $p as $base
+      | $base
+    ' > "$PROGRESS_FILE.tmp" && mv "$PROGRESS_FILE.tmp" "$PROGRESS_FILE"
+
+    while IFS=: read -r rid docs; do
+      jq --arg rid "$rid" --argjson docs "$docs" '
+        .runs[$rid] = (.runs[$rid] // {})
+        | .runs[$rid].docs_planned = $docs
+        | .runs[$rid].status = (.runs[$rid].status // "planned")
+      ' "$PROGRESS_FILE" > "$PROGRESS_FILE.tmp" && mv "$PROGRESS_FILE.tmp" "$PROGRESS_FILE"
+    done < "$runs_file"
+
+    echo "$runs_file"
+}
+
 # Support single-run mode for dispatcher
 if [[ "${1:-}" == "--single" ]]; then
   shift
@@ -67,24 +165,6 @@ if [[ "${1:-}" == "--list-only" ]]; then
   done
   exit 0
 fi
-
-# Initialize progress tracking
-init_progress() {
-    if [ ! -f "$PROGRESS_FILE" ]; then
-        cat > "$PROGRESS_FILE" << EOF
-{
-  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "total_runs": 0,
-  "completed_runs": 0,
-  "failed_runs": 0,
-  "total_docs": 0,
-  "total_chunks": 0,
-  "estimated_cost": 0.0,
-  "runs": {}
-}
-EOF
-    fi
-}
 
 # Update progress
 update_progress() {
