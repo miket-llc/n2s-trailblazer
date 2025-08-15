@@ -82,3 +82,95 @@ Provide a single place to diagnose: trailblazer db doctor.
 **Cursor limit:** Keep prompts ≤10 to-dos; chunk work if needed.
 
 **No regression:** Before edits, read the module and associated tests; prefer minimal deltas. If complexity is high, refactor in tiny steps with passing tests after each step.
+
+# PROMPT DEV-015 — Path Unification to var/ (var/runs/var/state/logs) + trailblazer paths CLI ≤9 to-dos
+
+Save as: prompts/015_path_unification.md
+Work on: MAIN ONLY
+Paste prompts/000_shared_guardrails.md VERBATIM at the top (do not modify).
+Goal: Make all workspace paths config-driven, defaulting to var/ for tool-managed artifacts and data/ for human-managed inputs; add a trailblazer paths CLI; keep ingest/normalize DB-free; do not regress behavior.
+
+Mandatory review first (not counted): List files you'll touch, outline a tiny change plan, and confirm no regressions (CLI UX, ADF default, ingest/normalize behavior, tests). Surgical by default; small refactor only if it reduces risk.
+
+To-Dos (max 9)
+
+Config & helpers
+
+In src/trailblazer/core/config.py add:
+
+TRAILBLAZER_DATA_DIR (default "data"), TRAILBLAZER_WORKDIR (default "var").
+
+Derived: RUNS_DIR, STATE_DIR, LOG_DIR, CACHE_DIR, TMP_DIR from WORKDIR.
+
+Add src/trailblazer/core/paths.py exposing:
+
+def data() -> Path; def workdir() -> Path
+def runs() -> Path; def state() -> Path; def logs() -> Path
+def cache() -> Path; def tmp() -> Path
+def ensure_all() -> None
+
+Respect env overrides; paths are repo-relative.
+
+CLI: trailblazer paths
+
+Add a sub-app paths with:
+
+trailblazer paths → human table of resolved dirs.
+
+trailblazer paths --json → machine JSON {"data": "...", "workdir":"...", "runs":"...", "state":"...", "logs":"...", "cache":"...", "tmp":"..."}.
+
+trailblazer paths ensure → create all dirs.
+
+Write-path migration (code)
+
+Replace all writes to var/runs/, var/state/, var/logs/ with paths.runs()/paths.state()/paths.logs().
+
+No DB imports in ingest/normalize code paths (re-assert).
+
+Legacy read fallback (backcompat)
+
+When reading legacy var/runs/var/state/logs, try new locations first (var/\*), then legacy (./runs, ./state, ./logs).
+
+When writing, always target var/\*.
+
+.gitignore update
+
+Ensure var/ and data/ are ignored by default; keep !data/README.md allowed.
+
+Do not ignore prompts/, scripts/, etc.
+
+Scripts touchpoint
+
+Update any internal scripts/ops helpers (if present in repo) to call paths.ensure() and to write under var/….
+
+Do not change long-running ops prompts here; we'll update them in the OPS prompt.
+
+Tests
+
+Unit: paths resolve defaults + env overrides.
+
+Smoke: ingest writes to var/runs/<RID>/ingest; state updates to var/state/….
+
+Legacy read fallback: put a fake legacy run under ./var/runs/legacy_demo/… and confirm read queries find it.
+
+Docs
+
+README: add "Workspace layout" explaining data/ (human inputs) vs var/ (tool-managed workspace). Show trailblazer paths output and ensure.
+
+Validation & commit (product-grade)
+
+make fmt && make lint && make test && make check-md
+
+All green, zero IDE linter errors. Commit to main:
+
+feat(paths): config-driven workspace; default var/{runs,state,logs}; paths CLI; tests+docs
+
+Paste proof-of-work (last ~10 lines of each command).
+
+Acceptance
+
+All new writes go to var/runs, var/state, var/logs; legacy reads still work.
+
+trailblazer paths + paths --json + paths ensure exist.
+
+Ingest/normalize remain DB-free; ADF default untouched; tests green.

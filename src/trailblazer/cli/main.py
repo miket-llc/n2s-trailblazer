@@ -1969,5 +1969,354 @@ def status() -> None:
     typer.echo(f"   Disk free: {free / (1024**3):.1f} GB")
 
 
+@app.command("enrich-all")
+def enrich_all(
+    pattern: str = typer.Option(
+        "2025-08-*", "--pattern", help="Pattern to match run directories"
+    ),
+    batch_size: int = typer.Option(
+        50, "--batch-size", help="Progress report every N runs"
+    ),
+    no_llm: bool = typer.Option(
+        True, "--no-llm", help="Disable LLM enrichment (default: disabled)"
+    ),
+    no_progress: bool = typer.Option(
+        True,
+        "--no-progress",
+        help="Disable progress output (default: disabled)",
+    ),
+) -> None:
+    """Enrich all runs that need enrichment in bulk."""
+    from ..core.artifacts import runs_dir
+
+    base_dir = runs_dir()
+    if not base_dir.exists():
+        typer.echo("❌ No runs directory found", err=True)
+        raise typer.Exit(1)
+
+        # Find runs that need enrichment
+    runs_to_enrich = []
+
+    typer.echo("🔍 Finding all runs that need enrichment...")
+
+    for run_dir in base_dir.glob(pattern):
+        if (
+            run_dir.is_dir()
+            and (run_dir / "ingest").exists()
+            and (run_dir / "normalize").exists()
+            and not (run_dir / "enrich").exists()
+        ):
+            runs_to_enrich.append(run_dir.name)
+
+    if not runs_to_enrich:
+        typer.echo("✅ No runs need enrichment")
+        return
+
+    total_runs = len(runs_to_enrich)
+    typer.echo(f"📊 Total runs to enrich: {total_runs}")
+
+    # Process each run
+    counter = 0
+    for run_id in runs_to_enrich:
+        counter += 1
+        typer.echo(f"[{counter}/{total_runs}] ENRICHING: {run_id}")
+
+        # Call the existing enrich function directly
+        try:
+            from ..pipeline.steps.enrich.enricher import enrich_from_normalized
+
+            enrich_from_normalized(
+                run_id=run_id,
+                llm_enabled=not no_llm,
+                max_docs=None,
+                budget=None,
+                progress_callback=None if no_progress else lambda *args: None,
+                emit_event=None,
+            )
+
+        except Exception as e:
+            typer.echo(f"❌ Failed to enrich {run_id}: {e}", err=True)
+            continue
+
+        # Progress update
+        if counter % batch_size == 0:
+            typer.echo(f"📈 Progress: {counter}/{total_runs} runs enriched")
+
+    typer.echo("✅ MASSIVE ENRICHMENT COMPLETE")
+    typer.echo(f"📊 All {total_runs} runs have been enriched!")
+
+
+@ops_app.command("monitor")
+def ops_monitor_cmd(
+    interval: int = typer.Option(
+        15, "--interval", help="Monitor interval in seconds"
+    ),
+    alpha: float = typer.Option(0.25, "--alpha", help="EWMA smoothing factor"),
+) -> None:
+    """Monitor embedding progress with real-time ETA and worker stats."""
+    import json
+    import time
+    import subprocess
+    import os
+    from datetime import datetime, timezone, timedelta
+    from pathlib import Path
+
+    progress_file = Path("var/logs/reembed_progress.json")
+    runs_file = Path("var/logs/temp_runs_to_embed.txt")
+    log_dir = Path("var/logs")
+
+    if not progress_file.exists():
+        typer.echo(f"❌ {progress_file} not found", err=True)
+        raise typer.Exit(2)
+
+    def iso_to_epoch(iso_str: str) -> int:
+        """Convert ISO 8601 string to epoch timestamp."""
+        try:
+            dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+            return int(dt.timestamp())
+        except (ValueError, TypeError):
+            return int(datetime.now(timezone.utc).timestamp())
+
+    def ewma(alpha: float, current: float, previous: float) -> float:
+        """Calculate exponentially weighted moving average."""
+        return alpha * current + (1 - alpha) * previous
+
+    docs_rate_ewma = 0.0
+
+    # Get start time
+    with open(progress_file) as f:
+        progress_data = json.load(f)
+
+    started_at = progress_data.get("started_at", "")
+    start_ts = iso_to_epoch(started_at) if started_at else int(time.time())
+
+    typer.echo("🎯 Embedding monitor started - Ctrl+C to stop")
+
+    try:
+        while True:
+            # Clear screen
+            os.system("clear" if os.name == "posix" else "cls")
+
+            now = int(time.time())
+            current_time = datetime.now(timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+
+            typer.echo(f"[MONITOR] {current_time}  interval={interval}s")
+
+            # Load current progress
+            try:
+                with open(progress_file) as f:
+                    progress_data = json.load(f)
+
+                # Display key metrics
+                summary = {
+                    "started_at": progress_data.get("started_at"),
+                    "total_runs": progress_data.get("total_runs", 0),
+                    "completed_runs": progress_data.get("completed_runs", 0),
+                    "failed_runs": progress_data.get("failed_runs", 0),
+                    "total_docs": progress_data.get("total_docs", 0),
+                    "total_chunks": progress_data.get("total_chunks", 0),
+                    "estimated_cost": progress_data.get("estimated_cost", 0),
+                }
+
+                for key, value in summary.items():
+                    typer.echo(f"  {key}: {value}")
+
+                # Calculate progress
+                runs_data = progress_data.get("runs", {})
+                docs_planned = sum(
+                    run.get("docs_planned", 0) for run in runs_data.values()
+                )
+                if docs_planned == 0 and runs_file.exists():
+                    # Fallback: read from runs file
+                    with open(runs_file) as f:
+                        docs_planned = sum(
+                            int(line.split(":")[1])
+                            for line in f
+                            if ":" in line
+                        )
+
+                docs_embedded = sum(
+                    run.get("docs_embedded", 0) for run in runs_data.values()
+                )
+
+                elapsed = max(1, now - start_ts)
+                docs_rate = docs_embedded / elapsed
+                docs_rate_ewma = ewma(alpha, docs_rate, docs_rate_ewma)
+
+                # Count active workers
+                try:
+                    result = subprocess.run(
+                        ["pgrep", "-fc", "trailblazer embed load"],
+                        capture_output=True,
+                        text=True,
+                    )
+                    active_workers = (
+                        int(result.stdout.strip())
+                        if result.returncode == 0
+                        else 1
+                    )
+                except (subprocess.SubprocessError, ValueError):
+                    active_workers = 1
+
+                # Calculate ETA
+                remain = max(0, docs_planned - docs_embedded)
+                if docs_rate_ewma > 0:
+                    eta_sec = int(remain / docs_rate_ewma)
+                    eta_str = str(timedelta(seconds=eta_sec))
+                else:
+                    eta_str = "unknown"
+
+                typer.echo("---- progress ----")
+                typer.echo(
+                    f"docs: {docs_embedded} / {docs_planned}   elapsed: {elapsed}s   rate(ewma): {docs_rate_ewma:.2f} docs/s   active_workers: {active_workers}   ETA: {eta_str}"
+                )
+
+                # Show recent runs
+                typer.echo("---- recent runs ----")
+                recent_runs = list(runs_data.items())
+                recent_runs.sort(
+                    key=lambda x: x[1].get("completed_at", ""), reverse=True
+                )
+
+                for run_id, run_data in recent_runs[:8]:
+                    status = run_data.get("status", "unknown")
+                    docs = run_data.get("docs_embedded", 0)
+                    chunks = run_data.get("chunks_embedded", 0)
+                    duration = run_data.get("duration_seconds", 0)
+                    error = run_data.get("error", "")
+                    typer.echo(
+                        f"{run_id}  {status}  docs={docs} chunks={chunks} dur={duration}s err={error}"
+                    )
+
+                # Show recent logs
+                if log_dir.exists():
+                    typer.echo("---- tail of active logs ----")
+                    log_files = list(log_dir.glob("embed-*.out"))
+                    log_files.sort(
+                        key=lambda x: x.stat().st_mtime, reverse=True
+                    )
+
+                    for log_file in log_files[:2]:
+                        typer.echo(f">>> {log_file}")
+                        try:
+                            with open(log_file) as f:
+                                lines = f.readlines()
+                                for line in lines[-30:]:
+                                    typer.echo(line.rstrip())
+                        except (IOError, OSError):
+                            typer.echo("Error reading log file")
+                        typer.echo()
+
+            except Exception as e:
+                typer.echo(f"Error reading progress: {e}", err=True)
+
+            time.sleep(interval)
+
+    except KeyboardInterrupt:
+        typer.echo("\n👋 Monitor stopped by user")
+
+
+@ops_app.command("dispatch")
+def ops_dispatch_cmd(
+    workers: int = typer.Option(
+        2, "--workers", help="Number of parallel workers"
+    ),
+    runs_file: str = typer.Option(
+        "var/logs/temp_runs_to_embed.txt",
+        "--runs-file",
+        help="File with runs to embed",
+    ),
+) -> None:
+    """Dispatch parallel embedding jobs from runs file."""
+    import subprocess
+    from pathlib import Path
+
+    runs_path = Path(runs_file)
+    if not runs_path.exists() or runs_path.stat().st_size == 0:
+        typer.echo(f"❌ {runs_file} missing or empty", err=True)
+        raise typer.Exit(2)
+
+    typer.echo(f"🚀 Dispatching {workers} parallel embedding workers")
+    typer.echo(f"📁 Runs file: {runs_file}")
+
+    # Read runs and dispatch
+    try:
+        with open(runs_path) as f:
+            lines = [
+                line.strip() for line in f if line.strip() and ":" in line
+            ]
+
+        if not lines:
+            typer.echo("❌ No valid runs found in file", err=True)
+            raise typer.Exit(1)
+
+        typer.echo(f"📊 Found {len(lines)} runs to embed")
+
+        # Build xargs command for parallel processing
+        cmd = [
+            "xargs",
+            "-n",
+            "2",
+            "-P",
+            str(workers),
+            "bash",
+            "-lc",
+            """
+            run_id="$0"; docs="${1:-0}";
+            echo "[DISPATCH] $run_id ($docs docs)"
+            PYTHONPATH=src python3 -m trailblazer.cli.main embed load --run-id "$run_id" --provider "${EMBED_PROVIDER:-openai}" --model "${EMBED_MODEL:-text-embedding-3-small}" --dimensions "${EMBED_DIMENSIONS:-1536}" --batch "${BATCH_SIZE:-128}"
+            """,
+        ]
+
+        # Prepare input for xargs (run_id:docs -> run_id docs)
+        input_data = ""
+        for line in lines:
+            if ":" in line:
+                run_id, docs = line.split(":", 1)
+                input_data += f"{run_id.strip()} {docs.strip()}\n"
+
+        # Execute parallel dispatch
+        process = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
+        process.communicate(input=input_data)
+
+        if process.returncode == 0:
+            typer.echo("✅ Dispatch completed successfully")
+        else:
+            typer.echo("❌ Dispatch failed", err=True)
+            raise typer.Exit(process.returncode)
+
+    except Exception as e:
+        typer.echo(f"❌ Dispatch error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@ops_app.command("kill")
+def ops_kill_cmd() -> None:
+    """Kill all running embedding processes."""
+    import subprocess
+
+    try:
+        # Kill trailblazer embedding processes
+        result = subprocess.run(
+            [
+                "pkill",
+                "-f",
+                "trailblazer.*(embed|ingest|enrich|chunk|classif|compose|playbook|ask|retrieve)",
+            ],
+            capture_output=True,
+        )
+
+        if result.returncode == 0:
+            typer.echo("✅ Killed running Trailblazer processes")
+        else:
+            typer.echo("ℹ️  No running Trailblazer processes found")
+
+    except Exception as e:
+        typer.echo(f"❌ Error killing processes: {e}", err=True)
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
