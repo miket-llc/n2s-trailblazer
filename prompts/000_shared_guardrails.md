@@ -114,3 +114,29 @@ ______________________________________________________________________
 DB Policy: There is ONE runtime DB: Postgres + pgvector. No SQLite anywhere in runtime or ops.
 
 No Pagers: Set PAGER=cat and LESS=-RFX in the session; pass pager-off flags if tools support them. All output must stream; do not invoke interactive pagers.
+
+______________________________________________________________________
+
+## Embedding & DB Non-Negotiables
+
+**PostgreSQL only in ops**: Runtime paths (embed, retrieval, ask) MUST connect to `postgresql://…`. SQLite is allowed ONLY in unit tests guarded by `TB_TESTING=1`. Use `make db.up` + `trailblazer db init` + `trailblazer db doctor` for setup.
+
+**pgvector required**: `trailblazer db doctor` must show `pgvector: available`. If not, fail hard with a clear fixup message pointing to manual extension creation.
+
+**Dimensions discipline**: The provider's configured dimension (e.g., `OPENAI_EMBED_DIM=1536`) MUST match what's persisted in the database. If mismatch detected, ABORT with a remediation hint (or require an explicit `--reembed-all`).
+
+**No pagers**: All scripts/commands must export `PAGER=cat`, `LESS=-RFX` to prevent interactive pagers that break automation.
+
+**No regressions**: Before merge, run `make fmt && make lint && make check-md && make test` and ensure ZERO failures/warnings in IDE.
+
+______________________________________________________________________
+
+## Ops Non-Negotiables
+
+**One DB only**: TRAILBLAZER_DB_URL must be PostgreSQL. No SQLite fallbacks in operations.
+
+**No pagers in scripts**: Always export `PAGER=cat` and `LESS=-RFX` to prevent interactive pagers in automation.
+
+**No regressions**: If CLI flags changed, update scripts immediately to prevent unknown option errors.
+
+**Kill before run**: Always kill old sessions before new embeds to prevent conflicts and resource contention.

@@ -173,6 +173,29 @@ def initialize_postgres_extensions():
             pass
 
 
+def ensure_vector_index() -> None:
+    """Create pgvector index if missing (safe/no-op if exists)."""
+    if not is_postgres():
+        return
+    engine = get_engine()
+    with engine.connect() as conn:
+        # IVFFLAT cosine index; requires ANALYZE and pgvector >= 0.5.0
+        try:
+            conn.execute(
+                text("""
+                CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vec
+                ON chunk_embeddings
+                USING ivfflat (embedding vector_cosine_ops)
+                WITH (lists = 100);
+            """)
+            )
+            conn.execute(text("ANALYZE chunk_embeddings;"))
+            conn.commit()
+        except Exception:
+            # Do not explode; db.doctor will show remaining gaps
+            pass
+
+
 class Document(Base):
     """Document table - stores metadata from normalized documents."""
 

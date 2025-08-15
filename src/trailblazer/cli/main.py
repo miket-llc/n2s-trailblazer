@@ -52,7 +52,7 @@ def _run_db_preflight_check() -> None:
                     err=True,
                 )
                 typer.echo(
-                    "Use 'make db.up' then 'trailblazer db doctor' to get started",
+                    "SQLite is for tests only; use 'make db.up' + 'trailblazer db init' + 'trailblazer db doctor'",
                     err=True,
                 )
                 raise typer.Exit(1)
@@ -669,6 +669,7 @@ def db_init_cmd() -> None:
         create_tables,
         get_db_url,
         initialize_postgres_extensions,
+        ensure_vector_index,
     )
 
     db_url = get_db_url()
@@ -689,6 +690,9 @@ def db_init_cmd() -> None:
         create_tables()
         typer.echo("✅ Database schema initialized successfully")
 
+        # Create vector index if PostgreSQL
+        ensure_vector_index()
+
         # Run a quick health check to confirm everything works
         from ..db.engine import check_db_health
 
@@ -701,10 +705,67 @@ def db_init_cmd() -> None:
                 "⚠️  pgvector extension not detected. You may need to run manually:"
             )
             typer.echo("    psql -d your_db -c 'CREATE EXTENSION vector;'")
+        elif (
+            health_info["dialect"] == "postgresql" and health_info["pgvector"]
+        ):
+            typer.echo("✅ pgvector extension ready and vector index created")
 
     except Exception as e:
         typer.echo(f"❌ Error initializing database: {e}", err=True)
         raise typer.Exit(1)
+
+
+def _check_dimension_compatibility(
+    provider: str, requested_dim: Optional[int]
+) -> None:
+    """Check if requested dimensions are compatible with existing embeddings.
+
+    Args:
+        provider: The embedding provider name
+        requested_dim: The requested dimension (if any)
+
+    Raises:
+        typer.Exit: If dimension mismatch detected and reembed_all not used
+    """
+    from ..db.engine import get_session
+    from sqlalchemy import text
+
+    if requested_dim is None:
+        # Get dimension from provider configuration
+        if provider == "openai":
+            import os
+
+            requested_dim = int(os.getenv("OPENAI_EMBED_DIM", "1536"))
+        elif provider == "dummy":
+            requested_dim = 384  # default dummy dimension
+        else:
+            # For other providers, can't check without actual provider instance
+            return
+
+    with get_session() as session:
+        try:
+            # Check for existing embeddings with this provider
+            result = session.execute(
+                text(
+                    "SELECT DISTINCT dim FROM chunk_embeddings WHERE provider = :provider LIMIT 1"
+                ),
+                {"provider": provider},
+            )
+            existing_dims = [row[0] for row in result]
+
+            if existing_dims and existing_dims[0] != requested_dim:
+                typer.echo(
+                    f"❌ Embedding dimension mismatch (existing={existing_dims[0]}, requested={requested_dim})",
+                    err=True,
+                )
+                typer.echo(
+                    "Re-run with '--changed-only=false' and '--reembed-all' (or purge embeddings).",
+                    err=True,
+                )
+                raise typer.Exit(1)
+        except Exception:
+            # If we can't check, continue (might be empty database)
+            pass
 
 
 @embed_app.command("load")
@@ -762,6 +823,10 @@ def embed_load_cmd(
     """Load normalized documents to database with embeddings."""
     # Run database preflight check first
     _run_db_preflight_check()
+
+    # Check dimension compatibility unless we're doing a full re-embed
+    if not reembed_all:
+        _check_dimension_compatibility(provider, dimensions)
 
     from ..db.engine import get_db_url
     from ..pipeline.steps.embed.loader import load_normalized_to_db

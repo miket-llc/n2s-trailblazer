@@ -26,6 +26,9 @@ EMBED_MODEL="text-embedding-3-small"
 EMBED_DIMENSIONS="1536"  # Match expected default for compatibility
 BATCH_SIZE="128"
 
+# Export for trailblazer CLI
+export OPENAI_EMBED_DIM="$EMBED_DIMENSIONS"
+
 # Logging and progress tracking
 LOG_DIR="var/logs"
 PROGRESS_FILE="var/reembed_progress.json"
@@ -44,6 +47,25 @@ if [[ "${1:-}" == "--single" ]]; then
   init_progress
   embed_run "$run_id" "$docs_count"
   exit $?
+fi
+
+# Support list-only mode to identify runs without starting embedding
+if [[ "${1:-}" == "--list-only" ]]; then
+  echo "🔍 Identifying runs to embed (largest first)..."
+  init_progress
+  runs_file=$(get_runs_to_embed)
+  total_runs=$(wc -l < "$runs_file")
+  total_docs=$(awk -F: '{sum += $2} END {print sum}' "$runs_file")
+  
+  echo "✅ Found $total_runs runs with $total_docs total documents"
+  echo "📄 Runs file: $runs_file"
+  echo "📊 Progress tracking initialized: $PROGRESS_FILE"
+  echo ""
+  echo "🔝 Top 10 runs by document count:"
+  head -10 "$runs_file" | while IFS=: read -r run_id docs_count; do
+    echo "  - $run_id: $docs_count docs"
+  done
+  exit 0
 fi
 
 # Initialize progress tracking
@@ -107,7 +129,7 @@ get_runs_to_embed() {
       jq --argjson total_runs "$total_runs" --argjson total_docs "$total_docs" \
          '.total_runs=$total_runs | .total_docs=$total_docs' \
          "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
-      
+
       # Add docs_planned for existing temp file
       while IFS=: read -r rid docs; do
         jq --arg rid "$rid" --argjson docs "$docs" '
@@ -116,7 +138,7 @@ get_runs_to_embed() {
           | .runs[$rid].status = (.runs[$rid].status // "planned")
         ' "$PROGRESS_FILE" > "$PROGRESS_FILE.tmp" && mv "$PROGRESS_FILE.tmp" "$PROGRESS_FILE"
       done < "$runs_file"
-      
+
       echo "$runs_file"
       return 0
     fi
@@ -242,7 +264,6 @@ embed_run() {
        --run-id "$run_id" \
        --provider "$EMBED_PROVIDER" \
        --model "$EMBED_MODEL" \
-       --dimensions "$EMBED_DIMENSIONS" \
        --batch "$BATCH_SIZE" \
        --reembed-all \
        1> "$log_file" \
