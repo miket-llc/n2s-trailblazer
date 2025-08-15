@@ -1,3 +1,3 @@
 # Prompts Index
 
-- 028_embed-final-full-corpus.md
+- 001_observability-instrumentation-and-monitoring.md
