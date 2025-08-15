@@ -168,7 +168,7 @@ class DocumentEnricher:
 
     def _compute_readability(self, text_md: str) -> Dict[str, float]:
         """Compute readability metrics."""
-        if not text_md.strip():
+        if not text_md or not text_md.strip():
             return {
                 "chars_per_word": 0.0,
                 "words_per_paragraph": 0.0,
@@ -190,6 +190,7 @@ class DocumentEnricher:
         # Count headings
         heading_count = len(re.findall(r"^#+\s", text_md, re.MULTILINE))
 
+        # Ensure we don't divide by zero
         chars_per_word = char_count / word_count if word_count > 0 else 0.0
         words_per_paragraph = (
             word_count / paragraph_count if paragraph_count > 0 else 0.0

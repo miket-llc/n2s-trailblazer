@@ -1743,9 +1743,9 @@ def _generate_enrichment_assurance_md(stats: dict, output_path: Path) -> None:
     """Generate a markdown assurance report."""
     content = f"""# Enrichment Assurance Report
 
-**Run ID:** {stats["run_id"]}  
-**Completed:** {stats["completed_at"]}  
-**Duration:** {stats["duration_seconds"]}s  
+**Run ID:** {stats["run_id"]}
+**Completed:** {stats["completed_at"]}
+**Duration:** {stats["duration_seconds"]}s
 
 ## Summary
 
@@ -1764,11 +1764,22 @@ def _generate_enrichment_assurance_md(stats: dict, output_path: Path) -> None:
     else:
         content += "No quality flags detected.\n"
 
-    content += f"""
+    # Calculate rate safely
+    if stats["duration_seconds"] > 0:
+        rate = stats["docs_total"] / stats["duration_seconds"]
+        content += f"""
 ## Processing Rate
 
-- **Rate:** {stats["docs_total"] / stats["duration_seconds"]:.1f} documents/second
+- **Rate:** {rate:.1f} documents/second
+"""
+    else:
+        content += """
+## Processing Rate
 
+- **Rate:** N/A (completed instantly)
+"""
+
+    content += """
 ## Artifacts Generated
 
 - `enriched.jsonl` - Enriched document metadata

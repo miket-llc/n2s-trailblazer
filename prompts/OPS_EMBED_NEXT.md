@@ -27,7 +27,7 @@ make test      # pytest -q
 
 **Prompt size rule:** keep checklists to ≤9 to-dos (Cursor limit). Split into 004A/004B, etc., when needed.
 
-**Proof-of-work:** in every prompt response, paste the exact commands run and the last ~10 lines of output for make fmt, make lint, and make test.
+**Proof-of-work:** in every prompt response, paste the exact commands run and the exact last ~10 lines of output for make fmt, make lint, and make test.
 
 **Non-regression:** Never relax guardrails or remove stricter lint rules without explicit approval. Future prompts must start by pasting this file unchanged.
 
@@ -101,8 +101,135 @@ Provide a single place to diagnose: trailblazer db doctor.
 
 ______________________________________________________________________
 
-## Guardrails Addendum (OPS-EMBED-NEXT)
+# PROMPT OPS-EMBED-NEXT (rev) — Enrich Gate → Embed All (Postgres only) → Retrieval Smoke (Serial, Observable)
+
+**Guardrails Addendum (append these lines to the Shared Guardrails file before you start)**
 
 Database Policy (Global, Non-Negotiable): There is ONE runtime database: Postgres with pgvector. No SQLite anywhere in non-test code or ops. Do not add SQLite fallbacks or light/"developer" DB modes.
 
 No pagers in terminal: Set PAGER=cat and LESS=-RFX in every session. If a tool supports pager-off flags (e.g., psql -P pager=off), use them. All command output must stream cleanly (no interactive pagers like less).
+
+**Context for a New Instance (read me first)**
+
+Trailblazer builds a knowledge base by ingesting Confluence (Cloud v2, ADF only) and Oxygen/DITA, normalizing both (DB-free), enriching docs (DB-free; fingerprints + assurance), then embedding chunks into Postgres+pgvector for retrieval.
+
+Everything lives under var/ only (no legacy ./runs|state|logs).
+
+This prompt:
+
+- Ensures every run is enriched (or enriches it),
+- Brings up Postgres+pgvector,
+- Embeds all runs serially with --changed-only,
+- Leaves assurance and a retrieval smoke so you're never blind.
+
+**To-Dos (≤ 9) — run in order, paste proofs back**
+
+## 1) Baseline (must be green) & workspace
+
+```bash
+set -euo pipefail
+export PAGER=cat
+export LESS=-RFX
+
+make setup
+make fmt && make lint && make test && make check-md
+trailblazer paths ensure && trailblazer paths doctor
+```
+
+## 2) Enumerate runs & ensure enrichment exists (DB-free)
+
+```bash
+RUNS=$(ls -1 var/runs | grep -E '_full_adf$|_dita_full$' | sort) || true
+echo "$RUNS" | sed -n '1,120p'
+test -n "$RUNS" || { echo "[ERROR] no runs found to process"; exit 2; }
+
+NEEDS_ENRICH=0
+for RID in $RUNS; do
+  if [ ! -f "var/runs/$RID/enrich/enriched.jsonl" ] || [ ! -f "var/runs/$RID/enrich/fingerprints.jsonl" ]; then
+    echo "[WARN] missing enrich artifacts for $RID → will ENRICH now"
+    NEEDS_ENRICH=1
+  fi
+done
+
+if [ "$NEEDS_ENRICH" -eq 1 ]; then
+  for RID in $RUNS; do
+    if [ ! -f "var/runs/$RID/enrich/enriched.jsonl" ] || [ ! -f "var/runs/$RID/enrich/fingerprints.jsonl" ]; then
+      echo "[ENRICH] $RID"
+      trailblazer enrich --run-id "$RID" --llm off --progress \
+        1> "var/logs/enrich-$RID.jsonl" \
+        2> "var/logs/enrich-$RID.out"
+    fi
+  done
+fi
+```
+
+## 3) Postgres + pgvector only (NO SQLite); doctor & init
+
+```bash
+docker compose -f docker-compose.db.yml up -d   # do not page; tail logs only if needed
+export DB_URL='postgresql+psycopg2://trailblazer:trailblazer@localhost:5432/trailblazer'
+trailblazer db check
+trailblazer db init
+```
+
+If db check fails (pgvector not installed / cannot connect) → STOP and fix infra; do not proceed.
+
+## 4) Embed all runs serially (observable; --changed-only; idempotent)
+
+```bash
+for RID in $RUNS; do
+  echo "[EMBED] $RID"
+  trailblazer embed load --run-id "$RID" --provider dummy --batch 256 --changed-only \
+    1> "var/logs/embed-$RID.jsonl" \
+    2> "var/logs/embed-$RID.out"
+done
+```
+
+Expect: steady progress; clear skipped vs embedded; assurance at var/runs/<RID>/embed_assurance.json.
+
+## 5) Assurance proofs (one Confluence + one DITA)
+
+```bash
+RID_C=$(ls -1t var/runs | grep '_full_adf$'  | head -n1 || true)
+RID_D=$(ls -1t var/runs | grep '_dita_full$' | head -n1 || true)
+
+echo "[ASSURE] Confluence ($RID_C)"
+jq -C '{docs_total,docs_embedded,docs_skipped,chunks_total,chunks_embedded,chunks_skipped,provider,dim}' \
+  "var/runs/$RID_C/embed_assurance.json" | sed -n '1,120p'
+
+echo "[ASSURE] DITA ($RID_D)"
+jq -C '{docs_total,docs_embedded,docs_skipped,chunks_total,chunks_embedded,chunks_skipped,provider,dim}' \
+  "var/runs/$RID_D/embed_assurance.json" | sed -n '1,120p'
+```
+
+## 6) Retrieval smoke (prove end-to-end; no pager)
+
+```bash
+trailblazer ask "What is Navigate to SaaS?" --top-k 8 --max-chunks-per-doc 3 --provider dummy --format text \
+  1> "var/logs/ask1.jsonl" \
+  2> "var/logs/ask1.out"
+tail -n 30 var/logs/ask1.out
+```
+
+## 7) Hard checks (quick sanity)
+
+```bash
+# Embedding actually happened (non-zero)
+jq -r '.chunks_embedded' "var/runs/$RID_C/embed_assurance.json"
+jq -r '.chunks_embedded' "var/runs/$RID_D/embed_assurance.json"
+
+# Enrichment artifacts truly exist (spot)
+test -f "var/runs/$RID_C/enrich/enriched.jsonl" && head -n1 "var/runs/$RID_C/enrich/enriched.jsonl" | jq '{id,collection,quality_flags}'
+test -f "var/runs/$RID_D/enrich/enriched.jsonl" && head -n1 "var/runs/$RID_D/enrich/enriched.jsonl" | jq '{id,collection,quality_flags}'
+```
+
+## 8) If anything fails
+
+STOP; open a tiny DEV patch targeted to the failure (tests + code), then re-run only the failing run (enrich or embed) and re-paste proofs from steps 5–7.
+
+## 9) Proof-of-work (paste back)
+
+- Last 30 lines of one var/logs/embed-<RID>.out.
+- The two embed_assurance.json summaries (Confluence + DITA).
+- Last 30 lines of var/logs/ask1.out.
+- If enrichment had to run: last 20 lines of one enrich-<RID>.out.
