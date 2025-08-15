@@ -127,6 +127,41 @@ trailblazer status
 
 For advanced options and individual space ingests, see [`scripts/examples.md`](scripts/examples.md) or use the underlying `trailblazer ingest confluence` and `trailblazer normalize from-ingest` commands directly.
 
+## Enrichment
+
+The enrichment phase processes normalized documents to add metadata, quality signals, and optional LLM-generated insights before embedding:
+
+```bash
+# Rule-based enrichment only (fast, deterministic)
+trailblazer enrich <RUN_ID>
+
+# Include LLM-based enrichment (summaries, keywords, suggested edges)
+trailblazer enrich <RUN_ID> --llm
+
+# Limit processing for testing
+trailblazer enrich <RUN_ID> --max-docs 100 --budget "1000 tokens"
+```
+
+**Enrichment adds:**
+
+- **Rule-based fields** (fast, deterministic): collections, path_tags, readability metrics, quality flags
+- **LLM-optional fields** (when `--llm` enabled): summaries (≤300 chars), keywords (≤8), taxonomy labels, suggested document relationships
+- **Quality flags**: empty_body, too_short, too_long, image_only, no_structure, broken_links
+- **Enrichment fingerprints** for selective re-embedding (only re-embed when enrichment changes)
+
+**Generated artifacts under `var/runs/<RUN_ID>/enrich/`:**
+
+- `enriched.jsonl` - Enhanced document metadata with all computed fields
+- `fingerprints.jsonl` - SHA256 fingerprints for selective re-embedding
+- `suggested_edges.jsonl` - LLM-suggested document relationships (when `--llm` enabled)
+- `assurance.json` + `assurance.md` - Quality reports and processing statistics
+
+**When to run enrichment:**
+
+Run enrichment after normalize and before embed. The embedding loader will automatically use enrichment fingerprints to determine which documents need re-embedding when enrichment metadata changes.
+
+**DB-free guarantee:** Enrichment runs entirely on local files with no database dependencies.
+
 ## Embedding & Indexing
 
 The embedding system converts normalized documents into vector embeddings for similarity search using PostgreSQL + pgvector:

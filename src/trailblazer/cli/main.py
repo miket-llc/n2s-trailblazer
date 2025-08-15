@@ -1579,6 +1579,208 @@ def normalize_all(
 
 
 @app.command()
+def enrich(
+    run_id: str = typer.Argument(
+        ..., help="Run ID to enrich (must have normalize phase completed)"
+    ),
+    llm: bool = typer.Option(
+        False,
+        "--llm/--no-llm",
+        help="Enable LLM-based enrichment (default: off)",
+    ),
+    max_docs: Optional[int] = typer.Option(
+        None, "--max-docs", help="Maximum number of documents to process"
+    ),
+    budget: Optional[str] = typer.Option(
+        None, "--budget", help="Budget limit for LLM usage (soft limit)"
+    ),
+    progress: bool = typer.Option(
+        True, "--progress/--no-progress", help="Show progress output"
+    ),
+    no_color: bool = typer.Option(
+        False, "--no-color", help="Disable colored output"
+    ),
+) -> None:
+    """
+    Enrich normalized documents with metadata and quality signals.
+
+    This command processes normalized documents and adds:
+    • Rule-based fields (collections, path_tags, readability, quality flags)
+    • LLM-optional fields (summaries, keywords, taxonomy labels, suggested edges)
+    • Enrichment fingerprints for selective re-embedding
+
+    The enrichment phase is DB-free and runs before embedding to prepare
+    documents with additional metadata that improves search and retrieval.
+
+    Example:
+        trailblazer enrich RUN_ID_HERE                    # Rule-based only
+        trailblazer enrich RUN_ID_HERE --llm             # Include LLM enrichment
+        trailblazer enrich RUN_ID_HERE --max-docs 100    # Limit processing
+    """
+    import json
+    import time
+    from datetime import datetime, timezone
+
+    from ..core.artifacts import phase_dir
+    from ..core.progress import ProgressRenderer
+    from ..pipeline.steps.enrich import enrich_from_normalized
+
+    # Validate run exists and has normalized data
+    normalize_dir = phase_dir(run_id, "normalize")
+    if not normalize_dir.exists():
+        typer.echo(
+            f"❌ Run {run_id} not found or normalize phase not completed",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    normalized_file = normalize_dir / "normalized.ndjson"
+    if not normalized_file.exists():
+        typer.echo(
+            f"❌ Normalized file not found: {normalized_file}", err=True
+        )
+        raise typer.Exit(1)
+
+    # Setup output directory
+    enrich_dir = phase_dir(run_id, "enrich")
+    enrich_dir.mkdir(parents=True, exist_ok=True)
+
+    # Setup progress renderer
+    progress_renderer = ProgressRenderer(no_color=no_color)
+
+    # NDJSON event emitter - outputs to stdout
+    def emit_event(event_type: str, **kwargs):
+        event = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event": event_type,
+            "run_id": run_id,
+            **kwargs,
+        }
+        print(json.dumps(event))
+
+    # Progress callback for human-readable updates to stderr
+    def progress_callback(
+        docs_processed: int, rate: float, elapsed: float, docs_llm: int
+    ):
+        if progress:
+            typer.echo(
+                f"[ENRICH] docs={docs_processed} rate={rate:.1f}/s elapsed={elapsed:.1f}s llm_used={docs_llm}",
+                err=True,
+            )
+
+    # Show banner
+    if progress:
+        progress_renderer.start_banner(
+            run_id=run_id, spaces=1
+        )  # Single "phase" for enrichment
+        typer.echo(f"📁 Input: {normalized_file}", err=True)
+        typer.echo(f"📂 Output: {enrich_dir}", err=True)
+        typer.echo(f"🧠 LLM enabled: {llm}", err=True)
+        if max_docs:
+            typer.echo(f"📊 Max docs: {max_docs:,}", err=True)
+        typer.echo("", err=True)
+
+    try:
+        # Run enrichment
+        start_time = time.time()
+        stats = enrich_from_normalized(
+            run_id=run_id,
+            llm_enabled=llm,
+            max_docs=max_docs,
+            budget=budget,
+            progress_callback=progress_callback if progress else None,
+            emit_event=emit_event,
+        )
+        duration = time.time() - start_time
+
+        # Generate assurance report
+        assurance_json = enrich_dir / "assurance.json"
+        assurance_md = enrich_dir / "assurance.md"
+
+        with open(assurance_json, "w", encoding="utf-8") as f:
+            json.dump(stats, f, indent=2)
+
+        # Generate markdown report
+        _generate_enrichment_assurance_md(stats, assurance_md)
+
+        # Show completion summary
+        if progress:
+            typer.echo("", err=True)
+            typer.echo("✅ ENRICH COMPLETE", err=True)
+            typer.echo(
+                f"📊 Documents processed: {stats['docs_total']:,}", err=True
+            )
+            if llm:
+                typer.echo(f"🧠 LLM enriched: {stats['docs_llm']:,}", err=True)
+                typer.echo(
+                    f"🔗 Suggested edges: {stats['suggested_edges_total']:,}",
+                    err=True,
+                )
+            typer.echo(
+                f"⚠️  Quality flags: {sum(stats['quality_flags_counts'].values()):,}",
+                err=True,
+            )
+            typer.echo(f"⏱️  Duration: {duration:.1f}s", err=True)
+            typer.echo(f"📄 Assurance: {assurance_json}", err=True)
+            typer.echo(f"📄 Assurance: {assurance_md}", err=True)
+
+        emit_event("enrich.complete", duration_seconds=duration)
+
+    except Exception as e:
+        emit_event("enrich.error", error=str(e))
+        typer.echo(f"❌ Enrichment failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
+def _generate_enrichment_assurance_md(stats: dict, output_path: Path) -> None:
+    """Generate a markdown assurance report."""
+    content = f"""# Enrichment Assurance Report
+
+**Run ID:** {stats["run_id"]}  
+**Completed:** {stats["completed_at"]}  
+**Duration:** {stats["duration_seconds"]}s  
+
+## Summary
+
+- **Documents processed:** {stats["docs_total"]:,}
+- **LLM enriched:** {stats["docs_llm"]:,}
+- **Suggested edges:** {stats["suggested_edges_total"]:,}
+- **LLM enabled:** {stats["llm_enabled"]}
+
+## Quality Flags
+
+"""
+
+    if stats["quality_flags_counts"]:
+        for flag, count in sorted(stats["quality_flags_counts"].items()):
+            content += f"- **{flag}:** {count:,} documents\n"
+    else:
+        content += "No quality flags detected.\n"
+
+    content += f"""
+## Processing Rate
+
+- **Rate:** {stats["docs_total"] / stats["duration_seconds"]:.1f} documents/second
+
+## Artifacts Generated
+
+- `enriched.jsonl` - Enriched document metadata
+- `fingerprints.jsonl` - Enrichment fingerprints for selective re-embedding
+"""
+
+    if stats["suggested_edges_total"] > 0:
+        content += "- `suggested_edges.jsonl` - LLM-suggested document relationships\n"
+
+    content += """
+## Next Steps
+
+Run `trailblazer embed load --run-id {run_id}` to embed the enriched documents into the vector database.
+""".format(run_id=stats["run_id"])
+
+    output_path.write_text(content, encoding="utf-8")
+
+
+@app.command()
 def status() -> None:
     """
     Show quick status of last runs and totals.
