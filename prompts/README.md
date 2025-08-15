@@ -1,3 +1,3 @@
 # Prompts Index
 
-- 028_embed-final-full-corpus.md
+- 001_dev-internalize-scripts-into-pipeline.md
