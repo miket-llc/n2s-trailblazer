@@ -1,4 +1,3 @@
 # Prompts Index
 
-- 000_shared_guardrails.md
-- 001_dev-internalize-scripts-into-pipeline.md
+- 028_embed-final-full-corpus.md
