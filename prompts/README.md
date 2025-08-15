@@ -1,27 +1,3 @@
 # Prompts Index
 
-- 000_scaffold_python_monorepo.md
-- 000_shared_guardrails.md
-- 001_ingest_confluence_v2.md
-- 002_harden_ingest_confluence.md
-- 003_merge_ingest_to_main.md
-- 004_normalize_both_storage_and_adf.md
-- 005_repo_hardening_ci.md
-- 006_retrieve_and_ask_cli.md
-- 007_ingest_observability_and_lifecycle.md
-- 008_console_observability.md
-- 008_ingest_execution_isolation_observability.md
-- 009_db_strategy_postgres_first.md
-- 009_postgres_first.md
-- 011_bodies_only_refresh_mode.md
-- 014_ingest_normalize_stabilization.md
-- 015_path_unification.md
-- 019_dev_ingest_observability_and_assurance.md
-- 021_db_chunk_embed.md
-- 021_delta_embed_changed_only.md
-- 022_retrieval_pgvector_and_ask.md
-- 023_enrich_and_classify.md
-- 024_dev_embed_cli_flags_and_reembed.md
-- 025_dev_parallel_embed_monitor_killer.md
-- 027_dev_embed_final_polish.md
-- 027_ops_reembed_openai_clean_restart.md
+- 028_embed-final-full-corpus.md

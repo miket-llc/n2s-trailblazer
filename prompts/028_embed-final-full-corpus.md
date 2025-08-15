@@ -140,3 +140,230 @@ ______________________________________________________________________
 **No regressions**: If CLI flags changed, update scripts immediately to prevent unknown option errors.
 
 **Kill before run**: Always kill old sessions before new embeds to prevent conflicts and resource contention.
+
+# PROMPT FOR CLAUDE — Final Embedding, Full Corpus (vector schema fixed, no SQLite)
+
+Immediately do the following. Do not summarize or "draft" a plan. Paste the guardrails, then execute the numbered tasks below, step by step, and paste proof‑of‑work.
+
+000 — Paste guardrails (verbatim, unchanged)
+
+Open prompts/000_shared_guardrails.md.
+
+Paste its full contents at the very top of your reply, unchanged. (This is mandatory.)
+
+📁 Prompts Directory Conventions (enforce now, before ops)
+
+Naming: prompts/NNN_slug.md (three‑digit number).
+
+Splits: use A, B suffixes only if needed.
+
+Index: keep prompts/README.md in ascending order.
+
+Non‑conforming prompts: delete them (preferred) or move to var/archive/prompts/<timestamp>/.
+
+🤖 Model Selection
+
+Use Claude for this task. Rationale: you already rolled back and cleaned up with Claude; we need continuity and strict execution (no "mission accomplished" without proof). If you cannot run commands, stop and state exactly which command failed.
+
+✅ To‑Do Checklist (≤9)
+
+1. Save this prompt under numbered conventions (then commit)
+   set -euo pipefail
+   TS="$(date +%Y%m%d\_%H%M%S)"
+   mkdir -p var/archive/prompts/"$TS"
+
+# Enforce naming; delete non‑conforming
+
+find prompts -maxdepth 1 -type f ! -regex '.\*/[0-9]{3}\_.+.md$' -print -exec git rm -f {} ;
+
+# Compute next number and filename
+
+NEXT_NUM=$(printf "%03d" $(( $(ls -1 prompts | grep -E '^[0-9]{3}_.+.md$' | sed 's/_.*//' | sort -n | tail -n1 | sed 's/^0*//') + 1 )))
+FILE="prompts/${NEXT_NUM}\_embed-final-full-corpus.md"
+
+# Save this exact prompt content (including guardrails you pasted above) to the file
+
+# (Use your editor automation; if not available, echo a clear confirmation that you've saved it.)
+
+echo ">> SAVED PROMPT TO: $FILE"
+
+# Update index
+
+{ echo "# Prompts Index"; echo; \
+ls -1 prompts | grep -E '^[0-9]{3}\_.+.md$' | sort | \
+awk '{printf("- %s\\n",$0)}'; } > prompts/README.md
+
+git add prompts/README.md "$FILE"
+git commit -m "Add ${FILE} (final embed full corpus)"
+
+Paste the filename created ($FILE). If save failed, fix and repeat.
+
+2. Pre‑flight (main only, no pagers, no secrets; kill stale workers)
+   git rev-parse --abbrev-ref HEAD | grep -qx "main"
+
+export PAGER=cat; export LESS='-RFX'
+for v in EMBED_PROVIDER OPENAI_API_KEY TRAILBLAZER_DB_URL; do
+if [ -n "${!v:-}" ]; then echo "$v=SET"; else echo "$v=MISSING"; fi
+done
+
+tmux ls || true
+pkill -f "trailblazer.\*embed" || true
+
+Paste the command outputs. If any var is MISSING, stop, set it, and re‑run.
+
+3. Hard stop for SQLite in runtime (no exceptions)
+
+# Fail if any runtime path still references sqlite outside tests
+
+# Adjust paths if your repo layout differs
+
+( rg -n --hidden --line-number --no-ignore -i 'sqlite' \
+--glob '!**/tests/**' \
+--glob '!**/test/**' \
+|| true ) | tee /dev/stderr
+
+# If any matches printed above are in runtime code (not tests/CI scripts), ABORT and fix them
+
+Confirm zero runtime SQLite references remain (tests are allowed only if they explicitly guard with TB_TESTING=1).
+
+4. DB preflight — Postgres only + pgvector present + vector column (not JSON)
+   trailblazer db doctor --no-color 2> >(tee /dev/stderr) 1> >(cat)
+   trailblazer db check --no-color 2> >(tee /dev/stderr) 1> >(cat)
+
+# Verify pgvector extension and column type for embeddings
+
+docker exec -it $(docker ps | grep postgres | awk '{print $1}') \
+env PAGER=cat psql -U postgres -P pager=off -d trailblazer -c "
+SELECT extname FROM pg_extension WHERE extname='vector';
+SELECT n.nspname, c.relname, a.attname, a.atttypid::regtype AS type
+FROM pg_attribute a
+JOIN pg_class c ON c.oid=a.attrelid
+JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE n.nspname='graphdb' AND c.relname='chunk_embeddings' AND a.attname='embedding' AND a.attisdropped IS FALSE;
+"
+
+Expected: vector extension present; graphdb.chunk_embeddings.embedding type is vector, not json/jsonb. If not, stop and fix schema before proceeding.
+
+5. Coverage & dimensions sanity (must end at 0 missing, 1536 dims)
+
+# Totals & missing
+
+docker exec -it $(docker ps | grep postgres | awk '{print $1}') env PAGER=cat psql -U postgres -P pager=off -d trailblazer -c "
+WITH ch AS (SELECT COUNT(*) n FROM graphdb.chunks),
+em AS (SELECT COUNT(*) n FROM graphdb.chunk_embeddings),
+miss AS (
+SELECT COUNT(\*) n
+FROM graphdb.chunks c
+LEFT JOIN graphdb.chunk_embeddings e USING (chunk_id)
+WHERE e.chunk_id IS NULL
+)
+SELECT (SELECT n FROM ch) AS chunks_total,
+(SELECT n FROM em) AS embeddings_total,
+(SELECT n FROM miss) AS chunks_missing_embeddings;
+"
+
+# Provider/model/dims
+
+docker exec -it $(docker ps | grep postgres | awk '{print $1}') env PAGER=cat psql -U postgres -P pager=off -d trailblazer -c "
+SELECT provider, model, COUNT(*) n, MIN(created_at) first, MAX(created_at) last
+FROM graphdb.chunk_embeddings GROUP BY 1,2 ORDER BY n DESC;
+"
+docker exec -it $(docker ps | grep postgres | awk '{print $1}') env PAGER=cat psql -U postgres -P pager=off -d trailblazer -c "
+SELECT vector_dims(embedding) AS dims, COUNT(*) FROM graphdb.chunk_embeddings GROUP BY 1;
+"
+
+Target: dims=1536 only; provider=openai; model contains text-embedding-3-small. We will bring chunks_missing_embeddings → 0 in step 7.
+
+6. Index health (ensure fast retrieval)
+   docker exec -it $(docker ps | grep postgres | awk '{print $1}') env PAGER=cat psql -U postgres -P pager=off -d trailblazer -c "
+   SELECT indexname, indexdef
+   FROM pg_indexes
+   WHERE schemaname='graphdb' AND tablename='chunk_embeddings';
+   "
+
+# Create HNSW if missing; ANALYZE for planner stats
+
+docker exec -it $(docker ps | grep postgres | awk '{print $1}') env PAGER=cat psql -U postgres -P pager=off -d trailblazer -c "
+CREATE INDEX CONCURRENTLY IF NOT EXISTS chunk_embeddings_embedding_hnsw
+ON graphdb.chunk_embeddings USING hnsw (embedding vector_cosine_ops);
+ANALYZE graphdb.chunk_embeddings;
+"
+
+Paste index list so we see the final state.
+
+7. Execute final full‑corpus embedding (embed missing; skip existing)
+
+# Enforce provider/model and rate safety
+
+export EMBED_PROVIDER=openai
+: "${OPENAI_API_KEY:?OPENAI_API_KEY must be set}"
+: "${TRAILBLAZER_DB_URL:?TRAILBLAZER_DB_URL must be set}"
+
+# Kill any stray workers; then run final embed NOW
+
+pkill -f "trailblazer.\*embed" || true
+
+# Run: this scans the entire corpus and embeds ONLY missing items; existing vectors are skipped
+
+# Do NOT pass --reembed-all. We WANT to finish coverage without redoing good data
+
+trailblazer embed \
+--provider openai \
+--model text-embedding-3-small \
+--workers 4 \
+--progress-every 500 \
+--verbose \
+2> >(tee /dev/stderr) 1> >(cat)
+
+This step must run now. Do not declare success until step 8 shows 0 missing.
+
+8. Post‑run verification (coverage=100%, dims consistent), smoke‑test retrieval
+
+# Coverage must be 0 missing
+
+docker exec -it $(docker ps | grep postgres | awk '{print $1}') env PAGER=cat psql -U postgres -P pager=off -d trailblazer -c "
+WITH ch AS (SELECT COUNT(*) n FROM graphdb.chunks),
+miss AS (
+SELECT COUNT(*) n
+FROM graphdb.chunks c
+LEFT JOIN graphdb.chunk_embeddings e USING (chunk_id)
+WHERE e.chunk_id IS NULL
+)
+SELECT (SELECT n FROM ch) AS chunks_total,
+(SELECT n FROM miss) AS chunks_missing_embeddings;
+"
+
+# Confirm dims still uniform
+
+docker exec -it $(docker ps | grep postgres | awk '{print $1}') env PAGER=cat psql -U postgres -P pager=off -d trailblazer -c "
+SELECT vector_dims(embedding) AS dims, COUNT(\*) FROM graphdb.chunk_embeddings GROUP BY 1;
+"
+
+# Quick retrieval smoke tests (pretty→stderr, JSON→stdout)
+
+trailblazer ask "What is Banner student academic history?" --provider openai --top-k 5 --max-chunks-per-doc 2 2> >(tee /dev/stderr) 1> >(cat)
+trailblazer ask "Where do I find Banner Student transcript pages?" --provider openai --top-k 5 --max-chunks-per-doc 2 2> >(tee /dev/stderr) 1> >(cat)
+
+Expected: chunks_missing_embeddings=0, dims=1536, and sensible ask results.
+
+9. Proof‑of‑work: paste outputs & commit artifacts
+
+Paste the exact commands you ran in steps 1–8.
+
+Paste the last ~10 lines of each:
+
+make fmt
+make lint
+make test
+
+Print the run_id(s) from the embed step and a one‑line final summary with processed totals and elapsed time.
+
+git add any updated scripts/log configurations; git commit -m "Finalize full-corpus embedding; coverage=100%".
+
+Stop conditions / failure handling
+
+If any preflight check fails (provider/env, Postgres connectivity, pgvector/column type not vector), STOP, print the failure, and fix before continuing.
+
+If CLI flags differ, adapt and show the exact help output (trailblazer embed --help) before proceeding.
+
+Do not claim completion until step 8 shows 0 missing embeddings and the smoke tests pass.
