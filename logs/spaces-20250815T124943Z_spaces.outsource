@@ -1,5 +1,0 @@
-Usage: trailblazer confluence spaces [OPTIONS]
-Try 'trailblazer confluence spaces --help' for help.
-╭─ Error ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Got unexpected extra argument (/Users/miket/dev/n2s-trailblazer/.venv/bin/activate)                                  │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

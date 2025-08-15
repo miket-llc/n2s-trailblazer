@@ -1,7 +1,6 @@
 """Tests for the embedding loader with idempotency and observability."""
 
 import json
-import os
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -163,12 +162,8 @@ def test_generate_assurance_report():
             assert "test error" in md_content
 
 
-@pytest.mark.skipif(
-    os.getenv("TB_TESTING") != "1",
-    reason="Requires TB_TESTING=1 for SQLite database tests",
-)
 def test_load_normalized_to_db_basic():
-    """Test basic loading functionality with SQLite."""
+    """Test basic loading functionality with PostgreSQL."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create test normalized file
         test_data = [
@@ -233,10 +228,6 @@ def test_load_normalized_to_db_basic():
                 assert "duration_seconds" in metrics
 
 
-@pytest.mark.skipif(
-    os.getenv("TB_TESTING") != "1",
-    reason="Requires TB_TESTING=1 for SQLite database tests",
-)
 def test_load_normalized_to_db_idempotency():
     """Test that loading is idempotent (skips unchanged documents)."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -506,3 +497,74 @@ def test_load_normalized_to_db_batch_processing():
 
                 # Should have called embed_batch multiple times due to small batch size
                 assert mock_embedder.embed_batch.call_count >= 1
+
+
+def test_load_normalized_to_db_postgresql_integration():
+    """Test actual PostgreSQL database integration (not mocked)."""
+    from trailblazer.db.engine import get_session
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create test normalized file
+        test_data = [
+            {
+                "id": "integration_doc_1",
+                "title": "Integration Test Document",
+                "text_md": "# Integration Test\n\nThis tests actual PostgreSQL integration.",
+                "source_system": "confluence",
+                "space_key": "INTEG",
+                "url": "https://example.com/integration",
+                "created_at": "2023-01-01T12:00:00Z",
+                "updated_at": "2023-01-01T12:00:00Z",
+                "attachments": [],
+                "links": [],
+                "labels": [],
+            }
+        ]
+
+        input_file = Path(tmpdir) / "integration_test.ndjson"
+        with open(input_file, "w") as f:
+            for record in test_data:
+                f.write(json.dumps(record) + "\n")
+
+        # Run the loader with actual PostgreSQL database
+        metrics = load_normalized_to_db(
+            input_file=str(input_file),
+            provider_name="dummy",
+            max_docs=1,
+        )
+
+        # Verify metrics
+        assert metrics["docs_total"] == 1
+        assert metrics["docs_embedded"] == 1
+        assert metrics["chunks_total"] > 0
+        assert "duration_seconds" in metrics
+
+        # Verify data was actually written to PostgreSQL
+        with get_session() as session:
+            from trailblazer.db.engine import Document, Chunk, ChunkEmbedding
+
+            # Check document was created
+            doc = session.query(Document).filter_by(doc_id="integration_doc_1").first()
+            assert doc is not None
+            assert doc.title == "Integration Test Document"
+            assert doc.source_system == "confluence"
+
+            # Check chunks were created
+            chunks = session.query(Chunk).filter_by(doc_id="integration_doc_1").all()
+            assert len(chunks) > 0
+
+            # Check embeddings were created
+            embeddings = session.query(ChunkEmbedding).join(Chunk).filter(
+                Chunk.doc_id == "integration_doc_1"
+            ).all()
+            assert len(embeddings) > 0
+
+            # Verify pgvector embeddings
+            for emb in embeddings:
+                assert emb.provider == "dummy"
+                assert emb.dim > 0
+                assert emb.embedding is not None
+                # Verify it's a proper vector (not JSON string)
+                import numpy as np
+                assert isinstance(emb.embedding, (list, np.ndarray))
+                assert len(emb.embedding) == emb.dim

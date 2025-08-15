@@ -52,7 +52,7 @@ def _run_db_preflight_check() -> None:
                     err=True,
                 )
                 typer.echo(
-                    "SQLite is for tests only; use 'make db.up' + 'trailblazer db init' + 'trailblazer db doctor'",
+                    "Only PostgreSQL is supported; use 'make db.up' + 'trailblazer db init' + 'trailblazer db doctor'",
                     err=True,
                 )
                 raise typer.Exit(1)
@@ -622,30 +622,11 @@ def db_doctor_cmd() -> None:
                 )
                 raise typer.Exit(1)
         else:
-            # Non-PostgreSQL database
-            if health_info["dialect"] == "sqlite":
-                # Only allow SQLite in test mode
-                import os
-
-                if os.getenv("TB_TESTING") != "1":
-                    typer.echo("\n❌ SQLite detected in production mode!")
-                    typer.echo(
-                        "   SQLite is only allowed for tests (TB_TESTING=1)"
-                    )
-                    typer.echo("   For production, use PostgreSQL:")
-                    typer.echo(
-                        "   Run 'make db.up' then 'trailblazer db doctor'"
-                    )
-                    raise typer.Exit(1)
-                else:
-                    typer.echo("\n⚠️  SQLite mode (testing only)")
-            else:
-                typer.echo(
-                    f"\n⚠️  Non-PostgreSQL database: {health_info['dialect']}"
-                )
-                typer.echo(
-                    "   For optimal performance, PostgreSQL + pgvector is recommended"
-                )
+            # Non-PostgreSQL database - not supported
+            typer.echo(f"\n❌ Unsupported database: {health_info['dialect']}")
+            typer.echo("   Only PostgreSQL is supported.")
+            typer.echo("   Run 'make db.up' then 'trailblazer db doctor'")
+            raise typer.Exit(1)
 
         # Final summary
         typer.echo("\n🎉 Database health check completed successfully!")

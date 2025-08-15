@@ -1,11 +1,9 @@
 """Test dense retrieval ordering and determinism."""
 
-import tempfile
-from pathlib import Path
+# PostgreSQL testcontainer handles temporary database setup
 from datetime import datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from trailblazer.db.engine import Base, Document, Chunk, ChunkEmbedding
@@ -15,12 +13,10 @@ import numpy as np
 
 @pytest.fixture
 def temp_db():
-    """Create a temporary SQLite database with test data."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = f.name
+    """Create a temporary PostgreSQL database with test data."""
+    from trailblazer.db.engine import get_engine
 
-    db_url = f"sqlite:///{db_path}"
-    engine = create_engine(db_url)
+    engine = get_engine()
     Base.metadata.create_all(engine)
 
     # Create session
@@ -131,10 +127,10 @@ def temp_db():
     session.commit()
     session.close()
 
-    yield db_url
+    yield str(engine.url)
 
-    # Cleanup
-    Path(db_path).unlink(missing_ok=True)
+    # Cleanup (PostgreSQL test container handles this)
+    engine.dispose()
 
 
 def test_cosine_similarity():
@@ -251,16 +247,11 @@ def test_retriever_metadata(temp_db):
 
 def test_retriever_empty_results():
     """Test retriever behavior with empty database."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = f.name
+    from trailblazer.db.engine import get_engine
 
-    db_url = f"sqlite:///{db_path}"
-    engine = create_engine(db_url)
+    engine = get_engine()
     Base.metadata.create_all(engine)
 
-    try:
-        retriever = DenseRetriever(db_url=db_url, provider_name="dummy")
-        results = retriever.search("test query", top_k=5)
-        assert results == []
-    finally:
-        Path(db_path).unlink(missing_ok=True)
+    retriever = DenseRetriever(db_url=str(engine.url), provider_name="dummy")
+    results = retriever.search("test query", top_k=5)
+    assert results == []

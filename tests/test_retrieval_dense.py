@@ -153,9 +153,10 @@ def test_pack_context_empty_hits():
 )
 def test_dense_retriever_initialization():
     """Test DenseRetriever initialization."""
-    retriever = DenseRetriever("sqlite:///test.db", "dummy")
+    test_db_url = "postgresql://test:test@localhost:5432/test"
+    retriever = DenseRetriever(test_db_url, "dummy")
 
-    assert retriever.db_url == "sqlite:///test.db"
+    assert retriever.db_url == test_db_url
     assert retriever.provider == "dummy"
 
 
@@ -172,7 +173,9 @@ def test_dense_retriever_embed_query():
         mock_embedder.embed.return_value = [0.1, 0.2, 0.3]
         mock_provider.return_value = mock_embedder
 
-        retriever = DenseRetriever("sqlite:///test.db", "dummy")
+        retriever = DenseRetriever(
+            "postgresql://test:test@localhost:5432/test", "dummy"
+        )
         result = retriever.embed_query("test query")
 
         assert result == [0.1, 0.2, 0.3]

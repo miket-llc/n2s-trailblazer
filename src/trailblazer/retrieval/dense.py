@@ -12,7 +12,6 @@ from ..db.engine import (
     Document,
     Chunk,
     get_session_factory,
-    is_postgres,
     deserialize_embedding,
 )
 from ..pipeline.steps.embed.provider import get_embedding_provider
@@ -197,7 +196,7 @@ class DenseRetriever:
             # Use pgvector cosine distance operator
             query_text = text(
                 """
-                SELECT 
+                SELECT
                     c.chunk_id,
                     c.doc_id,
                     c.text_md,
@@ -248,24 +247,8 @@ class DenseRetriever:
         # Embed the query
         query_vec = self.embed_query(query)
 
-        # Try PostgreSQL + pgvector first if available
-        if is_postgres():
-            try:
-                return self.search_postgres(
-                    query_vec, self.provider_name, top_k
-                )
-            except Exception:
-                # Fallback to Python-based search
-                pass
-
-        # Fallback: fetch all candidates and compute similarity in Python
-        candidates = self.fetch_candidates(self.provider_name)
-
-        if not candidates:
-            return []
-
-        # Call the module-level top_k function using globals to avoid name collision
-        return globals()["top_k"](query_vec, candidates, k=top_k)
+        # Use PostgreSQL + pgvector search (only supported database)
+        return self.search_postgres(query_vec, self.provider_name, top_k)
 
 
 def create_retriever(

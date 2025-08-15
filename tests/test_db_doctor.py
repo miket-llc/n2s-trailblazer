@@ -71,7 +71,7 @@ def test_db_doctor_postgres_missing_pgvector():
 
 
 def test_db_doctor_sqlite_in_test_mode():
-    """Test db doctor with SQLite in test mode (should be allowed)."""
+    """Test db doctor with SQLite (should be rejected)."""
     mock_health_info = {
         "status": "ok",
         "dialect": "sqlite",
@@ -92,16 +92,12 @@ def test_db_doctor_sqlite_in_test_mode():
                 runner = CliRunner()
                 result = runner.invoke(app, ["db", "doctor"])
 
-                assert result.exit_code == 0
-                assert "SQLite mode (testing only)" in result.stdout
-                assert (
-                    "Database health check completed successfully!"
-                    in result.stdout
-                )
+                assert result.exit_code == 1
+                assert "Unsupported database: sqlite" in result.stdout
 
 
 def test_db_doctor_sqlite_in_production_mode():
-    """Test db doctor with SQLite in production mode (should fail)."""
+    """Test db doctor with SQLite (should also be rejected)."""
     mock_health_info = {
         "status": "ok",
         "dialect": "sqlite",
@@ -123,11 +119,7 @@ def test_db_doctor_sqlite_in_production_mode():
                 result = runner.invoke(app, ["db", "doctor"])
 
                 assert result.exit_code == 1
-                assert "SQLite detected in production mode!" in result.stdout
-                assert (
-                    "Run 'make db.up' then 'trailblazer db doctor'"
-                    in result.stdout
-                )
+                assert "Unsupported database: sqlite" in result.stdout
 
 
 def test_db_doctor_connection_failure():

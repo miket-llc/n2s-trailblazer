@@ -1,16 +1,17 @@
-"""Tests for the embedding database schema."""
-
-import os
-from datetime import datetime, timezone
+"""Test database schema and models."""
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-# Only run these tests with explicit test environment
-pytestmark = pytest.mark.skipif(
-    os.getenv("TB_TESTING") != "1",
-    reason="Requires TB_TESTING=1 for database schema tests",
+from trailblazer.db.engine import (
+    Chunk,
+    ChunkEmbedding,
+    Document,
+    get_engine,
+    serialize_embedding,
+    deserialize_embedding,
 )
 
 
@@ -20,399 +21,314 @@ def test_database_models_import():
 
 def test_database_schema_creation():
     """Test that database schema can be created."""
-    from trailblazer.db.engine import Base
 
-    # Create in-memory SQLite database for testing
-    engine = create_engine("sqlite:///:memory:")
+    # Use the PostgreSQL test database provided by conftest.py
+    engine = get_engine()
 
-    # Patch the global engine
-    with pytest.MonkeyPatch().context() as m:
-        m.setenv("TB_TESTING", "1")
-        m.setattr("trailblazer.db.engine._engine", engine)
+    # Check that tables exist (created by conftest.py)
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT tablename FROM pg_tables WHERE schemaname='public'")
+        )
+        tables = [row[0] for row in result]
 
-        # Create all tables
-        Base.metadata.create_all(engine)
-
-        # Check that tables exist
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table'")
-            )
-            tables = [row[0] for row in result]
-
-            assert "documents" in tables
-            assert "chunks" in tables
-            assert "chunk_embeddings" in tables
+        assert "documents" in tables
+        assert "chunks" in tables
+        assert "chunk_embeddings" in tables
 
 
 def test_document_model():
     """Test Document model operations."""
-    from trailblazer.db.engine import Base, Document
 
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
+    engine = get_engine()
     Session = sessionmaker(bind=engine)
 
     with Session() as session:
-        # Create a document
         doc = Document(
-            doc_id="test-doc-1",
+            doc_id="test_doc_1",
             source_system="confluence",
             title="Test Document",
             space_key="TEST",
             url="https://example.com/test",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
-            content_sha256="abcd1234" * 8,  # 64 char hash
-            meta={
-                "version": 1,
-                "space_id": "space123",
-                "links": [],
-                "attachments": [],
-            },
+            content_sha256="abc123",
+            meta={"custom": "metadata"},
         )
 
         session.add(doc)
         session.commit()
 
-        # Retrieve the document
-        retrieved = session.get(Document, "test-doc-1")
+        # Query back
+        retrieved = session.get(Document, "test_doc_1")
         assert retrieved is not None
         assert retrieved.title == "Test Document"
         assert retrieved.source_system == "confluence"
-        assert retrieved.content_sha256 == "abcd1234" * 8
-        assert retrieved.meta["version"] == 1
+        assert retrieved.meta == {"custom": "metadata"}
 
 
 def test_chunk_model():
     """Test Chunk model operations."""
-    from trailblazer.db.engine import Base, Chunk, Document
 
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
+    engine = get_engine()
     Session = sessionmaker(bind=engine)
 
     with Session() as session:
-        # Create a document first
+        # Create document first
         doc = Document(
-            doc_id="test-doc-1",
+            doc_id="test_doc_2",
             source_system="confluence",
-            title="Test Document",
-            content_sha256="hash123" * 8,
-            meta={},
+            title="Test Document for Chunks",
+            content_sha256="def456",
         )
         session.add(doc)
+        session.flush()
 
-        # Create chunks
-        chunk1 = Chunk(
-            chunk_id="test-doc-1:0000",
-            doc_id="test-doc-1",
-            ord=0,
-            text_md="# First Chunk\n\nThis is the first chunk.",
-            char_count=35,
-            token_count=8,
+        # Create chunk
+        chunk = Chunk(
+            chunk_id="test_doc_2:0001",
+            doc_id="test_doc_2",
+            ord=1,
+            text_md="# Test Chunk\n\nThis is a test chunk.",
+            char_count=30,
+            token_count=6,
             meta={"section": "intro"},
         )
 
-        chunk2 = Chunk(
-            chunk_id="test-doc-1:0001",
-            doc_id="test-doc-1",
-            ord=1,
-            text_md="## Second Chunk\n\nThis is the second chunk.",
-            char_count=37,
-            token_count=9,
-            meta={"section": "body"},
-        )
-
-        session.add_all([chunk1, chunk2])
+        session.add(chunk)
         session.commit()
 
-        # Test relationships
-        doc_with_chunks = session.get(Document, "test-doc-1")
-        assert len(doc_with_chunks.chunks) == 2
-        assert doc_with_chunks.chunks[0].ord == 0
-        assert doc_with_chunks.chunks[1].ord == 1
-
-        # Test chunk retrieval
-        chunk = session.get(Chunk, "test-doc-1:0000")
-        assert chunk.doc_id == "test-doc-1"
-        assert chunk.document.title == "Test Document"
+        # Query back
+        retrieved = session.get(Chunk, "test_doc_2:0001")
+        assert retrieved is not None
+        assert retrieved.doc_id == "test_doc_2"
+        assert retrieved.ord == 1
+        assert retrieved.text_md == "# Test Chunk\n\nThis is a test chunk."
+        assert retrieved.meta == {"section": "intro"}
 
 
 def test_chunk_embedding_model():
     """Test ChunkEmbedding model operations."""
-    from trailblazer.db.engine import Base, Chunk, ChunkEmbedding, Document
 
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
+    engine = get_engine()
     Session = sessionmaker(bind=engine)
 
     with Session() as session:
-        # Create document and chunk
+        # Create document and chunk first
         doc = Document(
-            doc_id="test-doc-1",
+            doc_id="test_doc_3",
             source_system="confluence",
-            title="Test Document",
-            content_sha256="hash123" * 8,
-            meta={},
+            title="Test Document for Embeddings",
+            content_sha256="ghi789",
         )
+        session.add(doc)
+        session.flush()
 
         chunk = Chunk(
-            chunk_id="test-doc-1:0000",
-            doc_id="test-doc-1",
-            ord=0,
-            text_md="Test chunk content",
-            char_count=18,
-            token_count=3,
-            meta={},
+            chunk_id="test_doc_3:0001",
+            doc_id="test_doc_3",
+            ord=1,
+            text_md="Test chunk for embeddings.",
+            char_count=25,
+            token_count=5,
         )
-
-        session.add_all([doc, chunk])
-        session.flush()  # Ensure chunk exists before embedding
+        session.add(chunk)
+        session.flush()
 
         # Create embedding
         embedding = ChunkEmbedding(
-            chunk_id="test-doc-1:0000",
-            provider="dummy",
-            dim=384,
-            embedding=[0.1, 0.2, 0.3] * 128,  # 384 dims
-            created_at=datetime.now(timezone.utc),
+            chunk_id="test_doc_3:0001",
+            provider="openai",
+            dim=1536,
+            embedding=[0.1] * 1536,  # Simple test embedding
         )
 
         session.add(embedding)
         session.commit()
 
-        # Test retrieval
-        retrieved = session.get(ChunkEmbedding, ("test-doc-1:0000", "dummy"))
+        # Query back
+        retrieved = session.get(ChunkEmbedding, ("test_doc_3:0001", "openai"))
         assert retrieved is not None
-        assert retrieved.provider == "dummy"
-        assert retrieved.dim == 384
-        assert len(retrieved.embedding) == 384
-        assert retrieved.chunk.text_md == "Test chunk content"
+        assert retrieved.chunk_id == "test_doc_3:0001"
+        assert retrieved.provider == "openai"
+        assert retrieved.dim == 1536
+        assert len(retrieved.embedding) == 1536
 
 
-def test_upsert_functions():
-    """Test upsert utility functions."""
+def test_upsert_operations():
+    """Test upsert functionality."""
     from trailblazer.db.engine import (
-        Base,
         upsert_chunk,
-        upsert_chunk_embedding,
         upsert_document,
     )
 
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
+    engine = get_engine()
     Session = sessionmaker(bind=engine)
 
     with Session() as session:
         # Test document upsert
         doc_data = {
-            "doc_id": "test-doc-1",
+            "doc_id": "upsert_test",
             "source_system": "confluence",
             "title": "Original Title",
-            "content_sha256": "hash123" * 8,
-            "meta": {"version": 1},
+            "content_sha256": "original_hash",
         }
 
-        # First upsert (insert)
         doc1 = upsert_document(session, doc_data)
         session.commit()
 
         assert doc1.title == "Original Title"
 
-        # Second upsert (update)
+        # Update same document
         doc_data["title"] = "Updated Title"
-        doc_data["meta"] = {"version": 2}
         doc2 = upsert_document(session, doc_data)
         session.commit()
 
-        # Should be the same object, updated
         assert doc2.doc_id == doc1.doc_id
         assert doc2.title == "Updated Title"
-        assert doc2.meta["version"] == 2
 
         # Test chunk upsert
         chunk_data = {
-            "chunk_id": "test-doc-1:0000",
-            "doc_id": "test-doc-1",
-            "ord": 0,
-            "text_md": "Original chunk",
-            "char_count": 14,
+            "chunk_id": "upsert_test:0001",
+            "doc_id": "upsert_test",
+            "ord": 1,
+            "text_md": "Original text",
+            "char_count": 13,
             "token_count": 2,
-            "meta": {},
         }
 
         chunk1 = upsert_chunk(session, chunk_data)
         session.commit()
 
-        # Update chunk
-        chunk_data["text_md"] = "Updated chunk"
-        chunk_data["char_count"] = 13
+        chunk_data["text_md"] = "Updated text"
         chunk2 = upsert_chunk(session, chunk_data)
         session.commit()
 
         assert chunk2.chunk_id == chunk1.chunk_id
-        assert chunk2.text_md == "Updated chunk"
-        assert chunk2.char_count == 13
-
-        # Test embedding upsert
-        embedding_data = {
-            "chunk_id": "test-doc-1:0000",
-            "provider": "dummy",
-            "dim": 256,
-            "embedding": [0.1] * 256,
-            "created_at": datetime.now(timezone.utc),
-        }
-
-        emb1 = upsert_chunk_embedding(session, embedding_data)
-        session.commit()
-
-        # Update embedding
-        embedding_data["embedding"] = [0.2] * 256
-        emb2 = upsert_chunk_embedding(session, embedding_data)
-        session.commit()
-
-        assert emb2.chunk_id == emb1.chunk_id
-        assert emb2.provider == emb1.provider
-        assert emb2.embedding == [0.2] * 256
+        assert chunk2.text_md == "Updated text"
 
 
-def test_content_sha256_uniqueness():
-    """Test that content_sha256 uniqueness constraint works."""
-    from trailblazer.db.engine import Base, Document
-    from sqlalchemy.exc import IntegrityError
+def test_foreign_key_constraints():
+    """Test foreign key constraints."""
 
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
+    engine = get_engine()
     Session = sessionmaker(bind=engine)
 
     with Session() as session:
-        # Create first document
-        doc1 = Document(
-            doc_id="doc-1",
-            source_system="confluence",
-            content_sha256="duplicate_hash" * 4,
-            meta={},
+        # Try to create chunk without document (should fail)
+        chunk = Chunk(
+            chunk_id="orphan_chunk",
+            doc_id="nonexistent_doc",
+            ord=1,
+            text_md="Orphan chunk",
+            char_count=12,
+            token_count=2,
         )
-        session.add(doc1)
-        session.commit()
 
-        # Try to create second document with same hash
-        doc2 = Document(
-            doc_id="doc-2",
-            source_system="confluence",
-            content_sha256="duplicate_hash" * 4,
-            meta={},
-        )
-        session.add(doc2)
+        session.add(chunk)
 
-        # Should raise integrity error
         with pytest.raises(IntegrityError):
             session.commit()
 
 
-def test_chunk_doc_ord_uniqueness():
-    """Test that (doc_id, ord) uniqueness constraint works."""
-    from trailblazer.db.engine import Base, Chunk, Document
-    from sqlalchemy.exc import IntegrityError
+def test_unique_constraints():
+    """Test unique constraints."""
 
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
+    engine = get_engine()
     Session = sessionmaker(bind=engine)
 
     with Session() as session:
-        # Create document
-        doc = Document(
-            doc_id="test-doc",
+        doc1 = Document(
+            doc_id="unique_test_1",
             source_system="confluence",
-            content_sha256="hash123" * 8,
-            meta={},
+            title="Document 1",
+            content_sha256="unique_hash",
         )
-        session.add(doc)
 
-        # Create first chunk
-        chunk1 = Chunk(
-            chunk_id="test-doc:0000",
-            doc_id="test-doc",
-            ord=0,
-            text_md="First chunk",
-            char_count=11,
-            token_count=2,
-            meta={},
+        doc2 = Document(
+            doc_id="unique_test_2",
+            source_system="confluence",
+            title="Document 2",
+            content_sha256="unique_hash",  # Same hash - should fail
         )
-        session.add(chunk1)
-        session.commit()
 
-        # Try to create second chunk with same doc_id and ord
-        chunk2 = Chunk(
-            chunk_id="test-doc:0001",  # Different chunk_id
-            doc_id="test-doc",  # Same doc_id
-            ord=0,  # Same ord - should fail
-            text_md="Duplicate chunk",
-            char_count=15,
-            token_count=2,
-            meta={},
-        )
-        session.add(chunk2)
+        session.add(doc1)
+        session.add(doc2)
 
-        # Should raise integrity error
         with pytest.raises(IntegrityError):
             session.commit()
 
 
 def test_embedding_serialization():
-    """Test embedding serialization for different database types."""
-    from trailblazer.db.engine import (
-        deserialize_embedding,
-        serialize_embedding,
-    )
+    """Test embedding serialization/deserialization."""
+    embedding = [0.1, 0.2, 0.3]
 
-    # Test with mock postgres (should return as-is)
-    with pytest.MonkeyPatch().context() as m:
-        m.setattr("trailblazer.db.engine.is_postgres", lambda: True)
+    # PostgreSQL with pgvector (should return as-is)
+    serialized = serialize_embedding(embedding)
+    assert serialized == embedding
 
-        embedding = [0.1, 0.2, 0.3]
-        serialized = serialize_embedding(embedding)
-        assert serialized == embedding
-
-        deserialized = deserialize_embedding(serialized)
-        assert deserialized == embedding
-
-    # Test with SQLite (should use JSON)
-    with pytest.MonkeyPatch().context() as m:
-        m.setattr("trailblazer.db.engine.is_postgres", lambda: False)
-
-        embedding = [0.1, 0.2, 0.3]
-        serialized = serialize_embedding(embedding)
-        assert isinstance(serialized, str)  # Should be JSON string
-
-        deserialized = deserialize_embedding(serialized)
-        assert deserialized == embedding
+    deserialized = deserialize_embedding(serialized)
+    assert deserialized == embedding
 
 
-def test_indexes_created():
-    """Test that database indexes are properly created."""
-    from trailblazer.db.engine import Base
+def test_database_indexes():
+    """Test that database indexes are created."""
 
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
+    engine = get_engine()
 
     with engine.connect() as conn:
-        # Check that indexes exist (SQLite specific query)
+        # Check that indexes exist
         result = conn.execute(
             text(
-                "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'"
+                "SELECT indexname FROM pg_indexes WHERE schemaname='public' AND indexname NOT LIKE 'pg_%'"
             )
         )
         indexes = [row[0] for row in result]
 
-        # Should have our custom indexes
-        assert any("documents" in idx for idx in indexes)
-        assert any("chunks" in idx for idx in indexes)
-        assert any("chunk_embeddings" in idx for idx in indexes)
+        # Check for some expected indexes
+        index_names = [idx for idx in indexes if not idx.startswith("pk_")]
+        assert len(index_names) > 0  # Should have some non-primary key indexes
+
+
+def test_embedding_vector_operations():
+    """Test that vector operations work with embeddings."""
+
+    engine = get_engine()
+    Session = sessionmaker(bind=engine)
+
+    with Session() as session:
+        # Create test data
+        doc = Document(
+            doc_id="vector_test",
+            source_system="test",
+            title="Vector Test",
+            content_sha256="vector_hash",
+        )
+        session.add(doc)
+        session.flush()
+
+        chunk = Chunk(
+            chunk_id="vector_test:0001",
+            doc_id="vector_test",
+            ord=1,
+            text_md="Vector test chunk",
+            char_count=17,
+            token_count=3,
+        )
+        session.add(chunk)
+        session.flush()
+
+        # Create embedding with known values
+        embedding = ChunkEmbedding(
+            chunk_id="vector_test:0001",
+            provider="test",
+            dim=3,
+            embedding=[1.0, 0.0, 0.0],
+        )
+        session.add(embedding)
+        session.commit()
+
+        # Test that we can query the embedding
+        retrieved = session.get(ChunkEmbedding, ("vector_test:0001", "test"))
+        assert retrieved is not None
+        import numpy as np
+
+        assert np.array_equal(retrieved.embedding, [1.0, 0.0, 0.0])

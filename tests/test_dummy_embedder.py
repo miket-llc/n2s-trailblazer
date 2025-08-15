@@ -125,8 +125,8 @@ def test_dummy_embedder_provider_properties():
 
 def test_get_embedding_provider_dummy():
     """Test getting dummy provider via factory function."""
-    # Default should be dummy
-    provider = get_embedding_provider()
+    # Explicitly request dummy provider
+    provider = get_embedding_provider("dummy")
     assert provider.provider_name == "dummy"
     assert isinstance(provider, DummyEmbedder)
 
@@ -134,6 +134,16 @@ def test_get_embedding_provider_dummy():
     provider2 = get_embedding_provider("dummy")
     assert provider2.provider_name == "dummy"
     assert isinstance(provider2, DummyEmbedder)
+
+
+def test_get_embedding_provider_default():
+    """Test getting default provider via env var."""
+    # Default will use EMBED_PROVIDER env var, which may be set to openai
+    import os
+
+    provider = get_embedding_provider()
+    expected_provider = os.getenv("EMBED_PROVIDER", "dummy")
+    assert provider.provider_name == expected_provider
 
 
 def test_get_embedding_provider_unknown():

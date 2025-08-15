@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # Database (optional at scaffold time)
     TRAILBLAZER_DB_URL: Optional[str] = None
 
+    # Embedding configuration
+    EMBED_PROVIDER: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
+
     # Workspace paths
     TRAILBLAZER_DATA_DIR: str = "data"  # Human-managed inputs
     TRAILBLAZER_WORKDIR: str = "var"  # Tool-managed artifacts

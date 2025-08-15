@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import os
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
@@ -18,11 +16,7 @@ from sqlalchemy import (
     text,
 )
 
-try:
-    from sqlalchemy.dialects.postgresql import VECTOR  # type: ignore[attr-defined]
-except ImportError:
-    # pgvector not available, will use JSON fallback
-    VECTOR = None
+from pgvector.sqlalchemy import Vector as VECTOR  # type: ignore[import-untyped]
 from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.sql import func
@@ -43,18 +37,14 @@ def get_db_url() -> str:
     """Get database URL from settings.
 
     Raises:
-        ValueError: If DB_URL is not configured and not in test environment.
+        ValueError: If DB_URL is not configured.
     """
     db_url = SETTINGS.TRAILBLAZER_DB_URL
     if not db_url:
-        # Check if we're in a test environment
-        if os.getenv("TB_TESTING") == "1":
-            return "sqlite:///./.trailblazer.db"
         raise ValueError(
-            "TRAILBLAZER_DB_URL is required for production use. "
+            "TRAILBLAZER_DB_URL is required. "
             "Set TRAILBLAZER_DB_URL to a PostgreSQL URL in your .env file. "
-            "Run 'make db.up' then 'trailblazer db doctor' to get started. "
-            "For tests, set TB_TESTING=1."
+            "Run 'make db.up' then 'trailblazer db doctor' to get started."
         )
     return db_url
 
@@ -63,17 +53,17 @@ def get_engine():
     """Get or create the SQLAlchemy engine.
 
     Raises:
-        ValueError: If using SQLite without ALLOW_SQLITE_FOR_TESTS=1.
+        ValueError: If database URL is not PostgreSQL.
     """
     global _engine
     if _engine is None:
         db_url = get_db_url()
 
-        # Check if SQLite is being used without test permission
-        if db_url.startswith("sqlite") and os.getenv("TB_TESTING") != "1":
+        # Ensure we're using PostgreSQL
+        if not db_url.startswith("postgres"):
             raise ValueError(
-                "SQLite is only allowed for tests. Set TB_TESTING=1 for tests, "
-                "or configure TRAILBLAZER_DB_URL with PostgreSQL for production use. "
+                "Only PostgreSQL is supported. "
+                "Set TRAILBLAZER_DB_URL to a PostgreSQL URL in your .env file. "
                 "Run 'make db.up' then 'trailblazer db doctor' to get started."
             )
 
@@ -100,13 +90,7 @@ def create_tables():
     Base.metadata.create_all(get_engine())
 
 
-def is_postgres() -> bool:
-    """Check if the current database is PostgreSQL."""
-    try:
-        db_url = get_db_url()
-        return db_url.startswith("postgresql")
-    except ValueError:
-        return False
+# Removed is_postgres() since we only support PostgreSQL
 
 
 def check_db_health() -> Dict[str, Any]:
@@ -156,12 +140,8 @@ def check_db_health() -> Dict[str, Any]:
 def initialize_postgres_extensions():
     """Initialize PostgreSQL extensions if needed (pgvector).
 
-    Only attempts to create extensions if using PostgreSQL.
     Silently continues if extension creation fails (e.g., insufficient permissions).
     """
-    if not is_postgres():
-        return
-
     engine = get_engine()
     with engine.connect() as conn:
         try:
@@ -175,8 +155,6 @@ def initialize_postgres_extensions():
 
 def ensure_vector_index() -> None:
     """Create pgvector index if missing (safe/no-op if exists)."""
-    if not is_postgres():
-        return
     engine = get_engine()
     with engine.connect() as conn:
         # IVFFLAT cosine index; requires ANALYZE and pgvector >= 0.5.0
@@ -265,16 +243,8 @@ class ChunkEmbedding(Base):
     dim = Column(Integer, nullable=False)  # Embedding dimension
     created_at = Column(DateTime(timezone=True), default=func.now())
 
-    # Embedding storage - will be set dynamically based on database type
-    embedding = Column(JSON)  # Default to JSON
-
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        # Set embedding column type based on database
-        if is_postgres() and VECTOR is not None:
-            cls.embedding = Column(VECTOR)  # pgvector VECTOR type
-        else:
-            cls.embedding = Column(JSON)  # JSON array for SQLite
+    # Embedding storage - pgvector (dimension can be configured)
+    embedding = Column(VECTOR())
 
     # Relationships
     chunk = relationship("Chunk", back_populates="embeddings")
@@ -331,23 +301,11 @@ def upsert_chunk_embedding(
     return embedding
 
 
-def serialize_embedding(embedding: List[float]) -> Any:
-    """Serialize embedding for storage based on database type."""
-    if is_postgres():
-        # For PostgreSQL with pgvector, return as-is (SQLAlchemy handles conversion)
-        return embedding
-    else:
-        # For SQLite, store as JSON
-        return json.dumps(embedding)
+def serialize_embedding(embedding: List[float]) -> List[float]:
+    """Return embedding as-is for pgvector storage."""
+    return embedding
 
 
-def deserialize_embedding(stored_embedding: Any) -> List[float]:
-    """Deserialize embedding from storage based on database type."""
-    if is_postgres():
-        # For PostgreSQL, return as-is
-        return stored_embedding
-    else:
-        # For SQLite, parse JSON
-        if isinstance(stored_embedding, str):
-            return json.loads(stored_embedding)
-        return stored_embedding
+def deserialize_embedding(stored_embedding: List[float]) -> List[float]:
+    """Return embedding as-is from pgvector storage."""
+    return stored_embedding

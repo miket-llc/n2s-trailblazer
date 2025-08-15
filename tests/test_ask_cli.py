@@ -90,7 +90,7 @@ def test_ask_smoke_test_with_mocked_retriever(mock_search_hits):
                         "--out",
                         temp_dir,
                         "--db-url",
-                        "sqlite:///test.db",
+                        "postgresql://test:test@localhost:5432/test",
                     ],
                 )
 
@@ -157,7 +157,7 @@ def test_ask_json_format(mock_search_hits):
                         "--out",
                         temp_dir,
                         "--db-url",
-                        "sqlite:///test.db",
+                        "postgresql://test:test@localhost:5432/test",
                     ],
                 )
 
@@ -192,7 +192,7 @@ def test_ask_no_results(mock_search_hits):
                         "--out",
                         temp_dir,
                         "--db-url",
-                        "sqlite:///test.db",
+                        "postgresql://test:test@localhost:5432/test",
                     ],
                 )
 
@@ -233,7 +233,7 @@ def test_ask_ndjson_events(mock_search_hits):
                         "--out",
                         temp_dir,
                         "--db-url",
-                        "sqlite:///test.db",
+                        "postgresql://test:test@localhost:5432/test",
                     ],
                 )
 
@@ -303,7 +303,7 @@ def test_ask_custom_parameters(mock_search_hits):
                         "--out",
                         temp_dir,
                         "--db-url",
-                        "sqlite:///test.db",
+                        "postgresql://test:test@localhost:5432/test",
                     ],
                 )
 

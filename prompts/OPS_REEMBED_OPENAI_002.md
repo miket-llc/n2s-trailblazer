@@ -50,7 +50,7 @@
 
 # export LESS=-RFX
 
-#
+# 
 
 # make setup
 
@@ -62,23 +62,23 @@
 
 # File: scripts/reembed_corpus_openai.sh
 
-#
+# 
 
 # (a) Fix cost math — OpenAI current pricing
 
-#
+# 
 
 # text-embedding-3-small: $0.00002 / 1K tokens
 
-#
+# 
 
 # text-embedding-3-large: $0.00013 / 1K tokens
 
-#
+# 
 
 # Replace your estimate_run_cost() with
 
-#
+# 
 
 # bash
 
@@ -100,7 +100,7 @@
 
 # local tokens=$(( total_chars / 4 ))
 
-#
+# 
 
 # # pick price per 1k tokens by model (default small)
 
@@ -112,7 +112,7 @@
 
 # esac
 
-#
+# 
 
 # # cost = tokens/1k * price_per_1k
 
@@ -120,11 +120,11 @@
 
 # }
 
-#
+# 
 
 # (b) Actually pass your batch size — add --batch "$BATCH_SIZE" inside embed_run()
 
-#
+# 
 
 # bash
 
@@ -150,11 +150,11 @@
 
 # 2> "$error_file"
 
-#
+# 
 
 # (c) Map DB env once (if app expects DB_URL)
 
-#
+# 
 
 # bash
 
@@ -166,13 +166,13 @@
 
 # export DB_URL="$TRAILBLAZER_DB_URL"
 
-#
+# 
 
 # (d) (Optional, tiny QoL) Respect a prebuilt runs list for pilots
 
 # In get_runs_to_embed(), before scanning, short-circuit if var/temp_runs_to_embed.txt exists and is non-empty
 
-#
+# 
 
 # bash
 
@@ -208,7 +208,7 @@
 
 # fi
 
-#
+# 
 
 # Keep everything else as-is (progress JSON, error/cost logs, interrupt trap, etc.)
 
@@ -262,13 +262,13 @@
 
 # done | sort -t: -k2 -nr > var/temp_runs_to_embed.txt
 
-#
+# 
 
 # # Keep only top 2 for the pilot
 
 # sed -n '1,2p' var/temp_runs_to_embed.txt > var/temp_runs_to_embed.txt.tmp && mv var/temp_runs_to_embed.txt.tmp var/temp_runs_to_embed.txt
 
-#
+# 
 
 # # Run the script (pilot)
 
@@ -286,7 +286,7 @@
 
 # head -n 2 var/temp_runs_to_embed.txt
 
-#
+# 
 
 # # assurance (expect non-zero chunks_embedded)
 
@@ -298,7 +298,7 @@
 
 # jq -C '{docs_total,docs_embedded,docs_skipped,chunks_total,chunks_embedde,chunks_skipped,provider,model,dim}' var/runs/$RID_D/embed_assurance.json | sed -n '1,120p'
 
-#
+# 
 
 # # retrieval smoke (expect obviously better results than dummy)
 
@@ -312,7 +312,7 @@
 
 # tail -n 40 var/logs/ask-openai-pilot.out
 
-#
+# 
 
 # If OK: proceed to full corpus. If not OK: STOP, fix, rerun pilot
 
@@ -328,7 +328,7 @@
 
 # rm -f var/temp_runs_to_embed.txt
 
-#
+# 
 
 # # run full re-embed (resumable, idempotent)
 
@@ -338,15 +338,15 @@
 
 # Last 30 lines of one var/logs/embed-<RID>.out from the pilot and one from the full run
 
-#
+# 
 
 # The assurance JSON summaries for one Confluence and one DITA run (docs\_*, chunks\_*, provider, model, dim)
 
-#
+# 
 
 # Last 40 lines of var/logs/ask-openai-pilot.out
 
-#
+# 
 
 # The total estimated cost line from your script's final summary
 
@@ -354,10 +354,10 @@
 
 # Cost: text-embedding-3-small ≈ $0.02 per 1M tokens. Even tens of millions of tokens cost only a few dollars; dimensions don't change API cost
 
-#
+# 
 
 # Storage sizing: vectors ≈ dims × 4 bytes × chunks. 1024-dim ≈ ~4KB per chunk
 
-#
+# 
 
 # Incrementals later: re-use the script as-is; just point it at the new runs and keep --reembed-all only when switching model/dims

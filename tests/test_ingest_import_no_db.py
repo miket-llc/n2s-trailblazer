@@ -37,8 +37,9 @@ def test_ingest_cli_help_no_db_logs():
             assert "database" not in log_content.lower(), (
                 f"Found database logs: {log_content}"
             )
-            assert "sqlite" not in log_content.lower(), (
-                f"Found SQLite logs: {log_content}"
+            # No database operations should occur during ingest
+            assert "postgresql" not in log_content.lower(), (
+                f"Found database logs: {log_content}"
             )
 
     finally:
