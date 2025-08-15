@@ -62,7 +62,7 @@ class TestEnrichCLI:
             assert result.exit_code == 1
             assert "Normalized file not found" in result.output
 
-    @patch("trailblazer.cli.main.enrich_from_normalized")
+    @patch("trailblazer.pipeline.steps.enrich.enrich_from_normalized")
     @patch("trailblazer.core.artifacts.phase_dir")
     def test_enrich_success_rule_based_only(self, mock_phase_dir, mock_enrich):
         """Test successful enrichment with rule-based only."""
@@ -115,7 +115,7 @@ class TestEnrichCLI:
             assert call_args[1]["max_docs"] is None
             assert call_args[1]["budget"] is None
 
-    @patch("trailblazer.cli.main.enrich_from_normalized")
+    @patch("trailblazer.pipeline.steps.enrich.enrich_from_normalized")
     @patch("trailblazer.core.artifacts.phase_dir")
     def test_enrich_success_with_llm(self, mock_phase_dir, mock_enrich):
         """Test successful enrichment with LLM enabled."""
@@ -165,7 +165,7 @@ class TestEnrichCLI:
             call_args = mock_enrich.call_args
             assert call_args[1]["llm_enabled"] is True
 
-    @patch("trailblazer.cli.main.enrich_from_normalized")
+    @patch("trailblazer.pipeline.steps.enrich.enrich_from_normalized")
     @patch("trailblazer.core.artifacts.phase_dir")
     def test_enrich_with_custom_parameters(self, mock_phase_dir, mock_enrich):
         """Test enrichment with custom parameters."""
@@ -230,7 +230,7 @@ class TestEnrichCLI:
             assert call_args[1]["budget"] == "1000"
             assert call_args[1]["progress_callback"] is None  # No progress
 
-    @patch("trailblazer.cli.main.enrich_from_normalized")
+    @patch("trailblazer.pipeline.steps.enrich.enrich_from_normalized")
     @patch("trailblazer.core.artifacts.phase_dir")
     def test_enrich_generates_assurance_files(
         self, mock_phase_dir, mock_enrich
@@ -294,9 +294,9 @@ class TestEnrichCLI:
             md_content = assurance_md.read_text()
             assert "# Enrichment Assurance Report" in md_content
             assert "test-run" in md_content
-            assert "Documents processed: 1" in md_content
+            assert "**Documents processed:** 1" in md_content
 
-    @patch("trailblazer.cli.main.enrich_from_normalized")
+    @patch("trailblazer.pipeline.steps.enrich.enrich_from_normalized")
     @patch("trailblazer.core.artifacts.phase_dir")
     def test_enrich_handles_error(self, mock_phase_dir, mock_enrich):
         """Test error handling in enrichment command."""
@@ -332,7 +332,7 @@ class TestEnrichCLI:
             assert result.exit_code == 1
             assert "Enrichment failed: Test error" in result.output
 
-    @patch("trailblazer.cli.main.enrich_from_normalized")
+    @patch("trailblazer.pipeline.steps.enrich.enrich_from_normalized")
     @patch("trailblazer.core.artifacts.phase_dir")
     def test_enrich_ndjson_events(self, mock_phase_dir, mock_enrich):
         """Test that enrichment emits NDJSON events to stdout."""
@@ -428,7 +428,9 @@ class TestEnrichCLI:
         # For now, just verify the flag is recognized
         result = runner.invoke(app, ["enrich", "--help"])
         assert result.exit_code == 0
-        assert "--progress/--no-progress" in result.output
+        assert (
+            "--progress" in result.output and "--no-progress" in result.output
+        )
 
     def test_enrich_no_color_flag(self):
         """Test that --no-color flag is recognized."""
@@ -466,11 +468,11 @@ class TestEnrichmentAssuranceMarkdown:
             # Verify required sections
             assert "# Enrichment Assurance Report" in content
             assert "test-run-123" in content
-            assert "Documents processed: 100" in content
-            assert "LLM enriched: 50" in content
-            assert "Suggested edges: 25" in content
-            assert "too_short: 10" in content
-            assert "no_structure: 5" in content
+            assert "**Documents processed:** 100" in content
+            assert "**LLM enriched:** 50" in content
+            assert "**Suggested edges:** 25" in content
+            assert "**too_short:** 10 documents" in content
+            assert "**no_structure:** 5 documents" in content
             assert "3.3 documents/second" in content  # 100/30.5
             assert "enriched.jsonl" in content
             assert "fingerprints.jsonl" in content
@@ -499,7 +501,7 @@ class TestEnrichmentAssuranceMarkdown:
             content = output_path.read_text()
 
             # Verify LLM-specific content is appropriate
-            assert "LLM enabled: False" in content
+            assert "**LLM enabled:** False" in content
             assert "No quality flags detected" in content
             assert (
                 "suggested_edges.jsonl" not in content
