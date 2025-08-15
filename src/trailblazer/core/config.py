@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     CONFLUENCE_SINCE: Optional[str] = None  # Default since timestamp
     CONFLUENCE_AUTO_SINCE: bool = True  # Auto-read since from state
     CONFLUENCE_MAX_PAGES: Optional[int] = None  # Limit for testing
+    CONFLUENCE_ALLOW_EMPTY: bool = False  # Allow zero pages without error
+
+    # DITA configuration
+    DITA_ROOT: str = "data/raw/dita/ellucian-documentation"
+    DITA_INCLUDE: List[str] = []  # Default: **/*.dita, **/*.xml, **/*.ditamap
+    DITA_EXCLUDE: List[str] = []  # Exclude patterns
 
     # Pipeline configuration
     PIPELINE_PHASES: List[str] = ["ingest", "normalize", "enrich", "embed"]
@@ -27,17 +33,37 @@ class Settings(BaseSettings):
     EMBED_DIMENSIONS: int = 1536
     EMBED_BATCH_SIZE: int = 128
     EMBED_CHANGED_ONLY: bool = True  # Only embed changed documents
+    EMBED_MAX_DOCS: Optional[int] = None  # Limit for testing
+    EMBED_MAX_CHUNKS: Optional[int] = None  # Limit for testing
+    EMBED_DRY_RUN_COST: bool = False  # Show cost estimates
     OPENAI_API_KEY: Optional[str] = None
+
+    # Retrieval/Ask configuration
+    ASK_TOP_K: int = 8  # Number of top chunks to retrieve
+    ASK_MAX_CHUNKS_PER_DOC: int = 3  # Maximum chunks per document
+    ASK_MAX_CHARS: int = 6000  # Maximum characters in context
+    ASK_FORMAT: str = "text"  # Output format: text|json
+
+    # Enrichment configuration
+    ENRICH_LLM: bool = False  # Enable LLM-based enrichment
+    ENRICH_MAX_DOCS: Optional[int] = None  # Limit for testing
+    ENRICH_BUDGET: Optional[str] = None  # Budget limit for LLM usage
 
     # Workspace paths
     TRAILBLAZER_DATA_DIR: str = "data"  # Human-managed inputs
     TRAILBLAZER_WORKDIR: str = "var"  # Tool-managed artifacts
 
-    # Observability
+    # Observability & UI
     LOG_FORMAT: str = "auto"  # json|plain|auto
-    PROGRESS: bool = True
-    QUIET_PRETTY: bool = False
-    NO_COLOR: bool = False
+    PROGRESS: bool = True  # Show progress bars
+    PROGRESS_EVERY: int = 10  # Progress output frequency
+    QUIET_PRETTY: bool = False  # Suppress banners but keep progress
+    NO_COLOR: bool = False  # Disable colored output
+
+    # Operations
+    OPS_PRUNE_KEEP: int = 10  # Number of runs to keep when pruning
+    OPS_PRUNE_MIN_AGE_DAYS: int = 30  # Minimum age for deletion
+    OPS_PRUNE_DRY_RUN: bool = True  # Default to dry run for safety
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8"
