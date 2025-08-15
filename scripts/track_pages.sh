@@ -7,7 +7,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-PAGES_LOG="var/processed_pages.log"
+PAGES_LOG="var/logs/processed_pages.log"
 
 echo "🚀 Starting page titles tracker..."
 echo "Log file: $PAGES_LOG"

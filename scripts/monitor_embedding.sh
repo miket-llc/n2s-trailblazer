@@ -3,8 +3,8 @@ set -euo pipefail
 export PAGER=cat
 export LESS=-RFX
 
-PROGRESS="var/reembed_progress.json"
-RUNS_FILE="var/temp_runs_to_embed.txt"   # may or may not exist
+PROGRESS="var/logs/reembed_progress.json"
+RUNS_FILE="var/logs/temp_runs_to_embed.txt"   # may or may not exist
 LOGDIR="var/logs"
 INTERVAL="${INTERVAL:-15}"
 

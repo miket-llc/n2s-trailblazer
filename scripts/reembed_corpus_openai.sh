@@ -31,9 +31,9 @@ export OPENAI_EMBED_DIM="$EMBED_DIMENSIONS"
 
 # Logging and progress tracking
 LOG_DIR="var/logs"
-PROGRESS_FILE="var/reembed_progress.json"
-ERROR_LOG="var/reembed_errors.log"
-COST_LOG="var/reembed_cost.log"
+PROGRESS_FILE="var/logs/reembed_progress.json"
+ERROR_LOG="var/logs/reembed_errors.log"
+COST_LOG="var/logs/reembed_cost.log"
 
 # Create log directory
 mkdir -p "$LOG_DIR"
@@ -60,7 +60,7 @@ EOF
 get_runs_to_embed() {
     echo "=== Identifying runs worth embedding ===" >&2
 
-    local runs_file="var/temp_runs_to_embed.txt"
+    local runs_file="var/logs/temp_runs_to_embed.txt"
     if [ -s "$runs_file" ]; then
       echo "Using existing $runs_file" >&2
       # ensure sorted largest-first by the count column if present
@@ -198,7 +198,7 @@ update_progress() {
 get_runs_to_embed() {
     echo "=== Identifying runs worth embedding ===" >&2
 
-    local runs_file="var/temp_runs_to_embed.txt"
+    local runs_file="var/logs/temp_runs_to_embed.txt"
     if [ -s "$runs_file" ]; then
       echo "Using existing $runs_file" >&2
       # ensure sorted largest-first by the count column if present

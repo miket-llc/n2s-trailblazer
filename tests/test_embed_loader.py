@@ -544,19 +544,30 @@ def test_load_normalized_to_db_postgresql_integration():
             from trailblazer.db.engine import Document, Chunk, ChunkEmbedding
 
             # Check document was created
-            doc = session.query(Document).filter_by(doc_id="integration_doc_1").first()
+            doc = (
+                session.query(Document)
+                .filter_by(doc_id="integration_doc_1")
+                .first()
+            )
             assert doc is not None
             assert doc.title == "Integration Test Document"
             assert doc.source_system == "confluence"
 
             # Check chunks were created
-            chunks = session.query(Chunk).filter_by(doc_id="integration_doc_1").all()
+            chunks = (
+                session.query(Chunk)
+                .filter_by(doc_id="integration_doc_1")
+                .all()
+            )
             assert len(chunks) > 0
 
             # Check embeddings were created
-            embeddings = session.query(ChunkEmbedding).join(Chunk).filter(
-                Chunk.doc_id == "integration_doc_1"
-            ).all()
+            embeddings = (
+                session.query(ChunkEmbedding)
+                .join(Chunk)
+                .filter(Chunk.doc_id == "integration_doc_1")
+                .all()
+            )
             assert len(embeddings) > 0
 
             # Verify pgvector embeddings
@@ -566,5 +577,6 @@ def test_load_normalized_to_db_postgresql_integration():
                 assert emb.embedding is not None
                 # Verify it's a proper vector (not JSON string)
                 import numpy as np
+
                 assert isinstance(emb.embedding, (list, np.ndarray))
                 assert len(emb.embedding) == emb.dim

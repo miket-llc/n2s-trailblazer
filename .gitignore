@@ -22,3 +22,8 @@ coverage.xml
 .idea/
 .vscode/
 archive/
+
+# Database files (PostgreSQL-only system - no SQLite)
+*.db
+*.sqlite*
+.trailblazer.db

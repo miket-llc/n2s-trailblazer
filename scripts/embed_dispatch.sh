@@ -4,7 +4,7 @@ export PAGER=cat
 export LESS=-RFX
 
 WORKERS="${WORKERS:-2}"           # start with 2; later 3–4 if stable
-RUNS_FILE="${1:-var/temp_runs_to_embed.txt}"
+RUNS_FILE="${1:-var/logs/temp_runs_to_embed.txt}"
 [ -s "$RUNS_FILE" ] || { echo "[ERROR] $RUNS_FILE missing/empty"; exit 2; }
 
 # Each job invokes reembed_corpus_openai.sh --single <run_id> <docs>
