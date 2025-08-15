@@ -1,4 +1,4 @@
-.PHONY: setup lint test fmt md check-md ci db.up db.down db.wait
+.PHONY: setup lint test fmt md check-md ci db.up db.down db.wait reembed.openai reembed.openai.pilot reembed.openai.all embed.monitor embed.kill
 
 setup:
 	python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]" && pre-commit install
@@ -44,3 +44,39 @@ db.wait:
 	done; \
 	echo "PostgreSQL failed to become ready after 60 seconds"; \
 	exit 1
+
+# OpenAI corpus re-embedding
+reembed.openai:
+	@echo "🚀 Starting OpenAI corpus re-embedding..."
+	@echo "Prerequisites:"
+	@echo "  - OPENAI_API_KEY set in .env"
+	@echo "  - TRAILBLAZER_DB_URL set in .env"
+	@echo "  - Database running (make db.up)"
+	@echo "  - Virtual environment activated"
+	@echo
+	@echo "Running: scripts/reembed_corpus_openai.sh"
+	@scripts/reembed_corpus_openai.sh
+
+reembed.openai.pilot:
+	@echo "[PILOT] building runs file (top 2)"
+	@ls -1t var/runs | grep -E '_full_adf$$|_dita_full$$' \
+	  | while read rid; do \
+	      [ -f var/runs/$$rid/enrich/enriched.jsonl ] && \
+	      echo $$rid:$$$$(wc -l < var/runs/$$rid/enrich/enriched.jsonl); \
+	    done | sort -t: -k2 -nr | sed -n '1,2p' > var/temp_runs_to_embed.txt
+	@WORKERS=$${WORKERS:-2} bash scripts/embed_dispatch.sh var/temp_runs_to_embed.txt
+
+reembed.openai.all:
+	@echo "[ALL] building runs file (all enriched runs)"
+	@ls -1t var/runs | grep -E '_full_adf$$|_dita_full$$' \
+	  | while read rid; do \
+	      [ -f var/runs/$$rid/enrich/enriched.jsonl ] && \
+	      echo $$rid:$$$$(wc -l < var/runs/$$rid/enrich/enriched.jsonl); \
+	    done | sort -t: -k2 -nr > var/temp_runs_to_embed.txt
+	@WORKERS=$${WORKERS:-2} bash scripts/embed_dispatch.sh var/temp_runs_to_embed.txt
+
+embed.monitor:
+	@INTERVAL=$${INTERVAL:-15} bash scripts/monitor_embedding.sh
+
+embed.kill:
+	@bash scripts/kill_embedding.sh

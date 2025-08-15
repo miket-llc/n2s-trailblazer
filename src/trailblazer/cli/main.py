@@ -724,6 +724,16 @@ def embed_load_cmd(
         "--provider",
         help="Embedding provider (dummy, openai, sentencetransformers)",
     ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Model name (e.g., text-embedding-3-small, BAAI/bge-small-en-v1.5)",
+    ),
+    dimensions: Optional[int] = typer.Option(
+        None,
+        "--dimensions",
+        help="Embedding dimensions (e.g., 512, 1024, 1536)",
+    ),
     batch_size: int = typer.Option(
         128, "--batch", help="Batch size for embedding generation"
     ),
@@ -737,6 +747,16 @@ def embed_load_cmd(
         False,
         "--changed-only",
         help="Only embed documents with changed enrichment fingerprints",
+    ),
+    reembed_all: bool = typer.Option(
+        False,
+        "--reembed-all",
+        help="Force re-embed all documents regardless of fingerprints",
+    ),
+    dry_run_cost: bool = typer.Option(
+        False,
+        "--dry-run-cost",
+        help="Estimate token count and cost without calling API",
     ),
 ) -> None:
     """Load normalized documents to database with embeddings."""
@@ -765,10 +785,14 @@ def embed_load_cmd(
             run_id=run_id,
             input_file=input_file,
             provider_name=provider,
+            model=model,
+            dimensions=dimensions,
             batch_size=batch_size,
             max_docs=max_docs,
             max_chunks=max_chunks,
             changed_only=changed_only,
+            reembed_all=reembed_all,
+            dry_run_cost=dry_run_cost,
         )
 
         # Display summary
@@ -777,6 +801,8 @@ def embed_load_cmd(
             typer.echo(
                 f"  Documents: {metrics.get('docs_changed', 0)} changed, {metrics.get('docs_unchanged', 0)} unchanged"
             )
+        if reembed_all:
+            typer.echo("  Mode: Full re-embed (ignoring fingerprints)")
         typer.echo(
             f"  Documents: {metrics.get('docs_embedded', 0)} embedded, {metrics.get('docs_skipped', 0)} skipped"
         )
@@ -786,6 +812,16 @@ def embed_load_cmd(
         typer.echo(
             f"  Provider: {metrics['provider']} (dim={metrics['dimension']})"
         )
+        if metrics.get("model"):
+            typer.echo(f"  Model: {metrics['model']}")
+        if dry_run_cost:
+            typer.echo(
+                f"  Estimated tokens: {metrics.get('estimated_tokens', 0):,}"
+            )
+            if metrics.get("estimated_cost"):
+                typer.echo(
+                    f"  Estimated cost: ${metrics.get('estimated_cost', 0):.4f}"
+                )
         typer.echo(f"  Duration: {metrics['duration_seconds']:.2f}s")
 
     except Exception as e:

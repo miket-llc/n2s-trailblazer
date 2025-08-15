@@ -114,3 +114,137 @@ ______________________________________________________________________
 DB Policy: There is ONE runtime DB: Postgres + pgvector. No SQLite anywhere in runtime or ops.
 
 No Pagers: Set PAGER=cat and LESS=-RFX in the session; pass pager-off flags if tools support them. All output must stream; do not invoke interactive pagers.
+
+______________________________________________________________________
+
+# PROMPT OPS-REEMBED-001 — Re-embed Entire Corpus with OpenAI (Serial, Observable)
+
+**Save as:** prompts/OPS_REEMBED_001_openai.md  
+**Branch:** main
+
+## Guardrails Addendum
+
+**One DB only:** Postgres + pgvector. No SQLite in runtime/ops.
+
+**No pagers:** export PAGER=cat, export LESS=-RFX; if using psql, add -P pager=off.
+
+**Enrichment gate:** do not embed a run unless var/runs/<RID>/enrich/{enriched.jsonl,fingerprints.jsonl} exist.
+
+## Context for a New Instance
+
+Ingest + normalize + enrichment are completed across all runs.
+
+We previously embedded with dummy; now we will re-embed everything with a real provider (OpenAI, e.g., text-embedding-3-small), serial & observable, with assurance proofs.
+
+Everything under var/; Postgres only.
+
+## To-Dos (≤9)
+
+### 1. Baseline & workspace
+
+```bash
+set -euo pipefail
+export PAGER=cat
+export LESS=-RFX
+make setup
+make fmt && make lint && make test && make check-md
+trailblazer paths ensure && trailblazer paths doctor
+```
+
+### 2. Postgres + pgvector up
+
+```bash
+docker compose -f docker-compose.db.yml up -d
+export DB_URL='postgresql+psycopg2://trailblazer:trailblazer@localhost:5432/trailblazer'
+trailblazer db check && trailblazer db init
+```
+
+### 3. Set OpenAI provider & model
+
+```bash
+export OPENAI_API_KEY=***redacted***
+export EMBED_PROVIDER=openai
+export EMBED_MODEL=text-embedding-3-small     # great cost/quality; supports dimensions
+export EMBED_DIMENSIONS=1024                  # try 512–1024 to save space
+```
+
+### 4. (Optional) purge dummy rows first (if schema uniqueness is only chunk_id)
+
+(Skip if your schema is UNIQUE(chunk_id, provider). If not sure, run these DELETEs once with pager off.)
+
+```bash
+psql "$DB_URL" -P pager=off -c "DELETE FROM chunk_embeddings WHERE provider='dummy';"
+```
+
+### 5. Pilot re-embed (one recent Confluence run + latest DITA)
+
+```bash
+RID_C=$(ls -1t var/runs | grep '_full_adf$'  | head -n1 || true)
+RID_D=$(ls -1t var/runs | grep '_dita_full$' | head -n1 || true)
+for RID in $RID_C $RID_D; do
+  echo "[PILOT] $RID model=$EMBED_MODEL dims=${EMBED_DIMENSIONS:-default}"
+  trailblazer embed load \
+    --run-id "$RID" \
+    --provider openai \
+    --model "$EMBED_MODEL" \
+    ${EMBED_DIMENSIONS:+--dimensions $EMBED_DIMENSIONS} \
+    --reembed-all \
+    1> "var/logs/embed-$RID.jsonl" \
+    2> "var/logs/embed-$RID.out"
+done
+```
+
+### 6. Retrieval smoke on pilot
+
+```bash
+trailblazer ask "What is Navigate to SaaS?" \
+  --top-k 8 --max-chunks-per-doc 3 --provider openai --format text \
+  1> "var/logs/ask-openai-pilot.jsonl" \
+  2> "var/logs/ask-openai-pilot.out"
+tail -n 40 var/logs/ask-openai-pilot.out
+```
+
+If the context/hits obviously improve (they will vs dummy), proceed.
+
+### 7. Re-embed ALL runs (serial, observable)
+
+```bash
+RUNS=$(ls -1 var/runs | grep -E '_full_adf$|_dita_full$' | sort) || true
+for RID in $RUNS; do
+  echo "[EMBED ALL] $RID model=$EMBED_MODEL dims=${EMBED_DIMENSIONS:-default}"
+  trailblazer embed load \
+    --run-id "$RID" \
+    --provider openai \
+    --model "$EMBED_MODEL" \
+    ${EMBED_DIMENSIONS:+--dimensions $EMBED_DIMENSIONS} \
+    --reembed-all \
+    1> "var/logs/embed-$RID.jsonl" \
+    2> "var/logs/embed-$RID.out"
+done
+```
+
+### 8. Assurance proofs (one Confluence + DITA)
+
+```bash
+jq -C '{docs_total,docs_embedded,docs_skipped,chunks_total,chunks_embedded,chunks_skipped,provider,model,dim}' \
+  "var/runs/$RID_C/embed_assurance.json" | sed -n '1,120p'
+jq -C '{docs_total,docs_embedded,docs_skipped,chunks_total,chunks_embedded,chunks_skipped,provider,model,dim}' \
+  "var/runs/$RID_D/embed_assurance.json" | sed -n '1,120p'
+```
+
+### 9. Proof-of-work to paste back
+
+- Last 30 lines of one var/logs/embed-<RID>.out.
+- The two embed_assurance.json summaries.
+- Last 40 lines of var/logs/ask-openai-pilot.out.
+- If you purged dummy first, paste the DELETE command you ran (no secrets).
+
+## Notes & knobs
+
+**Cost:** text-embedding-3-small is extremely cheap; you can pass --dimensions to trade a bit of recall for less storage and faster ANN.
+
+**Storage sizing:** pgvector footprint ≈ dims × 4 bytes × chunks. 1024-dim ≈ ~4 KB/chunk; 1M chunks ≈ ~4 GB vectors.
+
+**Throughput:** batch 128–256 usually saturates network without timeouts; handle 429s with backoff (loader should already do this).
+
+**Incrementals later:** keep --changed-only for day-2 runs; use --reembed-all only when switching provider/model.

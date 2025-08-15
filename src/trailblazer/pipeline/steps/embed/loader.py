@@ -182,10 +182,14 @@ def load_normalized_to_db(
     run_id: Optional[str] = None,
     input_file: Optional[str] = None,
     provider_name: str = "dummy",
+    model: Optional[str] = None,
+    dimensions: Optional[int] = None,
     batch_size: int = 128,
     max_docs: Optional[int] = None,
     max_chunks: Optional[int] = None,
     changed_only: bool = False,
+    reembed_all: bool = False,
+    dry_run_cost: bool = False,
 ) -> Dict[str, Any]:
     """
     Load normalized documents into the database with embeddings (idempotent).
@@ -194,10 +198,14 @@ def load_normalized_to_db(
         run_id: Run ID to load (uses runs/<RUN_ID>/normalize/normalized.ndjson)
         input_file: Input NDJSON file to load (overrides run_id)
         provider_name: Embedding provider to use
+        model: Model name for the provider (e.g., text-embedding-3-small)
+        dimensions: Embedding dimensions (e.g., 512, 1024, 1536)
         batch_size: Batch size for embedding generation
         max_docs: Maximum number of documents to process
         max_chunks: Maximum number of chunks to process
         changed_only: Only embed documents with changed enrichment fingerprints
+        reembed_all: Force re-embed all documents regardless of fingerprints
+        dry_run_cost: Estimate tokens and cost without calling API
 
     Returns:
         Metrics dictionary with counts and timing
@@ -215,10 +223,35 @@ def load_normalized_to_db(
         raise FileNotFoundError(f"Normalized file not found: {input_path}")
 
     # Determine which documents to process based on fingerprints
-    changed_docs = _determine_changed_docs(run_id, changed_only)
+    if reembed_all:
+        changed_docs = None  # Process all documents
+    else:
+        changed_docs = _determine_changed_docs(run_id, changed_only)
 
-    # Get embedding provider
-    embedder = get_embedding_provider(provider_name)
+    # Get embedding provider with custom model/dimensions if specified
+    if model or dimensions:
+        # For OpenAI, we can override model and dimensions
+        if provider_name == "openai":
+            from .provider import OpenAIEmbedder
+
+            embedder = OpenAIEmbedder(
+                model=model or "text-embedding-3-small", dim=dimensions or 1536
+            )
+        # For sentencetransformers, we can override model
+        elif provider_name == "sentencetransformers":
+            from .provider import SentenceTransformerEmbedder
+
+            embedder = SentenceTransformerEmbedder(model_name=model)
+        # For dummy, we can override dimensions
+        elif provider_name == "dummy":
+            from .provider import DummyEmbedder
+
+            embedder = DummyEmbedder(dim=dimensions or 384)
+        else:
+            # Fall back to default provider
+            embedder = get_embedding_provider(provider_name)
+    else:
+        embedder = get_embedding_provider(provider_name)
 
     # Initialize session
     session_factory = get_session_factory()
@@ -278,6 +311,10 @@ def load_normalized_to_db(
         batch_chunk_data = []
         last_progress_time = start_time
 
+        # Initialize cost estimation variables
+        estimated_tokens = 0
+        estimated_cost = 0.0
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -317,6 +354,23 @@ def load_normalized_to_db(
 
                     docs_total += 1
 
+                    # Get document title for progress display
+                    doc_title = record.get("title", "Untitled")
+                    # Truncate very long titles for display
+                    if len(doc_title) > 60:
+                        doc_title = doc_title[:57] + "..."
+
+                    # Print individual page titles for detailed feedback (only show processing count, not total count)
+                    # We'll update this after we know if the doc was embedded or skipped
+
+                    # Estimate tokens for cost calculation (dry-run mode)
+                    if dry_run_cost:
+                        text_md = record.get("text_md", "")
+                        doc_tokens = (
+                            len(text_md) // 4
+                        )  # Rough token estimation
+                        estimated_tokens += doc_tokens
+
                     # Check if document should be processed based on fingerprints
                     if changed_docs is not None and doc_id not in changed_docs:
                         docs_unchanged += 1
@@ -345,6 +399,12 @@ def load_normalized_to_db(
 
                     if existing_doc:
                         docs_skipped += 1
+                        # Show skipped document with different styling
+                        if docs_total % 50 == 0 or docs_total <= 10:
+                            console.print(
+                                f"  ⏭️  [{docs_total:4d}] {doc_title} (skipped)",
+                                style="dim yellow",
+                            )
                         emit_event(
                             "doc.skip",
                             doc_id=doc_id,
@@ -416,6 +476,12 @@ def load_normalized_to_db(
 
                     upsert_document(session, doc_data)
                     docs_embedded += 1
+                    # Show embedded document with different styling
+                    if docs_total % 50 == 0 or docs_total <= 10:
+                        console.print(
+                            f"  📖 [{docs_total:4d}] {doc_title} (embedding)",
+                            style="bright_cyan",
+                        )
                     emit_event(
                         "doc.upsert",
                         doc_id=doc_id,
@@ -514,16 +580,20 @@ def load_normalized_to_db(
                         if max_chunks and chunks_total >= max_chunks:
                             break
 
-                    # Update progress every batch or every 10 docs
+                    # Update progress every doc (to show current title) or every 30 seconds
                     if (
-                        docs_total % 10 == 0
+                        docs_total % 1
+                        == 0  # Update every document to show current title
                         or (
                             datetime.now(timezone.utc) - last_progress_time
                         ).seconds
                         >= 30
                     ):
                         progress.update(
-                            task, docs=docs_total, chunks=chunks_total
+                            task,
+                            description=f"📄 {doc_title}",
+                            docs=docs_total,
+                            chunks=chunks_total,
                         )
                         last_progress_time = datetime.now(timezone.utc)
 
@@ -554,7 +624,12 @@ def load_normalized_to_db(
                 )
 
             # Final progress update
-            progress.update(task, docs=docs_total, chunks=chunks_total)
+            progress.update(
+                task,
+                description="✅ Complete",
+                docs=docs_total,
+                chunks=chunks_total,
+            )
 
         # Commit all changes
         session.commit()
@@ -566,7 +641,9 @@ def load_normalized_to_db(
         "run_id": run_id,
         "input_file": str(input_path),
         "provider": embedder.provider_name,
+        "model": getattr(embedder, "model", None),
         "dimension": embedder.dimension,
+        "reembed_all": reembed_all,
         "docs_total": docs_total,
         "docs_skipped": docs_skipped,
         "docs_embedded": docs_embedded,
@@ -579,6 +656,15 @@ def load_normalized_to_db(
         "errors": errors,
         "completed_at": _now_iso(),
     }
+
+    # Add cost estimation if dry-run mode
+    if dry_run_cost:
+        metrics["estimated_tokens"] = estimated_tokens
+        # Calculate estimated cost for OpenAI models
+        if provider_name == "openai":
+            # Rough cost estimation: $0.0001 per 1K tokens for text-embedding-3-small
+            estimated_cost = (estimated_tokens / 1000) * 0.0001
+            metrics["estimated_cost"] = estimated_cost
 
     emit_event("embed.load.done", **metrics)
 
@@ -663,7 +749,9 @@ def _generate_assurance_report(run_id: str, metrics: Dict[str, Any]) -> None:
     assurance_data = {
         "run_id": run_id,
         "provider": metrics["provider"],
+        "model": metrics.get("model"),
         "dimension": metrics["dimension"],
+        "reembed_all": metrics.get("reembed_all", False),
         "docs_total": metrics["docs_total"],
         "docs_skipped": metrics["docs_skipped"],
         "docs_embedded": metrics["docs_embedded"],
@@ -691,6 +779,9 @@ def _generate_assurance_report(run_id: str, metrics: Dict[str, Any]) -> None:
         f.write(
             f"**Provider:** {metrics['provider']} (dim={metrics['dimension']})  \n"
         )
+        if metrics.get("model"):
+            f.write(f"**Model:** {metrics['model']}  \n")
+        f.write(f"**Re-embed All:** {metrics.get('reembed_all', False)}  \n")
         f.write(f"**Completed:** {metrics['completed_at']}  \n")
         f.write(f"**Duration:** {metrics['duration_seconds']:.2f}s  \n\n")
 
@@ -717,9 +808,16 @@ def _generate_assurance_report(run_id: str, metrics: Dict[str, Any]) -> None:
 
         f.write("\n## Reproduction Command\n\n")
         f.write("```bash\n")
-        f.write(
-            f"trailblazer embed load --run-id {run_id} --provider {metrics['provider']}\n"
-        )
+        cmd_parts = [
+            f"trailblazer embed load --run-id {run_id} --provider {metrics['provider']}"
+        ]
+        if metrics.get("model"):
+            cmd_parts.append(f"--model {metrics['model']}")
+        if metrics.get("dimension"):
+            cmd_parts.append(f"--dimensions {metrics['dimension']}")
+        if metrics.get("reembed_all"):
+            cmd_parts.append("--reembed-all")
+        f.write(" ".join(cmd_parts) + "\n")
         f.write("```\n")
 
     print(f"📋 Assurance report: {json_path}", file=sys.stderr)
