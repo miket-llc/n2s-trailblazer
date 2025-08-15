@@ -125,7 +125,7 @@ class PhaseAssurance:
                 ]
             )
 
-            issues_by_type = {}
+            issues_by_type: dict[str, list] = {}
             for issue in self.issues:
                 issue_type = issue["type"]
                 if issue_type not in issues_by_type:
@@ -356,8 +356,8 @@ class EmbedAssurance(PhaseAssurance):
 
                 # Check for HNSW index
                 result = conn.execute("""
-                    SELECT indexname FROM pg_indexes 
-                    WHERE tablename = 'chunk_embeddings' 
+                    SELECT indexname FROM pg_indexes
+                    WHERE tablename = 'chunk_embeddings'
                     AND indexdef LIKE '%hnsw%'
                 """)
                 hnsw_indexes = [row[0] for row in result]
@@ -430,20 +430,46 @@ def run_phase_assurance(
     """
 
     if phase == "enrich":
+        input_file = kwargs.get("input_file")
+        output_file = kwargs.get("output_file")
+        fingerprints_file = kwargs.get("fingerprints_file")
+
+        if (
+            input_file is None
+            or output_file is None
+            or fingerprints_file is None
+        ):
+            raise ValueError(
+                "enrich phase requires input_file, output_file, and fingerprints_file"
+            )
+
         assurance = EnrichAssurance(run_id)
         assurance.check_enrichment_quality(
-            kwargs.get("input_file"),
-            kwargs.get("output_file"),
-            kwargs.get("fingerprints_file"),
+            input_file, output_file, fingerprints_file
         )
     elif phase == "chunk":
-        assurance = ChunkAssurance(run_id)
-        assurance.check_chunking_quality(
-            kwargs.get("input_file"), kwargs.get("output_file")
-        )
+        input_file = kwargs.get("input_file")
+        output_file = kwargs.get("output_file")
+
+        if input_file is None or output_file is None:
+            raise ValueError("chunk phase requires input_file and output_file")
+
+        chunk_assurance = ChunkAssurance(run_id)
+        chunk_assurance.check_chunking_quality(input_file, output_file)
+        quality_passed = chunk_assurance.check_quality_gates()
+        json_path, md_path = chunk_assurance.write_reports()
+        return quality_passed, json_path, md_path
     elif phase == "embed":
-        assurance = EmbedAssurance(run_id)
-        assurance.check_embedding_quality(kwargs.get("db_url"))
+        db_url = kwargs.get("db_url")
+
+        if db_url is None:
+            raise ValueError("embed phase requires db_url")
+
+        embed_assurance = EmbedAssurance(run_id)
+        embed_assurance.check_embedding_quality(db_url)
+        quality_passed = embed_assurance.check_quality_gates()
+        json_path, md_path = embed_assurance.write_reports()
+        return quality_passed, json_path, md_path
     else:
         raise ValueError(f"Unknown phase: {phase}")
 
