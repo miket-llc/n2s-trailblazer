@@ -54,7 +54,9 @@ class HeartbeatManager:
         # Rate calculation
         self.ema_1m = EMACalculator(alpha=0.1)  # 1-minute EMA
         self.ema_5m = EMACalculator(alpha=0.02)  # 5-minute EMA
-        self.rate_history = deque(maxlen=60)  # Last 60 data points
+        self.rate_history: deque[float] = deque(
+            maxlen=60
+        )  # Last 60 data points
 
         # Worker tracking
         self.worker_rates: Dict[str, float] = {}

@@ -4,7 +4,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TextIO
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -69,7 +69,13 @@ class ObservabilityEvent(BaseModel):
 class EventEmitter:
     """Enhanced event emitter with typed schemas and file-based logging."""
 
-    def __init__(self, run_id: str, phase: str, component: str):
+    def __init__(
+        self,
+        run_id: str,
+        phase: str,
+        component: str,
+        log_dir: Optional[str] = None,
+    ):
         self.run_id = run_id
         self.phase = phase
         self.component = component
@@ -77,7 +83,7 @@ class EventEmitter:
         self.worker_id = f"{self.component}-{self.pid}"
 
         # Create logs directory
-        self.log_dir = Path("var/logs")
+        self.log_dir = Path(log_dir) if log_dir else Path("var/logs")
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         # Main event log
@@ -92,7 +98,7 @@ class EventEmitter:
         except (OSError, FileExistsError):
             pass  # Ignore symlink failures
 
-        self._file = None
+        self._file: Optional[TextIO] = None
         self._start_time = time.time()
 
     def __enter__(self):
@@ -114,6 +120,22 @@ class EventEmitter:
         if not self._file:
             return
 
+        # Separate direct fields from metadata
+        direct_fields = {
+            k: v
+            for k, v in kwargs.items()
+            if k in ObservabilityEvent.model_fields and k != "metadata"
+        }
+
+        # Handle metadata - combine explicit metadata with other kwargs
+        explicit_metadata = kwargs.get("metadata", {})
+        extra_metadata = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ObservabilityEvent.model_fields
+        }
+        combined_metadata = {**explicit_metadata, **extra_metadata}
+
         event = ObservabilityEvent(
             ts=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             run_id=self.run_id,
@@ -124,16 +146,8 @@ class EventEmitter:
             level=level,
             action=action,
             duration_ms=duration_ms,
-            **{
-                k: v
-                for k, v in kwargs.items()
-                if hasattr(ObservabilityEvent, k)
-            },
-            metadata={
-                k: v
-                for k, v in kwargs.items()
-                if not hasattr(ObservabilityEvent, k)
-            },
+            **direct_fields,
+            metadata=combined_metadata,
         )
 
         try:

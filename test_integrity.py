@@ -4,9 +4,9 @@
 import json
 import sys
 from pathlib import Path
+import pytest
 
 sys.path.insert(0, "src")
-
 from trailblazer.obs.integrity import run_data_integrity_check
 
 
@@ -143,20 +143,22 @@ def test_integrity_checks():
 
         print(f"   ✓ Reports written: {json_path}, {md_path}")
 
-        return md_path
+        # Assert test conditions instead of returning
+        assert report["overall_status"] in ["passed", "failed"]
+        assert isinstance(report["issue_summary"]["total"], int)
+        assert json_path.exists()
+        assert md_path.exists()
 
     except Exception as e:
         print(f"   ❌ Error: {e}")
-        return None
+        pytest.fail(f"Integrity check failed: {e}")
 
 
 if __name__ == "__main__":
     print("🎯 Testing Data Integrity & Format Validation\n")
 
-    report_path = test_integrity_checks()
-
-    if report_path and report_path.exists():
-        print(f"\n📋 Sample report created: {report_path}")
-        print("🎉 Data integrity testing completed!")
-    else:
-        print("\n❌ Testing failed")
+    try:
+        test_integrity_checks()
+        print("\n🎉 Data integrity testing completed!")
+    except Exception as e:
+        print(f"\n❌ Testing failed: {e}")

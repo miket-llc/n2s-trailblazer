@@ -202,13 +202,13 @@ class DenseRetriever:
                     c.text_md,
                     d.title,
                     d.url,
-                    1 - (ce.embedding <=> :query_vec) as score
+                    1 - (ce.embedding <=> %(query_vec)s::vector) as score
                 FROM chunks c
                 JOIN chunk_embeddings ce ON c.chunk_id = ce.chunk_id
                 JOIN documents d ON c.doc_id = d.doc_id
-                WHERE ce.provider = :provider
-                ORDER BY ce.embedding <=> :query_vec, d.doc_id, c.chunk_id
-                LIMIT :top_k
+                WHERE ce.provider = %(provider)s
+                ORDER BY ce.embedding <=> %(query_vec)s::vector, d.doc_id, c.chunk_id
+                LIMIT %(top_k)s
             """
             )
 

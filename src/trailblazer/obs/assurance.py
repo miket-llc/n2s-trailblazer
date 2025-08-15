@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Any, Tuple
+from sqlalchemy import text
 
 
 class QualityGateError(Exception):
@@ -345,21 +346,27 @@ class EmbedAssurance(PhaseAssurance):
 
             with engine.connect() as conn:
                 # Check coverage
-                result = conn.execute("SELECT COUNT(*) FROM chunk_embeddings")
+                result = conn.execute(
+                    text("SELECT COUNT(*) FROM chunk_embeddings")
+                )
                 total_embeddings = result.scalar()
 
                 # Check vector dimensions consistency
                 result = conn.execute(
-                    "SELECT DISTINCT vector_dims(embedding) FROM chunk_embeddings LIMIT 10"
+                    text(
+                        "SELECT DISTINCT vector_dims(embedding) FROM chunk_embeddings LIMIT 10"
+                    )
                 )
                 dims = [row[0] for row in result]
 
                 # Check for HNSW index
-                result = conn.execute("""
+                result = conn.execute(
+                    text("""
                     SELECT indexname FROM pg_indexes
                     WHERE tablename = 'chunk_embeddings'
                     AND indexdef LIKE '%hnsw%'
                 """)
+                )
                 hnsw_indexes = [row[0] for row in result]
 
                 self.metrics.update(

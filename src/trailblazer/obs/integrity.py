@@ -47,7 +47,7 @@ class DataIntegrityChecker:
         self, sample_size: int = 10
     ) -> Dict[str, Any]:
         """Validate traceability keys are retained end-to-end."""
-        results = {
+        results: Dict[str, Any] = {
             "sampled_count": 0,
             "valid_chains": 0,
             "broken_chains": 0,
@@ -86,7 +86,7 @@ class DataIntegrityChecker:
             if not phase_file.exists():
                 continue
 
-            phase_records = []
+            phase_records: List[Dict[str, Any]] = []
             try:
                 with open(phase_file, "r", encoding="utf-8") as f:
                     lines = f.readlines()
@@ -223,7 +223,7 @@ class DataIntegrityChecker:
 
     def check_format_compliance(self) -> Dict[str, Any]:
         """Check format compliance using external tools."""
-        results = {
+        results: Dict[str, Any] = {
             "markdown_files": 0,
             "markdown_errors": 0,
             "format_issues": [],
@@ -263,7 +263,7 @@ class DataIntegrityChecker:
 
     def create_sample_artifacts(self, sample_count: int = 5) -> Dict[str, Any]:
         """Create sampling proof with source chunk IDs for human verification."""
-        results = {
+        results: Dict[str, Any] = {
             "samples_created": 0,
             "sample_directory": None,
             "sample_files": [],
@@ -326,7 +326,7 @@ class DataIntegrityChecker:
         sampling_results = self.create_sample_artifacts()
 
         # Compile comprehensive report
-        report = {
+        report: Dict[str, Any] = {
             "run_id": self.run_id,
             "check_timestamp": "2025-08-15T21:40:00Z",  # Would be dynamic
             "overall_status": "passed"
