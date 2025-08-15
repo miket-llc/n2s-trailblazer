@@ -2567,6 +2567,106 @@ def ops_dispatch_cmd(
         raise typer.Exit(1)
 
 
+@ops_app.command("track-pages")
+def ops_track_pages_cmd(
+    log_file: Optional[str] = typer.Option(
+        None, "--log-file", help="Specific log file to track (default: latest)"
+    ),
+) -> None:
+    """Track and display page processing from embedding logs."""
+    import time
+    from pathlib import Path
+    from ..core.paths import logs
+
+    logs_dir = logs()
+    pages_log = logs_dir / "processed_pages.log"
+
+    typer.echo("🚀 Starting page titles tracker...")
+    typer.echo(f"📄 Log file: {pages_log}")
+    typer.echo("Press Ctrl+C to stop")
+
+    # Initialize log file
+    with open(pages_log, "w") as f:
+        f.write(
+            f"=== Page Titles Tracking Started at {datetime.now().isoformat()} ===\n"
+        )
+        f.write("Format: [TIMESTAMP] [DOC_NUMBER] TITLE (STATUS)\n\n")
+
+    try:
+        while True:
+            # Find the most recent embedding log
+            if log_file:
+                latest_log = Path(log_file)
+            else:
+                embed_logs = list(logs_dir.glob("embed-*.out"))
+                if not embed_logs:
+                    typer.echo("⏳ Waiting for embedding logs...")
+                    time.sleep(5)
+                    continue
+                latest_log = max(embed_logs, key=lambda x: x.stat().st_mtime)
+
+            if latest_log.exists():
+                typer.echo(f"📖 Tracking pages from: {latest_log}")
+                _track_pages_from_log(latest_log, pages_log)
+            else:
+                typer.echo("⏳ Waiting for embedding logs...")
+                time.sleep(5)
+    except KeyboardInterrupt:
+        typer.echo("\n👋 Page tracking stopped")
+
+
+def _track_pages_from_log(log_file: Path, output_log: Path) -> None:
+    """Track pages from a specific log file."""
+    import re
+    import subprocess
+    from datetime import datetime
+
+    run_id = log_file.stem.replace("embed-", "")
+
+    # Use tail -f to follow the log file
+    try:
+        process = subprocess.Popen(
+            ["tail", "-f", str(log_file)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        if process.stdout:
+            for line in process.stdout:
+                # Match patterns like: 📖 [123] Page Title (embedding) or ⏭️ [123] Page Title (skipped)
+                match = re.search(
+                    r"(📖|⏭️).*\[(\d+)\].*\((embedding|skipped)\)", line
+                )
+                if match:
+                    icon, doc_num, status = match.groups()
+
+                    # Extract title (everything between ] and ( )
+                    title_match = re.search(
+                        r"\] (.*) \((embedding|skipped)\)", line
+                    )
+                    title = title_match.group(1) if title_match else "Unknown"
+
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                    # Log to file
+                    with open(output_log, "a") as f:
+                        f.write(
+                            f"[{timestamp}] [{doc_num}] {title} ({status}) - Run: {run_id}\n"
+                        )
+
+                    # Display to console
+                    if status == "embedding":
+                        typer.echo(f"✨ [{doc_num}] {title}")
+                    else:
+                        typer.echo(f"⏭️ [{doc_num}] {title} (skipped)")
+
+    except KeyboardInterrupt:
+        if process:
+            process.terminate()
+        raise
+
+
 @ops_app.command("kill")
 def ops_kill_cmd() -> None:
     """Kill all running embedding processes."""
