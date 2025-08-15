@@ -504,7 +504,7 @@ def normalize_from_ingest_cmd(
         input_file=input_file,
         limit=limit,
     )
-    log.info("cli.normalize.from_ingest.done", run_id=rid, **metrics)
+    log.info("cli.normalize.from_ingest.done", **metrics)
     typer.echo(f"Normalized to: {out}")
 
 
