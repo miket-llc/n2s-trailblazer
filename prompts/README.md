@@ -1,3 +1,4 @@
 # Prompts Index
 
-- 001_observability-instrumentation-and-monitoring.md
+- 000_shared_guardrails.md
+- 001_quality-hotfix-enrich-orphans-traceability.md
