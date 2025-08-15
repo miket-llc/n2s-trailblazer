@@ -346,7 +346,7 @@ def load_normalized_to_db(
                         # Upsert chunk
                         chunk_data = {
                             "chunk_id": chunk.chunk_id,
-                            "doc_id": chunk.chunk_id.split(":")[0],
+                            "doc_id": ":".join(chunk.chunk_id.split(":")[:-1]),
                             "ord": chunk.ord,
                             "text_md": chunk.text_md,
                             "char_count": chunk.char_count,
@@ -408,8 +408,8 @@ def load_normalized_to_db(
                         rate = docs_total / elapsed if elapsed > 0 else 0
                         emit_event(
                             "heartbeat",
-                            docs_processed=docs_total,
-                            chunks_processed=chunks_total,
+                            docs_total=docs_total,
+                            chunks_total=chunks_total,
                             rate_docs_per_sec=rate,
                             elapsed_seconds=elapsed,
                         )

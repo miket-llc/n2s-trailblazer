@@ -820,14 +820,16 @@ def ask(
         _run_db_preflight_check()
 
     import json
+    import os
     import time
+    from datetime import datetime, timezone
     from pathlib import Path
 
     from ..core.artifacts import new_run_id, phase_dir
     from ..retrieval.dense import create_retriever
     from ..retrieval.pack import (
-        group_by_doc,
         pack_context,
+        group_by_doc,
         create_context_summary,
     )
 
@@ -836,31 +838,70 @@ def ask(
     out_path = Path(out_dir) if out_dir else phase_dir(run_id, "ask")
     out_path.mkdir(parents=True, exist_ok=True)
 
-    typer.echo(f"🔍 Asking: {question}")
-    typer.echo(f"📁 Output: {out_path}")
-    typer.echo(f"🧠 Provider: {provider}")
+    # Use db_url from parameter or environment
+    final_db_url = db_url or os.getenv("TRAILBLAZER_DB_URL")
+    if not final_db_url:
+        typer.echo("❌ TRAILBLAZER_DB_URL required", err=True)
+        raise typer.Exit(1)
+
+    # NDJSON event emitter - outputs to stdout
+    def emit_event(event_type: str, **kwargs):
+        event = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event": event_type,
+            "run_id": run_id,
+            **kwargs,
+        }
+        print(json.dumps(event))
+
+    # Human-readable progress to stderr
+    typer.echo(f"🔍 Asking: {question}", err=True)
+    typer.echo(f"📁 Output: {out_path}", err=True)
+    typer.echo(f"🧠 Provider: {provider}", err=True)
+
+    emit_event(
+        "ask.start",
+        question=question,
+        provider=provider,
+        top_k=top_k,
+        max_chars=max_chars,
+    )
 
     try:
         # Create retriever
         start_time = time.time()
-        retriever = create_retriever(db_url=db_url, provider_name=provider)
+        retriever = create_retriever(
+            db_url=final_db_url, provider_name=provider
+        )
 
-        # Perform search
+        # Perform search with event logging
         search_start = time.time()
-        raw_hits = retriever.search(question, top_k=top_k)
+        emit_event(
+            "search.begin", query=question, top_k=top_k, provider=provider
+        )
+        hits = retriever.search(question, top_k=top_k)
+        emit_event("search.end", total_hits=len(hits))
         search_time = time.time() - search_start
 
-        if not raw_hits:
-            typer.echo("❌ No results found")
+        if not hits:
+            typer.echo("❌ No results found", err=True)
+            emit_event("ask.no_results")
             raise typer.Exit(1)
 
         # Group and pack results
         pack_start = time.time()
-        grouped_hits = group_by_doc(raw_hits, max_chunks_per_doc)
-        context = pack_context(grouped_hits, max_chars)
+        grouped_hits = group_by_doc(hits, max_chunks_per_doc)
+        context_str = pack_context(grouped_hits, max_chars)
         pack_time = time.time() - pack_start
 
         total_time = time.time() - start_time
+
+        emit_event(
+            "ask.pack_complete",
+            total_hits=len(hits),
+            selected_hits=len(grouped_hits),
+            context_chars=len(context_str),
+        )
 
         # Create timing info
         timing_info = {
@@ -868,6 +909,12 @@ def ask(
             "search_seconds": search_time,
             "pack_seconds": pack_time,
         }
+
+        # Create summary using the existing function
+        summary = create_context_summary(
+            question, grouped_hits, provider, timing_info
+        )
+        summary["run_id"] = run_id
 
         # Write artifacts
         # 1. hits.jsonl
@@ -877,9 +924,6 @@ def ask(
                 f.write(json.dumps(hit) + "\n")
 
         # 2. summary.json
-        summary = create_context_summary(
-            question, grouped_hits, provider, timing_info
-        )
         summary_file = out_path / "summary.json"
         with open(summary_file, "w") as f:
             json.dump(summary, f, indent=2)
@@ -887,42 +931,61 @@ def ask(
         # 3. context.txt
         context_file = out_path / "context.txt"
         with open(context_file, "w") as f:
-            f.write(context)
+            f.write(context_str)
+
+        emit_event(
+            "ask.artifacts_written",
+            hits_file=str(hits_file),
+            summary_file=str(summary_file),
+            context_file=str(context_file),
+        )
 
         # Output results
         if format_output == "json":
-            typer.echo(json.dumps(summary, indent=2))
+            typer.echo(json.dumps(summary, indent=2), err=True)
         else:
-            # Text format - show summary
-            typer.echo("\n📊 Results:")
-            typer.echo(f"  Top hits: {len(grouped_hits)}")
-            typer.echo(f"  Documents: {summary['unique_documents']}")
-            typer.echo(f"  Characters: {summary['total_characters']:,}")
+            # Text format - show summary to stderr
+            typer.echo("\n📊 Results:", err=True)
+            typer.echo(f"  Top hits: {len(grouped_hits)}", err=True)
+            typer.echo(f"  Documents: {summary['unique_documents']}", err=True)
             typer.echo(
-                f"  Score range: {summary['score_stats']['min']:.3f} - {summary['score_stats']['max']:.3f}"
+                f"  Characters: {summary['total_characters']:,}", err=True
             )
-            typer.echo(f"  Duration: {total_time:.2f}s")
+            typer.echo(
+                f"  Score range: {summary['score_stats']['min']:.3f} - {summary['score_stats']['max']:.3f}",
+                err=True,
+            )
+            typer.echo(f"  Duration: {total_time:.2f}s", err=True)
 
             # Show top few hits
-            typer.echo("\n🎯 Top results:")
+            typer.echo("\n🎯 Top results:", err=True)
             for i, hit in enumerate(grouped_hits[:3]):
                 title = hit.get("title", "Untitled")
                 url = hit.get("url", "")
                 score = hit.get("score", 0.0)
-                typer.echo(f"  {i + 1}. {title} (score: {score:.3f})")
+                typer.echo(
+                    f"  {i + 1}. {title} (score: {score:.3f})", err=True
+                )
                 if url:
-                    typer.echo(f"     {url}")
+                    typer.echo(f"     {url}", err=True)
 
             if len(grouped_hits) > 3:
-                typer.echo(f"     ... and {len(grouped_hits) - 3} more")
+                typer.echo(
+                    f"     ... and {len(grouped_hits) - 3} more", err=True
+                )
 
-            typer.echo("\n📄 Context preview (first 200 chars):")
-            preview = context[:200].replace("\n", " ")
-            typer.echo(f"  {preview}{'...' if len(context) > 200 else ''}")
+            typer.echo("\n📄 Context preview (first 200 chars):", err=True)
+            preview = context_str[:200].replace("\n", " ")
+            typer.echo(
+                f"  {preview}{'...' if len(context_str) > 200 else ''}",
+                err=True,
+            )
 
-        typer.echo(f"\n✅ Artifacts written to: {out_path}")
+        typer.echo(f"\n✅ Artifacts written to: {out_path}", err=True)
+        emit_event("ask.complete", total_time=total_time)
 
     except Exception as e:
+        emit_event("ask.error", error=str(e))
         typer.echo(f"❌ Error during retrieval: {e}", err=True)
         raise typer.Exit(1)
 

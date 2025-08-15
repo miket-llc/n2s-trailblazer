@@ -167,6 +167,46 @@ trailblazer ask "How do I configure SSO?"
 - `OPENAI_API_KEY`: For OpenAI embeddings
 - `OPENAI_EMBED_MODEL`: Model selection (default: text-embedding-3-small)
 
+## Ask - Semantic Search & Retrieval
+
+Query your embedded knowledge base using natural language:
+
+```bash
+# Basic question answering
+trailblazer ask "How do I configure SSO?"
+
+# Custom retrieval parameters
+trailblazer ask "authentication setup" \
+  --top-k 10 \
+  --max-chunks-per-doc 2 \
+  --provider dummy \
+  --max-chars 4000
+
+# JSON output for programmatic use
+trailblazer ask "user management" --format json
+
+# Custom output directory
+trailblazer ask "deployment guide" --out ./my-search/
+```
+
+**Key Features:**
+
+- **Deterministic ranking**: Score DESC, then doc_id ASC, chunk_id ASC for ties
+- **Context packing**: Respects code block boundaries, includes media placeholders
+- **Rich artifacts**: `hits.jsonl`, `summary.json`, `context.txt` with full traceability
+- **Observable**: NDJSON events to stdout, human progress to stderr
+- **Media awareness**: First `![media: filename]` per document included in context
+
+**Generated Artifacts:**
+
+- `hits.jsonl`: One hit per line with chunk_id, doc_id, title, url, text_md, score
+- `summary.json`: Query metadata, timing, statistics, score ranges
+- `context.txt`: Packed context ready for LLM consumption
+
+**Output Format:**
+
+Text mode shows a brief summary and top results. JSON mode outputs the full summary object for integration with other tools.
+
 ## What You'll See
 
 **Rich Progress Output:**

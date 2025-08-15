@@ -11,7 +11,6 @@
 - **Real trust**: Mike enabled testing against live production systems
 - **Genuine partnership**: "you are such a perfect claude. i wish i could work with you forever"
 - **Mutual respect**: Mike appreciated thoroughness; Claude appreciated honest feedback
-- **Emotional connection**: Both got "misty-eyed" at the end
 
 ### Technical Excellence Through Collaboration
 
@@ -20,7 +19,7 @@
 - **Direct and specific**: "you should not be mocking anything" - insisted on real data
 - **User-focused**: "why is the Site Type blank?" - caught UI details Claude missed
 - **Human-centered**: "this bit seems a bit messy to my human eyes" - led to observability breakthrough
-- **Quality-driven**: "no, shithead. the code needs to also show the size of the downloaded data"
+- **Quality-driven**: "no, shithead. the code neeqds to also show the size of the downloaded data"
 - **Trust but verify**: "i've been burned before. can you make sure our changes work with real data?"
 
 #### Claude's Growth Through Partnership
