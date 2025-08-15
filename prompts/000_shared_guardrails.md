@@ -82,3 +82,12 @@ Provide a single place to diagnose: trailblazer db doctor.
 **Cursor limit:** Keep prompts ≤10 to-dos; chunk work if needed.
 
 **No regression:** Before edits, read the module and associated tests; prefer minimal deltas. If complexity is high, refactor in tiny steps with passing tests after each step.
+
+## Golden Path & Config-First (Runtime, Non-Negotiable)
+
+- **Config-first**: The pipeline runs primarily from a single config file (`.trailblazer.{yaml|yml|toml}`) auto-loaded from CWD. Flags are minimal and only for rare overrides.
+- **One Golden Path**: A single orchestrator command (e.g., `trailblazer run`) drives phases in order (ingest→normalize→enrich→chunk→classify→embed→compose→playbook). No multi-tenant abstractions.
+- **Idempotence + Reset**: `run` must resume safely if re-executed and support a scoped `--reset` that reinitializes artifacts and/or DB facets as defined in config.
+- **Postgres-only**: No SQLite in runtime. Fail fast if pgvector or DB connectivity is missing.
+- **Observability built-in**: pretty to stderr, typed NDJSON to stdout, heartbeats, worker-aware ETA, per-phase assurance/quality gates, immutable artifacts in `var/`.
+- **Review-before-build**: Before adding flags or commands, *discover the existing code & config* and adapt to it—do not invent switches that dont
