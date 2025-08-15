@@ -191,6 +191,41 @@ def chunk_document(
     return chunks
 
 
+def inject_media_placeholders(text_md: str, attachments: List[Dict]) -> str:
+    """
+    Inject media placeholders for attachments to make them chunk-addressable.
+
+    Args:
+        text_md: Original markdown text
+        attachments: List of attachment objects with 'filename' field
+
+    Returns:
+        Text with ![media: <filename>] placeholders injected
+    """
+    if not attachments:
+        return text_md
+
+    # Add media placeholders at the end if they aren't already referenced
+    media_section_lines = []
+    for attachment in attachments:
+        filename = attachment.get("filename", "")
+        if filename:
+            placeholder = f"![media: {filename}]"
+            # Only add if not already present in text
+            if placeholder not in text_md:
+                media_section_lines.append(placeholder)
+
+    if media_section_lines:
+        if text_md.strip():
+            return f"{text_md}\n\n## Media\n\n" + "\n".join(
+                media_section_lines
+            )
+        else:
+            return "## Media\n\n" + "\n".join(media_section_lines)
+
+    return text_md
+
+
 def chunk_normalized_record(record: Dict) -> List[Chunk]:
     """
     Chunk a normalized record from the normalize phase.
@@ -204,8 +239,12 @@ def chunk_normalized_record(record: Dict) -> List[Chunk]:
     doc_id = record.get("id", "")
     title = record.get("title", "")
     text_md = record.get("text_md", "")
+    attachments = record.get("attachments", [])
 
     if not doc_id:
         raise ValueError("Record missing required 'id' field")
 
-    return chunk_document(doc_id, text_md, title)
+    # Inject media placeholders to make media chunk-addressable
+    text_with_media = inject_media_placeholders(text_md, attachments)
+
+    return chunk_document(doc_id, text_with_media, title)

@@ -30,22 +30,22 @@ def temp_db():
     # Add test documents
     doc1 = Document(
         doc_id="doc1",
-        source="test",
+        source_system="test",
         title="Test Document 1",
         url="http://example.com/doc1",
         created_at=datetime.now(),
         updated_at=datetime.now(),
-        body_repr="storage",
+        content_sha256="test_hash_doc1" * 4,  # 64 char hash
         meta={},
     )
     doc2 = Document(
         doc_id="doc2",
-        source="test",
+        source_system="test",
         title="Test Document 2",
         url="http://example.com/doc2",
         created_at=datetime.now(),
         updated_at=datetime.now(),
-        body_repr="storage",
+        content_sha256="test_hash_doc2" * 4,  # 64 char hash
         meta={},
     )
     session.add_all([doc1, doc2])

@@ -107,10 +107,10 @@ def test_load_normalized_to_db_basic(temp_db, normalized_file):
     )
 
     # Check metrics
-    assert metrics["docs_processed"] == 2
-    assert metrics["docs_upserted"] == 2
-    assert metrics["chunks_processed"] > 0
-    assert metrics["embeddings_processed"] > 0
+    assert metrics["docs_total"] == 2
+    assert metrics["docs_embedded"] == 2
+    assert metrics["chunks_total"] > 0
+    assert metrics["chunks_embedded"] > 0
     assert metrics["provider"] == "dummy"
     assert metrics["dimension"] == 384  # Default dummy dimension
 
@@ -124,7 +124,7 @@ def test_load_normalized_to_db_basic(temp_db, normalized_file):
         doc1 = session.query(Document).filter_by(doc_id="doc1").first()
         assert doc1 is not None
         assert doc1.title == "First Document"
-        assert doc1.source == "confluence"
+        assert doc1.source_system == "confluence"
         assert doc1.space_key == "TEST"
 
         # Check chunks
@@ -163,9 +163,10 @@ def test_load_normalized_idempotency(temp_db, normalized_file):
         input_file=normalized_file, provider_name="dummy", batch_size=5
     )
 
-    # Should process same number but not upsert on second run
-    assert metrics1["docs_processed"] == metrics2["docs_processed"]
-    assert metrics1["chunks_processed"] == metrics2["chunks_processed"]
+    # Should process same number but skip on second run
+    assert metrics1["docs_total"] == metrics2["docs_total"]
+    assert metrics1["docs_embedded"] > 0
+    assert metrics2["docs_skipped"] > 0  # Second run should skip documents
 
     # Check database counts remain the same
     session_factory = get_session_factory()
@@ -175,8 +176,8 @@ def test_load_normalized_idempotency(temp_db, normalized_file):
         embedding_count = session.query(ChunkEmbedding).count()
 
         assert doc_count == 2
-        assert chunk_count == metrics1["chunks_processed"]
-        assert embedding_count == metrics1["embeddings_processed"]
+        assert chunk_count == metrics1["chunks_total"]
+        assert embedding_count == metrics1["chunks_embedded"]
 
 
 def test_load_normalized_with_limits(temp_db, normalized_file):
@@ -186,7 +187,7 @@ def test_load_normalized_with_limits(temp_db, normalized_file):
         input_file=normalized_file, provider_name="dummy", max_docs=1
     )
 
-    assert metrics["docs_processed"] == 1
+    assert metrics["docs_total"] == 1
 
     session_factory = get_session_factory()
     with session_factory() as session:
@@ -203,13 +204,13 @@ def test_load_normalized_batch_size(temp_db, normalized_file):
         batch_size=1,  # Very small batch
     )
 
-    assert metrics["embeddings_processed"] > 0
+    assert metrics["chunks_embedded"] > 0
 
     # Verify embeddings were created
     session_factory = get_session_factory()
     with session_factory() as session:
         embedding_count = session.query(ChunkEmbedding).count()
-        assert embedding_count == metrics["embeddings_processed"]
+        assert embedding_count == metrics["chunks_embedded"]
 
 
 def test_load_normalized_missing_file(temp_db):
@@ -239,7 +240,7 @@ def test_load_normalized_invalid_json(temp_db):
         )
 
         # Should process the valid lines only
-        assert metrics["docs_processed"] == 2
+        assert metrics["docs_total"] == 2
 
     finally:
         Path(temp_path).unlink()
@@ -266,8 +267,8 @@ def test_load_normalized_empty_content(temp_db):
         )
 
         # Should process document and create chunk for title
-        assert metrics["docs_processed"] == 1
-        assert metrics["chunks_processed"] == 1  # Title creates a chunk
+        assert metrics["docs_total"] == 1
+        assert metrics["chunks_total"] == 1  # Title creates a chunk
 
     finally:
         Path(temp_path).unlink()

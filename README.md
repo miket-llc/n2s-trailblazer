@@ -127,6 +127,46 @@ trailblazer status
 
 For advanced options and individual space ingests, see [`scripts/examples.md`](scripts/examples.md) or use the underlying `trailblazer ingest confluence` and `trailblazer normalize from-ingest` commands directly.
 
+## Embedding & Indexing
+
+The embedding system converts normalized documents into vector embeddings for similarity search using PostgreSQL + pgvector:
+
+```bash
+# Check database connectivity and pgvector availability
+trailblazer db check
+
+# Initialize database schema (safe if tables exist)
+trailblazer db init
+
+# Load normalized documents with embeddings (idempotent)
+trailblazer embed load --run-id <RUN_ID> --provider dummy
+
+# Query the embedded knowledge base
+trailblazer ask "How do I configure SSO?"
+```
+
+**Key Features:**
+
+- **Idempotent loading** via content SHA256 hashing - skips unchanged documents
+- **Media-aware chunking** with ![media: filename] placeholders for attachments
+- **Pluggable providers**: dummy (deterministic), OpenAI, SentenceTransformers
+- **Postgres-first**: Required for production, SQLite only for tests
+- **Assurance reports**: JSON + Markdown with statistics and error summaries
+- **Rich observability**: Progress bars, heartbeats, NDJSON event logs
+
+**Database Schema:**
+
+- `documents`: Metadata with content_sha256 for change detection
+- `chunks`: Semantic text chunks with character/token counts
+- `chunk_embeddings`: Vector storage per provider with UNIQUE constraints
+
+**Environment Variables:**
+
+- `TRAILBLAZER_DB_URL`: PostgreSQL connection string (required)
+- `EMBED_PROVIDER`: Provider selection (dummy|openai|sentencetransformers)
+- `OPENAI_API_KEY`: For OpenAI embeddings
+- `OPENAI_EMBED_MODEL`: Model selection (default: text-embedding-3-small)
+
 ## What You'll See
 
 **Rich Progress Output:**

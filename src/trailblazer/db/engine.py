@@ -179,18 +179,28 @@ class Document(Base):
     __tablename__ = "documents"
 
     doc_id = Column(String, primary_key=True)
-    source = Column(String, nullable=False)  # e.g., "confluence"
+    source_system = Column(
+        String, nullable=False
+    )  # e.g., "confluence", "dita"
     title = Column(String)
     space_key = Column(String)
     url = Column(String)
     created_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True))
-    body_repr = Column(String)  # "storage" | "adf"
+    content_sha256 = Column(
+        String, nullable=False, unique=True
+    )  # For idempotency
     meta = Column(JSON)  # Additional metadata as JSON
 
     # Relationships
     chunks = relationship(
         "Chunk", back_populates="document", cascade="all, delete-orphan"
+    )
+
+    # Index for efficient queries
+    __table_args__ = (
+        Index("idx_documents_source_space", "source_system", "space_key"),
+        Index("idx_documents_content_hash", "content_sha256"),
     )
 
 
@@ -207,6 +217,7 @@ class Chunk(Base):
     token_count = Column(
         Integer, nullable=False
     )  # Simple proxy: len(text.split())
+    meta = Column(JSON)  # Additional chunk metadata as JSON
 
     # Relationships
     document = relationship("Document", back_populates="chunks")
@@ -215,7 +226,10 @@ class Chunk(Base):
     )
 
     # Composite index for efficient document-based queries
-    __table_args__ = (Index("idx_chunks_doc_ord", "doc_id", "ord"),)
+    __table_args__ = (
+        Index("idx_chunks_doc_ord", "doc_id", "ord"),
+        Index("idx_chunks_unique_doc_ord", "doc_id", "ord", unique=True),
+    )
 
 
 class ChunkEmbedding(Base):
@@ -228,7 +242,7 @@ class ChunkEmbedding(Base):
     dim = Column(Integer, nullable=False)  # Embedding dimension
     created_at = Column(DateTime(timezone=True), default=func.now())
 
-    # Embedding storage - will be set dynamically in __init_subclass__
+    # Embedding storage - will be set dynamically based on database type
     embedding = Column(JSON)  # Default to JSON
 
     def __init_subclass__(cls, **kwargs):
@@ -241,6 +255,13 @@ class ChunkEmbedding(Base):
 
     # Relationships
     chunk = relationship("Chunk", back_populates="embeddings")
+
+    # Unique constraint
+    __table_args__ = (
+        Index(
+            "idx_chunk_embeddings_unique", "chunk_id", "provider", unique=True
+        ),
+    )
 
 
 def upsert_document(session, doc_data: Dict[str, Any]) -> Document:

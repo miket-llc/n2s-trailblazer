@@ -30,12 +30,12 @@ def test_db_with_data():
     # Add test document
     doc = Document(
         doc_id="test_doc_001",
-        source="test",
+        source_system="test",
         title="Test Guide: How to Configure SSO",
         url="http://example.com/sso-guide",
         created_at=datetime.now(),
         updated_at=datetime.now(),
-        body_repr="storage",
+        content_sha256="test_hash_001" * 8,  # 64 char hash
         meta={"space": "TEST"},
     )
     session.add(doc)
