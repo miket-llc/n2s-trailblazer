@@ -186,8 +186,40 @@ trailblazer ask "How do I configure SSO?"
 - **Media-aware chunking** with ![media: filename] placeholders for attachments
 - **Pluggable providers**: dummy (deterministic), OpenAI, SentenceTransformers
 - **Postgres-first**: Required for production, SQLite only for tests
+- **Selective re-embed** with `--changed-only` (via enrichment fingerprints)
 - **Assurance reports**: JSON + Markdown with statistics and error summaries
-- **Rich observability**: Progress bars, heartbeats, NDJSON event logs
+
+### Selective Re-embed with --changed-only (via enrichment fingerprints)
+
+When you run enrichment multiple times and only want to re-embed documents whose enrichment metadata has changed:
+
+```bash
+# First embedding run - embeds all documents
+trailblazer embed load --run-id <RUN_ID> --provider dummy
+
+# Re-run enrichment with changes
+trailblazer enrich <RUN_ID> --llm
+
+# Second embedding run - only embeds documents with changed enrichment fingerprints
+trailblazer embed load --run-id <RUN_ID> --provider dummy --changed-only
+```
+
+**How it works:**
+
+1. **Fingerprint tracking**: Enrichment generates `fingerprints.jsonl` with SHA256 hashes of enrichment metadata per document
+1. **Change detection**: `--changed-only` compares current vs previous fingerprints (`fingerprints.prev.jsonl`)
+1. **Selective processing**: Only documents with changed/new fingerprints are re-embedded
+1. **Atomic updates**: After successful embedding, current fingerprints become the new previous fingerprints
+1. **Observability**: Progress shows `changed=N unchanged=M` and assurance reports include both counts
+
+**When to use:**
+
+- After re-running enrichment with different LLM settings
+- When enrichment rules or taxonomy change
+- To incrementally update embeddings without full re-processing
+- When embedding is expensive and most documents are unchanged
+
+**Rich observability**: Progress bars, heartbeats, NDJSON event logs
 
 **Database Schema:**
 

@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from rich.console import Console
 from rich.progress import (
@@ -77,6 +77,107 @@ def _compute_content_hash(record: Dict[str, Any]) -> str:
     return hashlib.sha256(content_json.encode("utf-8")).hexdigest()
 
 
+def _load_fingerprints(fingerprints_path: Path) -> Dict[str, str]:
+    """
+    Load enrichment fingerprints from JSONL file.
+
+    Args:
+        fingerprints_path: Path to fingerprints.jsonl file
+
+    Returns:
+        Dictionary mapping doc_id to fingerprint_sha256
+    """
+    fingerprints = {}
+    if fingerprints_path.exists():
+        with open(fingerprints_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        record = json.loads(line.strip())
+                        doc_id = record.get("id")
+                        fingerprint = record.get("fingerprint_sha256")
+                        if doc_id and fingerprint:
+                            fingerprints[doc_id] = fingerprint
+                    except json.JSONDecodeError:
+                        # Skip malformed lines
+                        continue
+    return fingerprints
+
+
+def _determine_changed_docs(
+    run_id: str, changed_only: bool
+) -> Optional[Set[str]]:
+    """
+    Determine which documents have changed based on enrichment fingerprints.
+
+    Args:
+        run_id: The run ID to check
+        changed_only: Whether to perform fingerprint comparison
+
+    Returns:
+        Set of doc_ids that have changed, or None if all should be processed
+    """
+    if not changed_only:
+        return None
+
+    from ....core.artifacts import phase_dir
+
+    enrich_dir = phase_dir(run_id, "enrich")
+    fingerprints_path = enrich_dir / "fingerprints.jsonl"
+    prev_fingerprints_path = enrich_dir / "fingerprints.prev.jsonl"
+
+    if not fingerprints_path.exists():
+        raise FileNotFoundError(
+            f"Fingerprints file not found: {fingerprints_path}"
+        )
+
+    # Load current fingerprints
+    current_fingerprints = _load_fingerprints(fingerprints_path)
+
+    # Load previous fingerprints if they exist
+    if prev_fingerprints_path.exists():
+        prev_fingerprints = _load_fingerprints(prev_fingerprints_path)
+    else:
+        # No previous fingerprints, treat all as changed
+        return set(current_fingerprints.keys())
+
+    # Find documents with changed or new fingerprints
+    changed_docs = set()
+    for doc_id, current_fp in current_fingerprints.items():
+        prev_fp = prev_fingerprints.get(doc_id)
+        if prev_fp != current_fp:
+            changed_docs.add(doc_id)
+
+    return changed_docs
+
+
+def _save_fingerprints_as_previous(run_id: str) -> None:
+    """
+    Atomically copy fingerprints.jsonl to fingerprints.prev.jsonl.
+
+    Args:
+        run_id: The run ID to process
+    """
+    from ....core.artifacts import phase_dir
+    import shutil
+
+    enrich_dir = phase_dir(run_id, "enrich")
+    fingerprints_path = enrich_dir / "fingerprints.jsonl"
+    prev_fingerprints_path = enrich_dir / "fingerprints.prev.jsonl"
+
+    if fingerprints_path.exists():
+        # Atomic copy using a temporary file
+        temp_path = prev_fingerprints_path.with_suffix(".tmp")
+        try:
+            shutil.copy2(fingerprints_path, temp_path)
+            temp_path.rename(prev_fingerprints_path)
+        except Exception:
+            # Clean up temp file if something went wrong
+            if temp_path.exists():
+                temp_path.unlink()
+            raise
+
+
 def load_normalized_to_db(
     run_id: Optional[str] = None,
     input_file: Optional[str] = None,
@@ -84,6 +185,7 @@ def load_normalized_to_db(
     batch_size: int = 128,
     max_docs: Optional[int] = None,
     max_chunks: Optional[int] = None,
+    changed_only: bool = False,
 ) -> Dict[str, Any]:
     """
     Load normalized documents into the database with embeddings (idempotent).
@@ -95,6 +197,7 @@ def load_normalized_to_db(
         batch_size: Batch size for embedding generation
         max_docs: Maximum number of documents to process
         max_chunks: Maximum number of chunks to process
+        changed_only: Only embed documents with changed enrichment fingerprints
 
     Returns:
         Metrics dictionary with counts and timing
@@ -111,6 +214,9 @@ def load_normalized_to_db(
     if not input_path.exists():
         raise FileNotFoundError(f"Normalized file not found: {input_path}")
 
+    # Determine which documents to process based on fingerprints
+    changed_docs = _determine_changed_docs(run_id, changed_only)
+
     # Get embedding provider
     embedder = get_embedding_provider(provider_name)
 
@@ -124,6 +230,8 @@ def load_normalized_to_db(
     docs_total = 0
     docs_skipped = 0
     docs_embedded = 0
+    docs_changed = 0
+    docs_unchanged = 0
     chunks_total = 0
     chunks_skipped = 0
     chunks_embedded = 0
@@ -150,6 +258,10 @@ def load_normalized_to_db(
         batch_size=batch_size,
         max_docs=max_docs,
         max_chunks=max_chunks,
+        changed_only=changed_only,
+        changed_docs_count=len(changed_docs)
+        if changed_docs is not None
+        else None,
     )
 
     console.print("🔄 [bold cyan]Loading embeddings[/bold cyan]")
@@ -204,6 +316,20 @@ def load_normalized_to_db(
                         continue
 
                     docs_total += 1
+
+                    # Check if document should be processed based on fingerprints
+                    if changed_docs is not None and doc_id not in changed_docs:
+                        docs_unchanged += 1
+                        emit_event(
+                            "embed.skip.doc_by_fingerprint",
+                            doc_id=doc_id,
+                            reason="unchanged_fingerprint",
+                        )
+                        continue
+
+                    # Only track changed docs when using changed_only mode
+                    if changed_docs is not None:
+                        docs_changed += 1
 
                     # Compute content hash for idempotency
                     content_hash = _compute_content_hash(record)
@@ -444,6 +570,8 @@ def load_normalized_to_db(
         "docs_total": docs_total,
         "docs_skipped": docs_skipped,
         "docs_embedded": docs_embedded,
+        "docs_changed": docs_changed,
+        "docs_unchanged": docs_unchanged,
         "chunks_total": chunks_total,
         "chunks_skipped": chunks_skipped,
         "chunks_embedded": chunks_embedded,
@@ -454,6 +582,15 @@ def load_normalized_to_db(
 
     emit_event("embed.load.done", **metrics)
 
+    # Save fingerprints as previous if changed_only was used and embedding was successful
+    if changed_only and run_id and run_id != "unknown":
+        try:
+            _save_fingerprints_as_previous(run_id)
+            emit_event("embed.fingerprints_saved", fingerprints_saved=True)
+        except Exception as e:
+            emit_event("embed.fingerprints_save_error", error=str(e))
+            log.warning("embed.fingerprints_save_failed", error=str(e))
+
     # Generate assurance report
     if run_id and run_id != "unknown":
         _generate_assurance_report(run_id, metrics)
@@ -461,6 +598,10 @@ def load_normalized_to_db(
     # Print summary
     console.print("")
     console.print("📊 [bold green]Embedding Complete[/bold green]")
+    if changed_only:
+        console.print(
+            f"📄 Documents: [cyan]{docs_changed}[/cyan] changed, [yellow]{docs_unchanged}[/yellow] unchanged"
+        )
     console.print(
         f"📄 Documents: [cyan]{docs_embedded}[/cyan] embedded, [yellow]{docs_skipped}[/yellow] skipped"
     )
@@ -526,6 +667,8 @@ def _generate_assurance_report(run_id: str, metrics: Dict[str, Any]) -> None:
         "docs_total": metrics["docs_total"],
         "docs_skipped": metrics["docs_skipped"],
         "docs_embedded": metrics["docs_embedded"],
+        "docs_changed": metrics.get("docs_changed", 0),
+        "docs_unchanged": metrics.get("docs_unchanged", 0),
         "chunks_total": metrics["chunks_total"],
         "chunks_skipped": metrics["chunks_skipped"],
         "chunks_embedded": metrics["chunks_embedded"],

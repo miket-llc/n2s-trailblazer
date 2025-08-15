@@ -733,6 +733,11 @@ def embed_load_cmd(
     max_chunks: Optional[int] = typer.Option(
         None, "--max-chunks", help="Maximum number of chunks to process"
     ),
+    changed_only: bool = typer.Option(
+        False,
+        "--changed-only",
+        help="Only embed documents with changed enrichment fingerprints",
+    ),
 ) -> None:
     """Load normalized documents to database with embeddings."""
     # Run database preflight check first
@@ -763,18 +768,20 @@ def embed_load_cmd(
             batch_size=batch_size,
             max_docs=max_docs,
             max_chunks=max_chunks,
+            changed_only=changed_only,
         )
 
         # Display summary
         typer.echo("\n📊 Summary:")
+        if changed_only:
+            typer.echo(
+                f"  Documents: {metrics.get('docs_changed', 0)} changed, {metrics.get('docs_unchanged', 0)} unchanged"
+            )
         typer.echo(
-            f"  Documents: {metrics['docs_processed']} processed, {metrics['docs_upserted']} upserted"
+            f"  Documents: {metrics.get('docs_embedded', 0)} embedded, {metrics.get('docs_skipped', 0)} skipped"
         )
         typer.echo(
-            f"  Chunks: {metrics['chunks_processed']} processed, {metrics['chunks_upserted']} upserted"
-        )
-        typer.echo(
-            f"  Embeddings: {metrics['embeddings_processed']} processed, {metrics['embeddings_upserted']} upserted"
+            f"  Chunks: {metrics.get('chunks_embedded', 0)} embedded, {metrics.get('chunks_skipped', 0)} skipped"
         )
         typer.echo(
             f"  Provider: {metrics['provider']} (dim={metrics['dimension']})"
