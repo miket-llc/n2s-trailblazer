@@ -17,8 +17,9 @@ app = typer.Typer(add_completion=False, help="Trailblazer CLI")
 def main_callback(ctx: typer.Context):
     """Main callback to enforce environment checks before any command execution."""
     from ..env_checks import assert_virtualenv_on_macos
+
     assert_virtualenv_on_macos()
-    
+
     # If no command was provided, show help
     if ctx.invoked_subcommand is None:
         typer.echo(ctx.get_help())
@@ -3026,6 +3027,7 @@ def logs_doctor():
 if __name__ == "__main__":
     # Enforce macOS venv check before any commands
     from ..env_checks import assert_virtualenv_on_macos
+
     assert_virtualenv_on_macos()
-    
+
     app()
