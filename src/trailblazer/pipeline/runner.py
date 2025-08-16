@@ -193,7 +193,20 @@ def _execute_phase(
 
         # Extract run_id from output path (runs/<run_id>/embed)
         run_id = out.split("/")[-2]
-        load_normalized_to_db(run_id=run_id, provider_name="dummy")
+
+        # Use settings for embedding configuration
+        provider_name = settings.EMBED_PROVIDER if settings else "dummy"
+        model = settings.EMBED_MODEL if settings else None
+        dimensions = settings.EMBED_DIMENSIONS if settings else None
+        batch_size = settings.EMBED_BATCH_SIZE if settings else 128
+
+        load_normalized_to_db(
+            run_id=run_id,
+            provider_name=provider_name,
+            model=model,
+            dimensions=dimensions,
+            batch_size=batch_size,
+        )
     elif phase == "retrieve":
         # This is handled via the CLI 'ask' command
         # Runner can create a placeholder directory for consistency

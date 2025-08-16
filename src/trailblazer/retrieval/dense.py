@@ -212,14 +212,13 @@ class DenseRetriever:
             """
             )
 
-            results = session.execute(
-                query_text,
-                {
-                    "query_vec": query_vec.tolist(),
-                    "provider": provider,
-                    "top_k": top_k,
-                },
-            ).fetchall()
+            params = {
+                "query_vec": query_vec.tolist(),
+                "provider": provider,
+                "top_k": top_k,
+            }
+
+            results = session.execute(query_text, params).fetchall()
 
             return [
                 {
