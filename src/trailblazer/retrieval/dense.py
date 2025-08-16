@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from sqlalchemy import text
 
 from ..db.engine import (
     ChunkEmbedding,
@@ -193,44 +192,58 @@ class DenseRetriever:
             List of chunk results with scores
         """
         with self.session_factory() as session:
-            # Use pgvector cosine distance operator
-            query_text = text(
-                """
-                SELECT
-                    c.chunk_id,
-                    c.doc_id,
-                    c.text_md,
-                    d.title,
-                    d.url,
-                    1 - (ce.embedding <=> :query_vec::vector) as score
-                FROM chunks c
-                JOIN chunk_embeddings ce ON c.chunk_id = ce.chunk_id
-                JOIN documents d ON c.doc_id = d.doc_id
-                WHERE ce.provider = :provider
-                ORDER BY ce.embedding <=> :query_vec::vector, d.doc_id, c.chunk_id
-                LIMIT :top_k
-            """
+            # Use ORM approach to avoid SQL parameter binding issues
+            query = (
+                session.query(
+                    Chunk.chunk_id,
+                    Chunk.doc_id,
+                    Chunk.text_md,
+                    Document.title,
+                    Document.url,
+                )
+                .join(
+                    ChunkEmbedding, Chunk.chunk_id == ChunkEmbedding.chunk_id
+                )
+                .join(Document, Chunk.doc_id == Document.doc_id)
+                .filter(ChunkEmbedding.provider == provider)
+                .limit(top_k * 3)  # Get more candidates for proper ranking
             )
 
-            params = {
-                "query_vec": query_vec.tolist(),
-                "provider": provider,
-                "top_k": top_k,
-            }
+            candidates = []
+            for chunk_id, doc_id, text_md, title, url in query.all():
+                # Get the embedding for this chunk
+                embedding_record = (
+                    session.query(ChunkEmbedding)
+                    .filter(
+                        ChunkEmbedding.chunk_id == chunk_id,
+                        ChunkEmbedding.provider == provider,
+                    )
+                    .first()
+                )
 
-            results = session.execute(query_text, params).fetchall()
+                if embedding_record:
+                    embedding_vec = np.array(
+                        deserialize_embedding(embedding_record.embedding)
+                    )
+                    score = cosine_sim(query_vec, embedding_vec)
 
-            return [
-                {
-                    "chunk_id": row.chunk_id,
-                    "doc_id": row.doc_id,
-                    "text_md": row.text_md,
-                    "title": row.title or "",
-                    "url": row.url or "",
-                    "score": float(row.score),
-                }
-                for row in results
-            ]
+                    candidates.append(
+                        {
+                            "chunk_id": chunk_id,
+                            "doc_id": doc_id,
+                            "text_md": text_md,
+                            "title": title or "",
+                            "url": url or "",
+                            "score": float(score),
+                        }
+                    )
+
+            # Sort by score descending, then doc_id, chunk_id for deterministic ordering
+            candidates.sort(
+                key=lambda x: (-x["score"], x["doc_id"], x["chunk_id"])
+            )
+
+            return candidates[:top_k]
 
     def search(self, query: str, top_k: int = 8) -> List[Dict[str, Any]]:
         """

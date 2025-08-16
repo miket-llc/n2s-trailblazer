@@ -8,6 +8,7 @@ import sys
 from ..core.logging import setup_logging, log
 from ..core.config import SETTINGS
 from ..pipeline.runner import run as run_pipeline
+from .db_admin import app as db_admin_app
 from ..core.config import Settings
 
 app = typer.Typer(add_completion=False, help="Trailblazer CLI")
@@ -36,6 +37,7 @@ runs_app = typer.Typer(help="Runs management commands")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(normalize_app, name="normalize")
 app.add_typer(db_app, name="db")
+app.add_typer(db_admin_app, name="db-admin")
 app.add_typer(embed_app, name="embed")
 app.add_typer(confluence_app, name="confluence")
 app.add_typer(ops_app, name="ops")

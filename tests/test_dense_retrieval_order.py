@@ -179,9 +179,6 @@ def test_top_k_ordering():
     assert results[2]["chunk_id"] == "chunk3"
 
 
-@pytest.mark.skip(
-    reason="Database tests require complex pgvector setup - skipping for CI"
-)
 def test_retriever_deterministic_ordering(temp_db):
     """Test that retriever produces deterministic ordering."""
     retriever = DenseRetriever(provider_name="dummy")
@@ -202,9 +199,6 @@ def test_retriever_deterministic_ordering(temp_db):
         assert r1["doc_id"] == r2["doc_id"]
 
 
-@pytest.mark.skip(
-    reason="Database tests require complex pgvector setup - skipping for CI"
-)
 def test_retriever_score_ordering(temp_db):
     """Test that results are properly ordered by score."""
     retriever = DenseRetriever(provider_name="dummy")
@@ -226,9 +220,6 @@ def test_retriever_score_ordering(temp_db):
                 assert results[i]["doc_id"] <= results[i + 1]["doc_id"]
 
 
-@pytest.mark.skip(
-    reason="Database tests require complex pgvector setup - skipping for CI"
-)
 def test_retriever_metadata(temp_db):
     """Test that retriever returns proper metadata."""
     retriever = DenseRetriever(provider_name="dummy")
@@ -251,9 +242,6 @@ def test_retriever_metadata(temp_db):
         assert result["url"].startswith("http://example.com/")
 
 
-@pytest.mark.skip(
-    reason="Database tests require complex pgvector setup - skipping for CI"
-)
 def test_retriever_empty_results():
     """Test retriever behavior with empty database."""
     # Use the global session factory (no db_url to force it to use the test setup)

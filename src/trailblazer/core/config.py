@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional, List, Dict, Any
 from pathlib import Path
@@ -74,6 +75,11 @@ class Settings(BaseSettings):
     LOGS_COMPRESS_AFTER_DAYS: int = 2  # Compress segments older than N days
     LOGS_RETENTION_DAYS: int = 14  # Delete logs older than N days
 
+    # Testing environment flag
+    TB_TESTING: bool = Field(
+        default=False,
+        description="Enable testing mode for database integration tests",
+    )
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8"
     )

@@ -1,0 +1,19 @@
+{
+  "candidates": [
+    {
+      "age_days": 55,
+      "modified_at": "2025-06-22T19:02:30.975563",
+      "path": "/tmp/pytest-of-mdt/pytest-4/test_prune_protected_by_multip1/var/runs/run-old-unprotected",
+      "run_id": "run-old-unprotected"
+    }
+  ],
+  "deleted_count": 0,
+  "dry_run": true,
+  "keep": 0,
+  "min_age_days": 30,
+  "protected_runs": [
+    "run-old-protected"
+  ],
+  "timestamp": "2025-08-16T19:02:30.995069",
+  "total_runs": 2
+}
