@@ -11,6 +11,19 @@ from ..pipeline.runner import run as run_pipeline
 from ..core.config import Settings
 
 app = typer.Typer(add_completion=False, help="Trailblazer CLI")
+
+
+@app.callback(invoke_without_command=True)
+def main_callback(ctx: typer.Context):
+    """Main callback to enforce environment checks before any command execution."""
+    from ..env_checks import assert_virtualenv_on_macos
+    assert_virtualenv_on_macos()
+    
+    # If no command was provided, show help
+    if ctx.invoked_subcommand is None:
+        typer.echo(ctx.get_help())
+
+
 ingest_app = typer.Typer(help="Ingestion commands")
 normalize_app = typer.Typer(help="Normalization commands")
 db_app = typer.Typer(help="Database commands")
@@ -2815,5 +2828,204 @@ def runs_status_cmd() -> None:
         raise typer.Exit(1)
 
 
+# Add logs management subcommands
+logs_app = typer.Typer(name="logs", help="Log management commands")
+app.add_typer(logs_app)
+
+
+@logs_app.command("index")
+def logs_index():
+    """Summarize runs with sizes/segments/last update times."""
+    try:
+        from ..log_management import LogManager
+
+        manager = LogManager()
+        summary = manager.get_index_summary()
+
+        typer.echo("📂 Log Index Summary:")
+        typer.echo(f"   Total runs: {summary['total_runs']}")
+        typer.echo(f"   Total size: {summary['total_size_mb']:.1f} MB")
+        typer.echo("")
+
+        if not summary["runs"]:
+            typer.echo("   No log runs found")
+            return
+
+        # Show header
+        typer.echo(
+            f"{'Run ID':<20} {'Status':<8} {'Size (MB)':<10} {'Segments':<9} {'Last Modified'}"
+        )
+        typer.echo("-" * 80)
+
+        # Show runs (limit to first 50 for readability)
+        for run_info in summary["runs"][:50]:
+            size_mb = round(run_info["size_bytes"] / (1024 * 1024), 2)
+            segments = f"{run_info['segments']}"
+            if run_info["compressed_segments"] > 0:
+                segments += f"+{run_info['compressed_segments']}gz"
+
+            last_mod = (
+                run_info["last_modified"][:19]
+                if run_info["last_modified"]
+                else "unknown"
+            )
+
+            typer.echo(
+                f"{run_info['run_id']:<20} {run_info['status']:<8} {size_mb:<10.2f} {segments:<9} {last_mod}"
+            )
+
+        if len(summary["runs"]) > 50:
+            typer.echo(f"... and {len(summary['runs']) - 50} more runs")
+
+    except Exception as e:
+        typer.echo(f"❌ Failed to get log index: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@logs_app.command("prune")
+def logs_prune(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Show what would be done without doing it",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Skip confirmation prompts (required for actual deletion)",
+    ),
+):
+    """Compress old segments and delete beyond retention (never active); prints a clear plan."""
+    try:
+        from ..log_management import LogManager
+
+        manager = LogManager()
+
+        # Always start with compression
+        typer.echo("🗜️  Checking for old segments to compress...")
+        compress_result = manager.compress_old_segments(
+            dry_run=True
+        )  # Always dry-run first
+
+        if compress_result["compressed"]:
+            typer.echo(
+                f"   Found {len(compress_result['compressed'])} segments to compress"
+            )
+            for path in compress_result["compressed"][:10]:  # Show first 10
+                typer.echo(f"     {path}")
+            if len(compress_result["compressed"]) > 10:
+                typer.echo(
+                    f"     ... and {len(compress_result['compressed']) - 10} more"
+                )
+        else:
+            typer.echo("   No segments need compression")
+
+        # Check what would be pruned
+        from ..core.config import SETTINGS
+
+        typer.echo(
+            f"\n🗑️  Checking for logs to prune (retention: {SETTINGS.LOGS_RETENTION_DAYS} days)..."
+        )
+        prune_result = manager.prune_old_logs(
+            dry_run=True
+        )  # Always dry-run first
+
+        if prune_result["deleted_runs"]:
+            typer.echo(
+                f"   Found {len(prune_result['deleted_runs'])} run directories to delete"
+            )
+            for run_id in prune_result["deleted_runs"][:10]:  # Show first 10
+                typer.echo(f"     {run_id}")
+            if len(prune_result["deleted_runs"]) > 10:
+                typer.echo(
+                    f"     ... and {len(prune_result['deleted_runs']) - 10} more"
+                )
+        else:
+            typer.echo("   No runs to prune")
+
+        # Show errors if any
+        if compress_result["errors"] or prune_result["errors"]:
+            typer.echo("\n⚠️  Errors found:")
+            for error in (compress_result["errors"] + prune_result["errors"])[
+                :5
+            ]:
+                typer.echo(f"     {error}")
+
+        # Actually execute if requested and not dry-run
+        if not dry_run:
+            if not yes:
+                total_actions = len(compress_result["compressed"]) + len(
+                    prune_result["deleted_runs"]
+                )
+                if total_actions > 0:
+                    typer.echo(
+                        f"\n❓ Proceed with {total_actions} actions? This cannot be undone."
+                    )
+                    if not typer.confirm("Continue?"):
+                        typer.echo("Cancelled")
+                        return
+
+            # Execute compression
+            if compress_result["compressed"]:
+                typer.echo("\n🗜️  Compressing segments...")
+                actual_compress = manager.compress_old_segments(dry_run=False)
+                typer.echo(
+                    f"   Compressed {len(actual_compress['compressed'])} segments"
+                )
+
+            # Execute pruning
+            if prune_result["deleted_runs"]:
+                typer.echo("\n🗑️  Pruning old logs...")
+                actual_prune = manager.prune_old_logs(dry_run=False)
+                typer.echo(
+                    f"   Deleted {len(actual_prune['deleted_runs'])} run directories"
+                )
+
+        elif dry_run:
+            typer.echo(
+                "\n💡 This was a dry run. Use --no-dry-run --yes to actually perform these actions."
+            )
+
+    except Exception as e:
+        typer.echo(f"❌ Failed to prune logs: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@logs_app.command("doctor")
+def logs_doctor():
+    """Fix symlinks/permissions and validate segments; non-zero on unfixable issues."""
+    try:
+        from ..log_management import LogManager
+
+        manager = LogManager()
+        result = manager.doctor_logs()
+
+        typer.echo("🏥 Log Doctor Report:")
+
+        if result["fixed"]:
+            typer.echo(f"\n✅ Fixed {len(result['fixed'])} issues:")
+            for fix in result["fixed"]:
+                typer.echo(f"   {fix}")
+
+        if result["issues"]:
+            typer.echo(f"\n⚠️  Found {len(result['issues'])} issues:")
+            for issue in result["issues"]:
+                typer.echo(f"   {issue}")
+
+        typer.echo(f"\n📊 Overall health: {result['health']}")
+
+        # Exit with error if unfixable issues
+        if result["health"] != "healthy":
+            raise typer.Exit(1)
+
+    except Exception as e:
+        typer.echo(f"❌ Log doctor failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
+    # Enforce macOS venv check before any commands
+    from ..env_checks import assert_virtualenv_on_macos
+    assert_virtualenv_on_macos()
+    
     app()

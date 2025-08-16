@@ -3,6 +3,7 @@
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, TextIO, Dict, Any
 from rich.console import Console
 from rich.panel import Panel
@@ -19,17 +20,31 @@ class StatusTracker:
         component: str,
         no_color: bool = False,
         file: Optional[TextIO] = None,
+        log_dir: Optional[str] = None,
     ):
         self.run_id = run_id
         self.phase = phase
         self.component = component
         self.start_time = time.time()
 
+        # Standard logging paths
+        self.log_dir = Path(log_dir) if log_dir else Path("var/logs")
+        self.run_log_dir = self.log_dir / run_id
+        self.run_log_dir.mkdir(parents=True, exist_ok=True)
+        self.stderr_path = self.run_log_dir / "stderr.log"
+
         # Rich console for pretty output (stderr only)
         self.console = Console(
             file=file or sys.stderr,
             color_system=None if no_color else "auto",
             force_terminal=not no_color,
+        )
+
+        # Also create a file console for stderr.log
+        self.file_console = Console(
+            file=None,  # Will be set in context manager
+            color_system=None,  # No color in log files
+            force_terminal=False,
         )
 
     def start_banner(self, title: Optional[str] = None, **metadata):

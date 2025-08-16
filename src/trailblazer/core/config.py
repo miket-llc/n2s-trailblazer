@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     BACKLOG_MODE: str = "default_all_unprocessed"  # Backlog processing mode
     BACKLOG_CLAIM_TTL_MINUTES: int = 45  # TTL for stale claim recovery
 
+    # Logging configuration
+    LOGS_ROTATION_MB: int = 512  # Max size before rotating events.ndjson
+    LOGS_COMPRESS_AFTER_DAYS: int = 2  # Compress segments older than N days
+    LOGS_RETENTION_DAYS: int = 14  # Delete logs older than N days
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8"
     )

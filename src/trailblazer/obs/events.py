@@ -67,7 +67,7 @@ class ObservabilityEvent(BaseModel):
 
 
 class EventEmitter:
-    """Enhanced event emitter with typed schemas and file-based logging."""
+    """Enhanced event emitter with typed schemas and standardized logging convention."""
 
     def __init__(
         self,
@@ -82,27 +82,81 @@ class EventEmitter:
         self.pid = os.getpid()
         self.worker_id = f"{self.component}-{self.pid}"
 
-        # Create logs directory
+        # Standard logging convention: var/logs/<run_id>/events.ndjson
         self.log_dir = Path(log_dir) if log_dir else Path("var/logs")
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.run_log_dir = self.log_dir / run_id
+        self.run_log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Main event log
-        self.log_path = self.log_dir / f"{run_id}.ndjson"
+        # Primary event log and stderr log
+        self.events_path = self.run_log_dir / "events.ndjson"
+        self.stderr_path = self.run_log_dir / "stderr.log"
 
-        # Create symlink to latest
-        latest_link = self.log_dir / "latest.ndjson"
-        if latest_link.is_symlink():
-            latest_link.unlink()
-        try:
-            latest_link.symlink_to(self.log_path.name)
-        except (OSError, FileExistsError):
-            pass  # Ignore symlink failures
+        # Symlinks for convenience
+        self._create_symlinks()
 
         self._file: Optional[TextIO] = None
         self._start_time = time.time()
 
+    def _create_symlinks(self):
+        """Create and update symlinks per logging convention."""
+        # Run-specific symlink: var/logs/<run_id>.ndjson -> var/logs/<run_id>/events.ndjson
+        run_symlink = self.log_dir / f"{self.run_id}.ndjson"
+        if run_symlink.exists() or run_symlink.is_symlink():
+            run_symlink.unlink()
+        try:
+            run_symlink.symlink_to(f"{self.run_id}/events.ndjson")
+        except (OSError, FileExistsError):
+            pass
+
+        # Latest symlinks
+        latest_ndjson = self.log_dir / "latest.ndjson"
+        latest_stderr = self.log_dir / "latest.stderr.log"
+
+        for link, target in [
+            (latest_ndjson, f"{self.run_id}/events.ndjson"),
+            (latest_stderr, f"{self.run_id}/stderr.log"),
+        ]:
+            if link.exists() or link.is_symlink():
+                link.unlink()
+            try:
+                link.symlink_to(target)
+            except (OSError, FileExistsError):
+                pass
+
+    def _rotate_if_needed(self):
+        """Check if events.ndjson needs rotation and rotate if needed."""
+        try:
+            from ..core.config import SETTINGS
+
+            max_size_bytes = SETTINGS.LOGS_ROTATION_MB * 1024 * 1024
+
+            if (
+                self.events_path.exists()
+                and self.events_path.stat().st_size > max_size_bytes
+            ):
+                # Find next rotation number
+                rotation_num = 1
+                while (
+                    self.run_log_dir / f"events.ndjson.{rotation_num}"
+                ).exists():
+                    rotation_num += 1
+
+                # Rotate current file
+                rotated_path = (
+                    self.run_log_dir / f"events.ndjson.{rotation_num}"
+                )
+                self.events_path.rename(rotated_path)
+
+                # Create new events.ndjson
+                self.events_path.touch()
+
+        except Exception:
+            pass  # Silently continue if rotation fails
+
     def __enter__(self):
-        self._file = open(self.log_path, "a", encoding="utf-8")
+        # Check for rotation before opening
+        self._rotate_if_needed()
+        self._file = open(self.events_path, "a", encoding="utf-8")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
