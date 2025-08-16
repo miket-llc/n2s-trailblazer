@@ -17,3 +17,25 @@ Current blocker: Embedding hit token limits—likely from Confluence pages with 
 Observability: Pretty status → stderr; typed NDJSON events → stdout; heartbeats, worker‑aware ETA, assurance reports, and sampling during long runs.
 
 Prompts safety: Never delete non‑conforming prompts; archive only.
+
+## Logging Non‑Negotiables (Standard Convention & Smart Management)
+
+File naming (canonical): For each run, write NDJSON events to var/logs/\<run_id>/events.ndjson and pretty/TTY status to var/logs/\<run_id>/stderr.log. Maintain symlinks: var/logs/\<run_id>.ndjson → var/logs/\<run_id>/events.ndjson, and latest symlinks: var/logs/latest.ndjson, var/logs/latest.stderr.log. Each event line MUST include ts, run_id, phase, component, level, and worker_id (if any).
+
+Streams rule: NDJSON → stdout only; pretty/status → stderr only. Never mix on the same stream.
+
+Rotation: When events.ndjson exceeds logs.rotation_mb (default: 512 MiB), continue in events.ndjson.N (N=1,2,…) and update symlinks.
+
+Compression: Compress segments older than logs.compress_after_days (default: 2) to .gz.
+
+Retention: Prune logs older than logs.retention_days (default: 14) via trailblazer logs prune (dry‑run by default; requires --yes to delete). Never prune active runs.
+
+Status JSON: Write an atomic snapshot to var/status/\<run_id>.json and update var/status/latest.json symlink on each heartbeat.
+
+Reports: Assurance artifacts live in var/reports/\<run_id>/ and are never auto‑deleted.
+
+## macOS Virtualenv Non‑Negotiable
+
+On macOS (Darwin), all runtime commands must run inside a virtual environment. If not detected (VIRTUAL_ENV, Poetry/Conda, or sys.prefix != sys.base_prefix), fail fast with clear guidance: "Activate your venv: source .venv/bin/activate or run make setup."
+
+CI/automation may bypass with TB_ALLOW_SYSTEM_PYTHON=1 only if explicitly set in CI config.
