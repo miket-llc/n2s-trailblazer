@@ -1,7 +1,30 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, NamedTuple
+from enum import Enum
+from typing import Dict, List, NamedTuple, Optional, Tuple
+
+try:
+    import tiktoken  # type: ignore
+except ImportError:
+    tiktoken = None  # type: ignore
+
+try:
+    from ....obs.events import emit_event  # type: ignore
+except ImportError:
+    # Fallback for testing - create a no-op function
+    def emit_event(*args, **kwargs):  # type: ignore
+        pass
+
+
+class ChunkType(Enum):
+    """Types of content chunks for specialized handling."""
+
+    TEXT = "text"
+    CODE = "code"
+    TABLE = "table"
+    MACRO = "macro"
+    DIGEST = "digest"
 
 
 class Chunk(NamedTuple):
@@ -12,6 +35,8 @@ class Chunk(NamedTuple):
     char_count: int
     token_count: int
     ord: int
+    chunk_type: str = ChunkType.TEXT.value
+    meta: Optional[Dict] = None
 
 
 def normalize_text(text: str) -> str:
@@ -87,27 +112,157 @@ def split_on_paragraphs_and_headings(text: str) -> List[str]:
     return [p for p in restored_parts if p.strip()]
 
 
+def count_tokens(text: str, model: str = "text-embedding-3-small") -> int:
+    """Count tokens using tiktoken for accurate OpenAI token counting."""
+    if tiktoken is None:
+        # Fallback to rough estimation: 4 chars per token
+        return len(text) // 4
+
+    try:
+        encoding = tiktoken.encoding_for_model(model)  # type: ignore
+        return len(encoding.encode(text))
+    except Exception:
+        # Fallback if model not found
+        encoding = tiktoken.get_encoding("cl100k_base")  # type: ignore
+        return len(encoding.encode(text))  # type: ignore
+
+
+def detect_content_type(text: str) -> Tuple[ChunkType, Dict]:
+    """Detect content type and extract metadata."""
+    text_stripped = text.strip()
+
+    # Tables (markdown or HTML) - check before code blocks
+    table_patterns = [
+        r"\|.*\|.*\|",  # Markdown table with pipes
+        r"<table[\s\S]*?</table>",  # HTML table
+    ]
+
+    for pattern in table_patterns:
+        if re.search(pattern, text_stripped, re.IGNORECASE):
+            # Count rows/columns
+            table_rows = len(re.findall(r"\|.*\|", text_stripped))
+            return ChunkType.TABLE, {"estimated_rows": table_rows}
+
+    # Code blocks - check after tables to avoid false positives
+    if re.search(r"^```\w*\n[\s\S]*?^```$", text_stripped, re.MULTILINE):
+        # Extract language if present
+        match = re.search(r"^```(\w+)", text_stripped, re.MULTILINE)
+        language = match.group(1) if match else "unknown"
+        return ChunkType.CODE, {"language": language}
+
+    # Confluence macros and boilerplate
+    macro_patterns = [
+        r"\{[^}]+\}",  # {macro-name}
+        r"<ac:[^>]+[/>]",  # <ac:structured-macro>
+        r"\[\w+:[^\]]+\]",  # [info:text]
+        r"<!-- .* -->",  # HTML comments
+    ]
+
+    macro_count = sum(
+        len(re.findall(pattern, text_stripped, re.IGNORECASE))
+        for pattern in macro_patterns
+    )
+    if macro_count > 3:  # Threshold for macro-heavy content
+        return ChunkType.MACRO, {"macro_count": macro_count}
+
+    return ChunkType.TEXT, {}
+
+
+def create_table_digest(text: str, max_rows: int = 5) -> str:
+    """Create a digest of a large table showing schema + sample rows."""
+    lines = text.split("\n")
+    table_lines = [line for line in lines if "|" in line and line.strip()]
+
+    if not table_lines:
+        return text
+
+    # Take header + separator + sample rows
+    digest_lines = []
+    if len(table_lines) >= 2:
+        digest_lines.extend(table_lines[:2])  # header + separator
+
+    if len(table_lines) > 2:
+        sample_rows = table_lines[2 : min(2 + max_rows, len(table_lines))]
+        digest_lines.extend(sample_rows)
+
+        if len(table_lines) > 2 + max_rows:
+            remaining = len(table_lines) - 2 - max_rows
+            digest_lines.append(f"| ... ({remaining} more rows) ... |")
+
+    return "\n".join(digest_lines)
+
+
+def create_code_digest(text: str) -> str:
+    """Create a digest of large code blocks with language + key symbols."""
+    # Extract language
+    match = re.search(r"^```(\w+)", text.strip(), re.MULTILINE)
+    language = match.group(1) if match else "code"
+
+    # Extract code content
+    code_match = re.search(
+        r"^```\w*\n([\s\S]*?)^```$", text.strip(), re.MULTILINE
+    )
+    if not code_match:
+        return text
+
+    code_content = code_match.group(1)
+
+    # Extract key symbols (functions, classes, etc.)
+    symbols = []
+
+    # Function definitions
+    symbols.extend(re.findall(r"def\s+(\w+)", code_content))
+    symbols.extend(re.findall(r"function\s+(\w+)", code_content))
+
+    # Class definitions
+    symbols.extend(re.findall(r"class\s+(\w+)", code_content))
+
+    # Variable assignments (top-level)
+    symbols.extend(re.findall(r"^(\w+)\s*=", code_content, re.MULTILINE))
+
+    # Limit symbols
+    symbols = symbols[:10]
+
+    digest = f"```{language}\n# Code digest\n"
+    if symbols:
+        digest += f"# Key symbols: {', '.join(symbols[:5])}\n"
+
+    # Include first few lines
+    code_lines = code_content.split("\n")[:3]
+    digest += "\n".join(code_lines)
+
+    if len(code_content.split("\n")) > 3:
+        remaining_lines = len(code_content.split("\n")) - 3
+        digest += f"\n# ... ({remaining_lines} more lines)"
+
+    digest += "\n```"
+
+    return digest
+
+
 def chunk_document(
     doc_id: str,
     text_md: str,
     title: str = "",
-    target_min: int = 800,
-    target_max: int = 1200,
+    target_tokens: int = 700,
+    max_tokens: int = 8000,
     overlap_pct: float = 0.15,
+    model: str = "text-embedding-3-small",
 ) -> List[Chunk]:
     """
-    Chunk a document into overlapping pieces.
+    Chunk a document into token-budgeted, type-aware pieces.
 
     Args:
         doc_id: Document identifier
         text_md: Markdown text content
         title: Document title (prepended to first chunk)
-        target_min: Minimum chunk size in characters
-        target_max: Maximum chunk size in characters
+        target_tokens: Target chunk size in tokens
+        max_tokens: Maximum tokens allowed (hard limit)
         overlap_pct: Overlap percentage (0.15 = 15%)
+        model: Model name for token counting
 
     Returns:
-        List of Chunk objects with stable chunk_ids
+        List of Chunk objects with stable chunk_ids and types
     """
     # Normalize and prepare text
     full_text = normalize_text(text_md)
@@ -132,35 +287,98 @@ def chunk_document(
         if not section:
             continue
 
-        # If adding this section would exceed target_max, finalize current chunk
-        if (
-            current_chunk
-            and len(current_chunk) + len(section) + 2 > target_max
-        ):
-            if len(current_chunk) >= target_min:
+        # Detect content type for this section
+        content_type, type_meta = detect_content_type(section)
+
+        # Handle large code blocks and tables with digests
+        section_tokens = count_tokens(section, model)
+
+        if section_tokens > max_tokens:
+            # Create digest for oversized content
+            if content_type == ChunkType.CODE:
+                digest_text = create_code_digest(section)
+                section = digest_text
+                content_type = ChunkType.DIGEST
+                type_meta["original_type"] = "code"
+                type_meta["token_savings"] = section_tokens - count_tokens(
+                    digest_text, model
+                )
+            elif content_type == ChunkType.TABLE:
+                digest_text = create_table_digest(section)
+                section = digest_text
+                content_type = ChunkType.DIGEST
+                type_meta["original_type"] = "table"
+                type_meta["token_savings"] = section_tokens - count_tokens(
+                    digest_text, model
+                )
+
+            # Emit chunk.digest event
+            emit_event(
+                "chunk.digest",
+                source=content_type.value,
+                token_savings=type_meta.get("token_savings", 0),
+            )
+
+        # Skip macro-heavy content if it's mostly boilerplate
+        if content_type == ChunkType.MACRO and section_tokens > target_tokens:
+            # Check if it's mostly empty after cleaning
+            cleaned = re.sub(r"\{[^}]+\}|<[^>]+>|\[\w+:[^\]]+\]", "", section)
+            if len(cleaned.strip()) < 50:  # Threshold for empty content
+                emit_event("chunk.skip", reason="empty_after_macro_cleanup")
+                continue
+
+        # Check if adding this section would exceed token budget
+        current_tokens = (
+            count_tokens(current_chunk, model) if current_chunk else 0
+        )
+        combined_tokens = (
+            count_tokens(current_chunk + "\n\n" + section, model)
+            if current_chunk
+            else section_tokens
+        )
+
+        if current_chunk and combined_tokens > target_tokens:
+            if (
+                current_tokens >= target_tokens // 4
+            ):  # Minimum chunk size (25% of target)
                 # Create chunk
                 chunk_id = f"{doc_id}:{ord_num:04d}"
-                token_count = len(current_chunk.split())
+                final_tokens = count_tokens(current_chunk, model)
+
+                # Detect type of current chunk
+                chunk_type, chunk_meta = detect_content_type(current_chunk)
+
                 chunks.append(
                     Chunk(
                         chunk_id=chunk_id,
                         text_md=current_chunk.strip(),
                         char_count=len(current_chunk),
-                        token_count=token_count,
+                        token_count=final_tokens,
                         ord=ord_num,
+                        chunk_type=chunk_type.value,
+                        meta=chunk_meta,
                     )
                 )
+
+                # Emit chunk.emit event
+                emit_event(
+                    "chunk.emit",
+                    chunk_id=chunk_id,
+                    type=chunk_type.value,
+                    token_count=final_tokens,
+                )
+
                 ord_num += 1
 
-                # Start new chunk with overlap
-                overlap_chars = int(len(current_chunk) * overlap_pct)
-                if overlap_chars > 0:
-                    # Take last N characters for overlap, try to break at word boundary
-                    overlap_text = current_chunk[-overlap_chars:]
-                    # Find last space for cleaner break
-                    last_space = overlap_text.rfind(" ")
-                    if last_space > overlap_chars // 2:
-                        overlap_text = overlap_text[last_space + 1 :]
+                # Start new chunk with overlap (token-based)
+                if overlap_pct > 0:
+                    overlap_tokens = int(final_tokens * overlap_pct)
+                    words = current_chunk.split()
+                    # Estimate words needed for overlap tokens
+                    overlap_words = min(
+                        len(words), max(1, int(overlap_tokens // 1.3))
+                    )  # ~1.3 tokens per word
+                    overlap_text = " ".join(words[-overlap_words:])
                     current_chunk = overlap_text + "\n\n" + section
                 else:
                     current_chunk = section
@@ -177,15 +395,26 @@ def chunk_document(
     # Add final chunk if it has content
     if current_chunk.strip():
         chunk_id = f"{doc_id}:{ord_num:04d}"
-        token_count = len(current_chunk.split())
+        final_tokens = count_tokens(current_chunk, model)
+        chunk_type, chunk_meta = detect_content_type(current_chunk)
+
         chunks.append(
             Chunk(
                 chunk_id=chunk_id,
                 text_md=current_chunk.strip(),
                 char_count=len(current_chunk),
-                token_count=token_count,
+                token_count=final_tokens,
                 ord=ord_num,
+                chunk_type=chunk_type.value,
+                meta=chunk_meta,
             )
+        )
+
+        emit_event(
+            "chunk.emit",
+            chunk_id=chunk_id,
+            type=chunk_type.value,
+            token_count=final_tokens,
         )
 
     return chunks

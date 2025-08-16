@@ -218,6 +218,9 @@ class Chunk(Base):
     token_count = Column(
         Integer, nullable=False
     )  # Simple proxy: len(text.split())
+    chunk_type = Column(
+        String, nullable=False, default="text"
+    )  # text, code, table, macro, digest
     meta = Column(JSON)  # Additional chunk metadata as JSON
 
     # Relationships

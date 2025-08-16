@@ -544,7 +544,8 @@ def load_normalized_to_db(
                             "text_md": chunk.text_md,
                             "char_count": chunk.char_count,
                             "token_count": chunk.token_count,
-                            "meta": {},
+                            "chunk_type": getattr(chunk, "chunk_type", "text"),
+                            "meta": getattr(chunk, "meta", {}) or {},
                         }
 
                         chunk_obj = upsert_chunk(session, chunk_data)
