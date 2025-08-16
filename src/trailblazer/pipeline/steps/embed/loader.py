@@ -688,6 +688,15 @@ def load_normalized_to_db(
     if run_id and run_id != "unknown":
         _generate_assurance_report(run_id, metrics)
 
+    # Mark embedding complete in backlog
+    if run_id and run_id != "unknown":
+        try:
+            from ...backlog import mark_embedding_complete
+
+            mark_embedding_complete(run_id, chunks_embedded)
+        except Exception as e:
+            log.warning("embed.backlog_failed", error=str(e))
+
     # Print summary
     console.print("")
     console.print("📊 [bold green]Embedding Complete[/bold green]")

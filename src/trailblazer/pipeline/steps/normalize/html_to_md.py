@@ -552,4 +552,20 @@ def normalize_from_ingest(
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     log.info("normalize.done", **metrics)
+
+    # Register in processed_runs backlog
+    try:
+        from ...backlog import upsert_normalized_run
+
+        # Detect source from directory structure
+        source = "mixed"  # Default fallback
+        if "confluence" in str(inp).lower():
+            source = "confluence"
+        elif "dita" in str(inp).lower():
+            source = "dita"
+
+        upsert_normalized_run(run_id, source, total)
+    except Exception as e:
+        log.warning("normalize.backlog_failed", error=str(e))
+
     return metrics
