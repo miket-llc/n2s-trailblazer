@@ -4,6 +4,7 @@ DEFAULT_PHASES: List[str] = [
     "ingest",
     "normalize",
     "enrich",
+    "chunk",
     "classify",
     "embed",
     "retrieve",

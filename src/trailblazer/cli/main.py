@@ -18,6 +18,7 @@ embed_app = typer.Typer(help="Embedding commands")
 confluence_app = typer.Typer(help="Confluence commands")
 ops_app = typer.Typer(help="Operations commands")
 paths_app = typer.Typer(help="Workspace path commands")
+runs_app = typer.Typer(help="Runs management commands")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(normalize_app, name="normalize")
 app.add_typer(db_app, name="db")
@@ -25,6 +26,7 @@ app.add_typer(embed_app, name="embed")
 app.add_typer(confluence_app, name="confluence")
 app.add_typer(ops_app, name="ops")
 app.add_typer(paths_app, name="paths")
+app.add_typer(runs_app, name="runs")
 
 
 def _run_db_preflight_check() -> None:
@@ -2690,6 +2692,122 @@ def ops_kill_cmd() -> None:
 
     except Exception as e:
         typer.echo(f"❌ Error killing processes: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@runs_app.command("reset")
+def runs_reset_cmd(
+    scope: str = typer.Option(
+        "processed", "--scope", help="Reset scope: processed|embeddings|all"
+    ),
+    run_ids: Optional[List[str]] = typer.Option(
+        None, "--run-id", help="Specific run IDs to reset"
+    ),
+    limit: Optional[int] = typer.Option(
+        None, "--limit", help="Limit number of runs to reset"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be reset without doing it"
+    ),
+    yes: bool = typer.Option(False, "--yes", help="Skip confirmation prompts"),
+) -> None:
+    """
+    Reset runs in the processed_runs backlog.
+
+    Scopes:
+    - processed: Reset chunk/embed status and claim fields (safe)
+    - embeddings: Also delete embeddings from database (destructive)
+    - all: Reset status + delete embeddings + delete chunk artifacts (destructive)
+    """
+    from ..pipeline.backlog import reset_runs
+
+    valid_scopes = ["processed", "embeddings", "all"]
+    if scope not in valid_scopes:
+        typer.echo(
+            f"❌ Invalid scope: {scope}. Use: {', '.join(valid_scopes)}",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    # Show what would be affected
+    if not dry_run and not yes and scope in ("embeddings", "all"):
+        typer.echo(f"⚠️  About to reset scope: {scope}")
+        if scope == "embeddings":
+            typer.echo("   This will delete embeddings from the database")
+        elif scope == "all":
+            typer.echo("   This will delete embeddings AND chunk artifacts")
+
+        confirm = typer.confirm("Continue?")
+        if not confirm:
+            typer.echo("Reset cancelled", err=True)
+            raise typer.Exit(0)
+
+    # Execute reset
+    try:
+        filters = {}
+        if limit:
+            filters["limit"] = limit
+
+        result = reset_runs(
+            run_ids=run_ids,
+            scope=scope,
+            filters=filters,
+            dry_run=dry_run,
+            confirmed=yes or dry_run,
+        )
+
+        if dry_run:
+            typer.echo(
+                f"🔍 Would reset {result['reset_count']} runs (scope: {scope})"
+            )
+        else:
+            typer.echo(
+                f"✅ Reset {result['reset_count']} runs (scope: {scope})"
+            )
+
+    except Exception as e:
+        typer.echo(f"❌ Reset failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@runs_app.command("status")
+def runs_status_cmd() -> None:
+    """Show processed runs status distribution."""
+    from ..pipeline.backlog import get_db_connection
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT 
+                    status,
+                    COUNT(*) as count,
+                    MIN(normalized_at) as earliest,
+                    MAX(normalized_at) as latest
+                FROM processed_runs 
+                GROUP BY status 
+                ORDER BY count DESC
+            """)
+
+            results = cursor.fetchall()
+
+            if not results:
+                typer.echo("No runs found in processed_runs table")
+                return
+
+            typer.echo("📊 Processed Runs Status:")
+            typer.echo("")
+
+            for row in results:
+                status, count, earliest, latest = row
+                typer.echo(f"  {status:12} : {count:4,} runs")
+                if earliest and latest:
+                    typer.echo(f"               {earliest} to {latest}")
+                typer.echo("")
+
+    except Exception as e:
+        typer.echo(f"❌ Failed to get status: {e}", err=True)
         raise typer.Exit(1)
 
 

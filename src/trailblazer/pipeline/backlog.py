@@ -104,7 +104,7 @@ def upsert_normalized_run(
 
 
 def claim_run_for_chunking(
-    claim_ttl_minutes: int = 45,
+    claim_ttl_minutes: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Claim a run for chunking using SELECT ... FOR UPDATE SKIP LOCKED.
@@ -115,6 +115,9 @@ def claim_run_for_chunking(
     Returns:
         Run record if claimed, None if no runs available
     """
+    if claim_ttl_minutes is None:
+        claim_ttl_minutes = SETTINGS.BACKLOG_CLAIM_TTL_MINUTES
+
     hostname = socket.gethostname()
     pid = os.getpid()
     claimed_by = f"{hostname}-{pid}"
@@ -216,7 +219,7 @@ def mark_chunking_complete(run_id: str, total_chunks: int) -> None:
 
 
 def claim_run_for_embedding(
-    claim_ttl_minutes: int = 45,
+    claim_ttl_minutes: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Claim a run for embedding using SELECT ... FOR UPDATE SKIP LOCKED.
@@ -227,6 +230,9 @@ def claim_run_for_embedding(
     Returns:
         Run record if claimed, None if no runs available
     """
+    if claim_ttl_minutes is None:
+        claim_ttl_minutes = SETTINGS.BACKLOG_CLAIM_TTL_MINUTES
+
     hostname = socket.gethostname()
     pid = os.getpid()
     claimed_by = f"{hostname}-{pid}"
@@ -387,14 +393,18 @@ def get_backlog_summary(phase: str) -> Dict[str, Any]:
 def reset_runs(
     run_ids: Optional[List[str]] = None,
     scope: str = "processed",
+    filters: Optional[Dict[str, Any]] = None,
+    dry_run: bool = False,
     confirmed: bool = False,
 ) -> Dict[str, Any]:
     """
     Reset runs in the backlog.
 
     Args:
-        run_ids: Specific run IDs to reset (None = all)
+        run_ids: Specific run IDs to reset (None = all matching filters)
         scope: 'processed', 'embeddings', or 'all'
+        filters: Additional filters (source, date_from, date_to, limit)
+        dry_run: Show what would be reset without doing it
         confirmed: Whether user confirmed the operation
 
     Returns:
@@ -406,41 +416,81 @@ def reset_runs(
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        if run_ids:
-            where_clause = "WHERE run_id = ANY(%s)"
-            params = [run_ids]
-        else:
-            where_clause = ""
-            params = []
+        # Build WHERE clause and parameters
+        where_conditions = []
+        params = []
 
-        if scope == "processed":
-            # Only reset status and claim fields
+        if run_ids:
+            where_conditions.append("run_id = ANY(%s)")
+            params.append(run_ids)
+
+        if filters:
+            if filters.get("source"):
+                where_conditions.append("source = %s")
+                params.append(filters["source"])
+
+            if filters.get("date_from"):
+                where_conditions.append("normalized_at >= %s")
+                params.append(filters["date_from"])
+
+            if filters.get("date_to"):
+                where_conditions.append("normalized_at <= %s")
+                params.append(filters["date_to"])
+
+        where_clause = (
+            "WHERE " + " AND ".join(where_conditions)
+            if where_conditions
+            else ""
+        )
+        limit_clause = (
+            f"LIMIT {filters['limit']}"
+            if filters and filters.get("limit")
+            else ""
+        )
+
+        if dry_run:
+            # Count what would be affected
             cursor.execute(
                 f"""
-                UPDATE processed_runs
-                SET status = 'reset',
-                    chunk_started_at = NULL,
-                    chunk_completed_at = NULL,
-                    embed_started_at = NULL,
-                    embed_completed_at = NULL,
-                    claimed_by = NULL,
-                    claimed_at = NULL,
-                    updated_at = %s
+                SELECT COUNT(*) FROM processed_runs
                 {where_clause}
+                {limit_clause}
             """,
-                [datetime.now(timezone.utc)] + params,
+                params,
             )
+            reset_count = cursor.fetchone()[0]
+        else:
+            if scope == "processed":
+                # Only reset status and claim fields
+                update_params = [datetime.now(timezone.utc)] + params
+                cursor.execute(
+                    f"""
+                    UPDATE processed_runs
+                    SET status = 'reset',
+                        chunk_started_at = NULL,
+                        chunk_completed_at = NULL,
+                        embed_started_at = NULL,
+                        embed_completed_at = NULL,
+                        claimed_by = NULL,
+                        claimed_at = NULL,
+                        updated_at = %s
+                    {where_clause}
+                    {limit_clause}
+                """,
+                    update_params,
+                )
 
-        # TODO: Add embeddings and all scope handling when needed
-        # This would require integration with the embedding deletion logic
+            # TODO: Add embeddings and all scope handling when needed
+            # This would require integration with the embedding deletion logic
 
-        reset_count = cursor.rowcount
-        conn.commit()
+            reset_count = cursor.rowcount
+            conn.commit()
 
         result = {
             "scope": scope,
             "reset_count": reset_count,
-            "run_ids": run_ids or "all",
+            "run_ids": run_ids or "filtered" if filters else "all",
+            "dry_run": dry_run,
         }
 
         emit_backlog_event("runs.reset.complete", **result)

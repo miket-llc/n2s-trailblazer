@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     OPS_PRUNE_MIN_AGE_DAYS: int = 30  # Minimum age for deletion
     OPS_PRUNE_DRY_RUN: bool = True  # Default to dry run for safety
 
+    # Backlog configuration
+    BACKLOG_MODE: str = "default_all_unprocessed"  # Backlog processing mode
+    BACKLOG_CLAIM_TTL_MINUTES: int = 45  # TTL for stale claim recovery
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8"
     )
