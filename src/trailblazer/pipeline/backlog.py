@@ -17,8 +17,11 @@ from ..core.config import SETTINGS
 def get_db_connection():
     """Get database connection using trailblazer settings."""
     # Parse the DB URL from settings
-    db_url = SETTINGS.DB_URL
-    if db_url.startswith("postgresql+psycopg2://"):
+    db_url = SETTINGS.TRAILBLAZER_DB_URL
+    if not db_url:
+        # Fallback to development default
+        db_url = "postgresql://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer"
+    elif db_url.startswith("postgresql+psycopg2://"):
         # Convert SQLAlchemy URL to psycopg2 format
         db_url = db_url.replace("postgresql+psycopg2://", "postgresql://")
 
@@ -124,9 +127,9 @@ def claim_run_for_chunking(
         stale_threshold = claimed_at - timedelta(minutes=claim_ttl_minutes)
         cursor.execute(
             """
-            UPDATE processed_runs 
+            UPDATE processed_runs
             SET status = 'normalized', claimed_by = NULL, claimed_at = NULL
-            WHERE status = 'chunking' 
+            WHERE status = 'chunking'
               AND claimed_at < %s
         """,
             (stale_threshold,),
@@ -153,8 +156,8 @@ def claim_run_for_chunking(
         cursor.execute(
             """
             UPDATE processed_runs
-            SET status = 'chunking', 
-                claimed_by = %s, 
+            SET status = 'chunking',
+                claimed_by = %s,
                 claimed_at = %s,
                 chunk_started_at = %s,
                 updated_at = %s
@@ -236,9 +239,9 @@ def claim_run_for_embedding(
         stale_threshold = claimed_at - timedelta(minutes=claim_ttl_minutes)
         cursor.execute(
             """
-            UPDATE processed_runs 
+            UPDATE processed_runs
             SET status = 'chunked', claimed_by = NULL, claimed_at = NULL
-            WHERE status = 'embedding' 
+            WHERE status = 'embedding'
               AND claimed_at < %s
         """,
             (stale_threshold,),
@@ -265,8 +268,8 @@ def claim_run_for_embedding(
         cursor.execute(
             """
             UPDATE processed_runs
-            SET status = 'embedding', 
-                claimed_by = %s, 
+            SET status = 'embedding',
+                claimed_by = %s,
                 claimed_at = %s,
                 embed_started_at = %s,
                 updated_at = %s
@@ -346,7 +349,7 @@ def get_backlog_summary(phase: str) -> Dict[str, Any]:
 
         # Get summary statistics
         cursor.execute(f"""
-            SELECT 
+            SELECT
                 COUNT(*) as total,
                 MIN(normalized_at) as earliest,
                 MAX(normalized_at) as latest
@@ -358,7 +361,7 @@ def get_backlog_summary(phase: str) -> Dict[str, Any]:
 
         # Get sample run_ids
         cursor.execute(f"""
-            SELECT run_id 
+            SELECT run_id
             FROM processed_runs
             WHERE status IN {status_filter}
             ORDER BY normalized_at ASC
@@ -369,6 +372,12 @@ def get_backlog_summary(phase: str) -> Dict[str, Any]:
 
         summary["sample_run_ids"] = sample_runs
         summary["phase"] = phase
+
+        # Convert datetimes to ISO strings for JSON serialization
+        if summary["earliest"]:
+            summary["earliest"] = summary["earliest"].isoformat()
+        if summary["latest"]:
+            summary["latest"] = summary["latest"].isoformat()
 
         emit_backlog_event("runs.scan.complete", **summary)
 
