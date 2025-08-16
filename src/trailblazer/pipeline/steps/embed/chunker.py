@@ -143,6 +143,31 @@ def detect_content_type(text: str) -> Tuple[ChunkType, Dict]:
             table_rows = len(re.findall(r"\|.*\|", text_stripped))
             return ChunkType.TABLE, {"estimated_rows": table_rows}
 
+    # Detect structured data that looks like tables (common in AWS/config data)
+    # Look for patterns like repeated column headers followed by data rows
+    lines = text_stripped.split("\n")
+    if len(lines) > 10:  # Must have enough lines to be a data table
+        # Check for repeated patterns that indicate tabular data
+        non_empty_lines = [line.strip() for line in lines if line.strip()]
+        if len(non_empty_lines) > 20:  # Lots of data rows
+            # Look for consistent field patterns (like AWS config dumps)
+            field_counts: Dict[str, int] = {}
+            for line in non_empty_lines[:50]:  # Sample first 50 lines
+                if len(line.split()) == 1 and not line.startswith(
+                    "#"
+                ):  # Single field per line
+                    field_counts[line] = field_counts.get(line, 0) + 1
+
+            # If we see repeated field names, this is likely structured data
+            repeated_fields = [
+                field for field, count in field_counts.items() if count > 2
+            ]
+            if len(repeated_fields) > 3:  # Multiple repeated field patterns
+                return ChunkType.TABLE, {
+                    "estimated_rows": len(non_empty_lines),
+                    "data_format": "structured",
+                }
+
     # Code blocks - check after tables to avoid false positives
     if re.search(r"^```\w*\n[\s\S]*?^```$", text_stripped, re.MULTILINE):
         # Extract language if present
@@ -171,25 +196,47 @@ def detect_content_type(text: str) -> Tuple[ChunkType, Dict]:
 def create_table_digest(text: str, max_rows: int = 5) -> str:
     """Create a digest of a large table showing schema + sample rows."""
     lines = text.split("\n")
+
+    # Handle traditional markdown tables with pipes
     table_lines = [line for line in lines if "|" in line and line.strip()]
+    if table_lines:
+        # Take header + separator + sample rows
+        digest_lines = []
+        if len(table_lines) >= 2:
+            digest_lines.extend(table_lines[:2])  # header + separator
 
-    if not table_lines:
-        return text
+        if len(table_lines) > 2:
+            sample_rows = table_lines[2 : min(2 + max_rows, len(table_lines))]
+            digest_lines.extend(sample_rows)
 
-    # Take header + separator + sample rows
-    digest_lines = []
-    if len(table_lines) >= 2:
-        digest_lines.extend(table_lines[:2])  # header + separator
+            if len(table_lines) > 2 + max_rows:
+                remaining = len(table_lines) - 2 - max_rows
+                digest_lines.append(f"| ... ({remaining} more rows) ... |")
 
-    if len(table_lines) > 2:
-        sample_rows = table_lines[2 : min(2 + max_rows, len(table_lines))]
-        digest_lines.extend(sample_rows)
+        return "\n".join(digest_lines)
 
-        if len(table_lines) > 2 + max_rows:
-            remaining = len(table_lines) - 2 - max_rows
-            digest_lines.append(f"| ... ({remaining} more rows) ... |")
+    # Handle structured data (like AWS config dumps)
+    non_empty_lines = [line.strip() for line in lines if line.strip()]
+    if len(non_empty_lines) > max_rows * 2:
+        # For structured data, show the pattern and sample
+        digest_lines = []
 
-    return "\n".join(digest_lines)
+        # Add header showing this is structured data
+        digest_lines.append("# Structured Data Table")
+        digest_lines.append(f"# Total entries: {len(non_empty_lines)}")
+        digest_lines.append("")
+
+        # Show first few entries to establish pattern
+        digest_lines.extend(non_empty_lines[:max_rows])
+        digest_lines.append("")
+        digest_lines.append(
+            f"... ({len(non_empty_lines) - max_rows} more entries)"
+        )
+
+        return "\n".join(digest_lines)
+
+    # Fallback - just truncate
+    return text
 
 
 def create_code_digest(text: str) -> str:
@@ -238,6 +285,82 @@ def create_code_digest(text: str) -> str:
     digest += "\n```"
 
     return digest
+
+
+def _create_safe_chunk(
+    doc_id: str,
+    chunk_text: str,
+    ord_num: int,
+    max_tokens: int,
+    model: str,
+) -> Chunk:
+    """Create a single chunk with guaranteed max_tokens compliance."""
+    chunk_id = f"{doc_id}:{ord_num:04d}"
+    chunk_type, chunk_meta = detect_content_type(chunk_text)
+
+    # Always check token limit
+    final_tokens = count_tokens(chunk_text, model)
+
+    if final_tokens > max_tokens:
+        # Apply digest/truncation logic
+        if chunk_type == ChunkType.CODE:
+            digest_text = create_code_digest(chunk_text)
+            chunk_text = digest_text
+            chunk_type = ChunkType.DIGEST
+            chunk_meta["original_type"] = "code"
+            chunk_meta["token_savings"] = final_tokens - count_tokens(
+                digest_text, model
+            )
+            final_tokens = count_tokens(digest_text, model)
+        elif chunk_type == ChunkType.TABLE:
+            digest_text = create_table_digest(chunk_text)
+            chunk_text = digest_text
+            chunk_type = ChunkType.DIGEST
+            chunk_meta["original_type"] = "table"
+            chunk_meta["token_savings"] = final_tokens - count_tokens(
+                digest_text, model
+            )
+            final_tokens = count_tokens(digest_text, model)
+        else:
+            # For TEXT or other types, truncate with warning
+            max_chars = int(max_tokens * 3.5)  # Rough chars-to-tokens ratio
+            chunk_text = (
+                chunk_text[:max_chars]
+                + "\n\n[Content truncated - exceeded token limit]"
+            )
+            final_tokens = count_tokens(chunk_text, model)
+            chunk_meta["truncated"] = True
+            chunk_meta["original_tokens"] = count_tokens(chunk_text, model)
+
+        # Emit digest event if we created one
+        emit_event(
+            "chunk.digest",
+            source=chunk_type.value
+            if isinstance(chunk_type, ChunkType)
+            else chunk_type,
+            token_savings=chunk_meta.get("token_savings", 0),
+        )
+
+    chunk = Chunk(
+        chunk_id=chunk_id,
+        text_md=chunk_text.strip(),
+        char_count=len(chunk_text),
+        token_count=final_tokens,
+        ord=ord_num,
+        chunk_type=chunk_type.value
+        if isinstance(chunk_type, ChunkType)
+        else chunk_type,
+        meta=chunk_meta,
+    )
+
+    emit_event(
+        "chunk.emit",
+        chunk_id=chunk_id,
+        type=chunk.chunk_type,
+        token_count=final_tokens,
+    )
+
+    return chunk
 
 
 def chunk_document(
@@ -341,38 +464,17 @@ def chunk_document(
             if (
                 current_tokens >= target_tokens // 4
             ):  # Minimum chunk size (25% of target)
-                # Create chunk
-                chunk_id = f"{doc_id}:{ord_num:04d}"
-                final_tokens = count_tokens(current_chunk, model)
-
-                # Detect type of current chunk
-                chunk_type, chunk_meta = detect_content_type(current_chunk)
-
-                chunks.append(
-                    Chunk(
-                        chunk_id=chunk_id,
-                        text_md=current_chunk.strip(),
-                        char_count=len(current_chunk),
-                        token_count=final_tokens,
-                        ord=ord_num,
-                        chunk_type=chunk_type.value,
-                        meta=chunk_meta,
-                    )
+                # Create chunk using safe function
+                chunk = _create_safe_chunk(
+                    doc_id, current_chunk, ord_num, max_tokens, model
                 )
-
-                # Emit chunk.emit event
-                emit_event(
-                    "chunk.emit",
-                    chunk_id=chunk_id,
-                    type=chunk_type.value,
-                    token_count=final_tokens,
-                )
+                chunks.append(chunk)
 
                 ord_num += 1
 
                 # Start new chunk with overlap (token-based)
                 if overlap_pct > 0:
-                    overlap_tokens = int(final_tokens * overlap_pct)
+                    overlap_tokens = int(chunk.token_count * overlap_pct)
                     words = current_chunk.split()
                     # Estimate words needed for overlap tokens
                     overlap_words = min(
@@ -394,28 +496,28 @@ def chunk_document(
 
     # Add final chunk if it has content
     if current_chunk.strip():
-        chunk_id = f"{doc_id}:{ord_num:04d}"
-        final_tokens = count_tokens(current_chunk, model)
-        chunk_type, chunk_meta = detect_content_type(current_chunk)
+        # For very large final chunks, split them up
+        if (
+            count_tokens(current_chunk, model) > max_tokens * 2
+        ):  # Much larger than limit
+            # Split into sections and create multiple chunks
+            text_sections = current_chunk.split("\n\n")
+            for section in text_sections:
+                section = section.strip()
+                if not section:
+                    continue
 
-        chunks.append(
-            Chunk(
-                chunk_id=chunk_id,
-                text_md=current_chunk.strip(),
-                char_count=len(current_chunk),
-                token_count=final_tokens,
-                ord=ord_num,
-                chunk_type=chunk_type.value,
-                meta=chunk_meta,
+                chunk = _create_safe_chunk(
+                    doc_id, section, ord_num, max_tokens, model
+                )
+                chunks.append(chunk)
+                ord_num += 1
+        else:
+            # Normal final chunk - use safe function
+            chunk = _create_safe_chunk(
+                doc_id, current_chunk, ord_num, max_tokens, model
             )
-        )
-
-        emit_event(
-            "chunk.emit",
-            chunk_id=chunk_id,
-            type=chunk_type.value,
-            token_count=final_tokens,
-        )
+            chunks.append(chunk)
 
     return chunks
 
