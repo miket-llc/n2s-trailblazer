@@ -118,6 +118,9 @@ def run(
     workers: Optional[int] = typer.Option(
         None, "--workers", help="Override worker count"
     ),
+    limit: Optional[int] = typer.Option(
+        None, "--limit", help="Limit number of runs to process from backlog"
+    ),
     provider: Optional[str] = typer.Option(
         None, "--provider", help="Override embedding provider"
     ),
@@ -178,6 +181,7 @@ def run(
         dry_run=dry_run,
         run_id=run_id,
         settings=settings,
+        limit=limit,
     )
 
     log.info("cli.run.done", run_id=rid, phases=settings.PIPELINE_PHASES)

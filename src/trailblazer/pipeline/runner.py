@@ -12,13 +12,16 @@ def run(
     dry_run: bool = False,
     run_id: Optional[str] = None,
     settings: Optional["Settings"] = None,
+    limit: Optional[int] = None,
 ) -> str:
     phases = validate_phases(phases or DEFAULT_PHASES)
 
     # Check if this should use backlog-based processing
     if not run_id and len(phases) == 1 and phases[0] in ("embed", "chunk"):
         # Default behavior: process from backlog
-        return run_from_backlog(phases[0], dry_run=dry_run, settings=settings)
+        return run_from_backlog(
+            phases[0], dry_run=dry_run, settings=settings, limit=limit
+        )
 
     # Traditional single-run mode
     rid = run_id or new_run_id()
