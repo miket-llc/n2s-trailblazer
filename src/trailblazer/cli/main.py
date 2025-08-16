@@ -2784,13 +2784,13 @@ def runs_status_cmd() -> None:
             cursor = conn.cursor()
 
             cursor.execute("""
-                SELECT 
+                SELECT
                     status,
                     COUNT(*) as count,
                     MIN(normalized_at) as earliest,
                     MAX(normalized_at) as latest
-                FROM processed_runs 
-                GROUP BY status 
+                FROM processed_runs
+                GROUP BY status
                 ORDER BY count DESC
             """)
 

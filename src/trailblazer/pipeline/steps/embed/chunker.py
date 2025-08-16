@@ -116,15 +116,15 @@ def count_tokens(text: str, model: str = "text-embedding-3-small") -> int:
     """Count tokens using tiktoken for accurate OpenAI token counting."""
     if tiktoken is None:
         # Fallback to rough estimation: 4 chars per token
-        return len(text) // 4
+        return len(text) // 4  # type: ignore[unreachable]
 
     try:
-        encoding = tiktoken.encoding_for_model(model)  # type: ignore
+        encoding = tiktoken.encoding_for_model(model)  # type: ignore[attr-defined]
         return len(encoding.encode(text))
     except Exception:
         # Fallback if model not found
-        encoding = tiktoken.get_encoding("cl100k_base")  # type: ignore
-        return len(encoding.encode(text))  # type: ignore
+        encoding = tiktoken.get_encoding("cl100k_base")  # type: ignore[attr-defined]
+        return len(encoding.encode(text))
 
 
 def detect_content_type(text: str) -> Tuple[ChunkType, Dict]:

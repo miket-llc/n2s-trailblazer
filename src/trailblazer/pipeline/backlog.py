@@ -6,8 +6,8 @@ import os
 import socket
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import psycopg2  # type: ignore[import-untyped]
+from psycopg2.extras import RealDictCursor  # type: ignore[import-untyped]
 from contextlib import contextmanager
 
 from ..core.config import SETTINGS
