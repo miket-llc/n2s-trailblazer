@@ -27,3 +27,4 @@ archive/
 *.db
 *.sqlite*
 .trailblazer.db
+logs/*.json

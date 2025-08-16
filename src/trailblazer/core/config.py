@@ -103,7 +103,7 @@ class Settings(BaseSettings):
                 with open(config_path) as f:
                     config_data = yaml.safe_load(f) or {}
             elif config_path.suffix == ".toml":
-                import tomllib  # type: ignore[import-untyped]
+                import tomllib  # type: ignore[import-not-found]
 
                 with open(config_path, "rb") as f:
                     config_data = tomllib.load(f)

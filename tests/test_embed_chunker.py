@@ -90,7 +90,9 @@ def test_chunk_document_basic():
     text = "# Title\n\nThis is a short document for testing chunking."
     title = "Test Document"
 
-    chunks = chunk_document(doc_id, text, title, target_min=50, target_max=200)
+    chunks = chunk_document(
+        doc_id, text, title, target_tokens=500, max_tokens=1000
+    )
 
     assert len(chunks) == 1
     assert chunks[0].chunk_id == "test-doc:0000"
@@ -106,8 +108,8 @@ def test_chunk_document_deterministic():
     doc_id = "test-doc"
     text = "# Title\n\n" + "This is a test paragraph. " * 100
 
-    chunks1 = chunk_document(doc_id, text, target_min=800, target_max=1200)
-    chunks2 = chunk_document(doc_id, text, target_min=800, target_max=1200)
+    chunks1 = chunk_document(doc_id, text, target_tokens=500, max_tokens=1000)
+    chunks2 = chunk_document(doc_id, text, target_tokens=500, max_tokens=1000)
 
     assert len(chunks1) == len(chunks2)
     for c1, c2 in zip(chunks1, chunks2):
@@ -127,7 +129,7 @@ def test_chunk_document_overlap():
     )
 
     chunks = chunk_document(
-        doc_id, text, target_min=500, target_max=800, overlap_pct=0.15
+        doc_id, text, target_tokens=500, max_tokens=1000, overlap_pct=0.15
     )
 
     if len(chunks) > 1:
@@ -147,7 +149,7 @@ def test_chunk_document_ids():
     doc_id = "doc-123"
     text = "# Title\n\n" + "Content paragraph. " * 100
 
-    chunks = chunk_document(doc_id, text, target_min=200, target_max=400)
+    chunks = chunk_document(doc_id, text, target_tokens=500, max_tokens=1000)
 
     for i, chunk in enumerate(chunks):
         expected_id = f"doc-123:{i:04d}"
@@ -261,7 +263,7 @@ def test_chunk_never_splits_code_blocks():
     code_block = "```python\n" + "print('line')\n" * 100 + "```"
     text = f"# Title\n\nBefore code.\n\n{code_block}\n\nAfter code."
 
-    chunks = chunk_document(doc_id, text, target_min=200, target_max=300)
+    chunks = chunk_document(doc_id, text, target_tokens=500, max_tokens=1000)
 
     # Find the chunk containing the code block
     code_chunk = None
