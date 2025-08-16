@@ -45,22 +45,39 @@ class TestVirtualenvDetection:
     def test_is_in_virtualenv_system_python(self):
         """Test detection returns False for system Python."""
         # Clear all environment variables that would indicate venv
-        env_clear = {
-            "VIRTUAL_ENV": None,
-            "POETRY_ACTIVE": None,
-            "CONDA_DEFAULT_ENV": None,
-        }
+        env_clear = {}
+        for key in ["VIRTUAL_ENV", "POETRY_ACTIVE", "CONDA_DEFAULT_ENV"]:
+            if key in os.environ:
+                env_clear[key] = None
 
         with (
-            patch.dict(os.environ, env_clear, clear=False),
+            patch.dict(os.environ, {}, clear=False),  # Don't change env vars
             patch.object(sys, "prefix", "/usr/bin/python"),
             patch.object(sys, "base_prefix", "/usr/bin/python"),
-            patch.object(sys, "real_prefix", None, create=True),
         ):
-            # Remove real_prefix if it exists
-            if hasattr(sys, "real_prefix"):
-                delattr(sys, "real_prefix")
-            assert _is_in_virtualenv() is False
+            # Temporarily remove environment variables that indicate venv
+            original_env = {}
+            for key in ["VIRTUAL_ENV", "POETRY_ACTIVE", "CONDA_DEFAULT_ENV"]:
+                if key in os.environ:
+                    original_env[key] = os.environ.pop(key)
+
+            try:
+                # Also ensure no real_prefix attribute
+                real_prefix_existed = hasattr(sys, "real_prefix")
+                if real_prefix_existed:
+                    original_real_prefix = sys.real_prefix
+                    delattr(sys, "real_prefix")
+
+                try:
+                    assert _is_in_virtualenv() is False
+                finally:
+                    # Restore real_prefix if it existed
+                    if real_prefix_existed:
+                        sys.real_prefix = original_real_prefix
+            finally:
+                # Restore environment variables
+                for key, value in original_env.items():
+                    os.environ[key] = value
 
 
 class TestMacOSVenvEnforcement:
@@ -140,13 +157,24 @@ class TestVenvInfo:
             patch(
                 "trailblazer.env_checks._is_in_virtualenv", return_value=True
             ),
-            patch.dict(
-                os.environ,
-                {"POETRY_ACTIVE": "1", "POETRY_VENV_PATH": "/poetry/venv"},
-            ),
         ):
-            info = get_venv_info()
-            assert info == "poetry: /poetry/venv"
+            # Temporarily clear VIRTUAL_ENV and set Poetry env vars
+            original_virtual_env = os.environ.get("VIRTUAL_ENV")
+            if "VIRTUAL_ENV" in os.environ:
+                del os.environ["VIRTUAL_ENV"]
+
+            os.environ["POETRY_ACTIVE"] = "1"
+            os.environ["POETRY_VENV_PATH"] = "/poetry/venv"
+
+            try:
+                info = get_venv_info()
+                assert info == "poetry: /poetry/venv"
+            finally:
+                # Restore environment
+                if original_virtual_env is not None:
+                    os.environ["VIRTUAL_ENV"] = original_virtual_env
+                os.environ.pop("POETRY_ACTIVE", None)
+                os.environ.pop("POETRY_VENV_PATH", None)
 
     def test_get_venv_info_conda(self):
         """Test venv info with Conda."""
@@ -154,26 +182,43 @@ class TestVenvInfo:
             patch(
                 "trailblazer.env_checks._is_in_virtualenv", return_value=True
             ),
-            patch.dict(os.environ, {"CONDA_DEFAULT_ENV": "myenv"}),
         ):
-            info = get_venv_info()
-            assert info == "conda: myenv"
+            # Temporarily clear VIRTUAL_ENV and POETRY_ACTIVE, set Conda env vars
+            original_env = {}
+            for key in ["VIRTUAL_ENV", "POETRY_ACTIVE"]:
+                if key in os.environ:
+                    original_env[key] = os.environ.pop(key)
+
+            os.environ["CONDA_DEFAULT_ENV"] = "myenv"
+
+            try:
+                info = get_venv_info()
+                assert info == "conda: myenv"
+            finally:
+                # Restore environment
+                for key, value in original_env.items():
+                    os.environ[key] = value
+                os.environ.pop("CONDA_DEFAULT_ENV", None)
 
     def test_get_venv_info_base_prefix(self):
         """Test venv info with base_prefix detection."""
-        env_clear = {
-            "VIRTUAL_ENV": None,
-            "POETRY_ACTIVE": None,
-            "CONDA_DEFAULT_ENV": None,
-        }
-
         with (
             patch(
                 "trailblazer.env_checks._is_in_virtualenv", return_value=True
             ),
-            patch.dict(os.environ, env_clear, clear=False),
             patch.object(sys, "prefix", "/venv/path"),
             patch.object(sys, "base_prefix", "/system/python"),
         ):
-            info = get_venv_info()
-            assert info == "virtualenv: /venv/path"
+            # Temporarily remove environment variables that would take precedence
+            original_env = {}
+            for key in ["VIRTUAL_ENV", "POETRY_ACTIVE", "CONDA_DEFAULT_ENV"]:
+                if key in os.environ:
+                    original_env[key] = os.environ.pop(key)
+
+            try:
+                info = get_venv_info()
+                assert info == "virtualenv: /venv/path"
+            finally:
+                # Restore environment variables
+                for key, value in original_env.items():
+                    os.environ[key] = value
