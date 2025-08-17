@@ -1,44 +1,63 @@
 #!/bin/bash
-set -euo pipefail
 
-cd /Users/miket/dev/n2s-trailblazer
+# Get all run IDs
+RUN_IDS=$(find var/runs -name "normalized.ndjson" | sed 's|var/runs/||' | sed 's|/normalize/normalized.ndjson||' | sort)
+TOTAL_RUNS=$(echo "$RUN_IDS" | wc -l)
+CURRENT=0
+
+echo "🚀 Starting bulk embedding for $TOTAL_RUNS runs - NO CHUNK LIMITS!"
+echo "=================================="
+
+# Activate environment and set API key
 source .venv/bin/activate
-source .env
+# export OPENAI_API_KEY="your-api-key-here"  # Set in .env instead
 
-echo "🚀 EMBEDDING ALL RUNS - 163,444+ DOCUMENTS"
-echo "=================================================="
-
-# Get all run IDs that have normalized documents
-run_ids=($(find var/runs -name "normalized.ndjson" -not -empty | sed 's|var/runs/||; s|/normalize/normalized.ndjson||' | sort))
-
-total_runs=${#run_ids[@]}
-echo "📊 Found $total_runs runs to embed"
-
-counter=0
-for run_id in "${run_ids[@]}"; do
-    counter=$((counter + 1))
-    doc_count=$(wc -l < "var/runs/$run_id/normalize/normalized.ndjson")
-
+for RUN_ID in $RUN_IDS; do
+    CURRENT=$((CURRENT + 1))
     echo ""
-    echo "🔄 [$counter/$total_runs] Embedding run: $run_id ($doc_count docs)"
-    echo "   Progress: $(( counter * 100 / total_runs ))%"
-
-    # Run the embedding
-    if trailblazer embed load --run-id "$run_id" --provider openai --reembed-all; then
-        echo "✅ Success: $run_id"
+    echo "🔥 [$CURRENT/$TOTAL_RUNS] Processing run: $RUN_ID"
+    echo "=================================="
+    
+    # Run embedding with NO chunk limits
+    if trailblazer embed load \
+        --run-id "$RUN_ID" \
+        --provider openai \
+        --model text-embedding-3-small \
+        --dimensions 1536; then
+        echo "✅ SUCCESS: $RUN_ID"
     else
-        echo "❌ Failed: $run_id"
-        # Continue with next run instead of stopping
+        echo "❌ FAILED: $RUN_ID" | tee -a failed_runs.log
+        # Continue processing other runs even if one fails
     fi
+    
+    # Brief pause to avoid overwhelming the API
+    sleep 0.1
 done
 
 echo ""
-echo "🎉 FINISHED EMBEDDING ALL RUNS!"
-echo "=================================================="
+echo "🎉 BULK EMBEDDING COMPLETE!"
+echo "=================================="
+echo "Processed: $TOTAL_RUNS runs"
 
-# Final verification
-echo "📋 Final database verification:"
-docker exec -it trailblazer-postgres env PAGER=cat psql -U trailblazer -P pager=off -d trailblazer -c "
-SELECT COUNT(*) AS total_chunks FROM public.chunks;
-SELECT COUNT(*) AS total_embeddings FROM public.chunk_embeddings;
+# Check final database stats
+python -c "
+from trailblazer.db.engine import get_session
+from sqlalchemy import text
+
+with get_session() as session:
+    chunk_count = session.execute(text('SELECT COUNT(*) FROM chunks;')).scalar()
+    embedding_count = session.execute(text('SELECT COUNT(*) FROM chunk_embeddings;')).scalar()
+    doc_count = session.execute(text('SELECT COUNT(DISTINCT doc_id) FROM chunks;')).scalar()
+    
+    print(f'')
+    print(f'📊 FINAL RESULTS:')
+    print(f'Documents: {doc_count:,}')
+    print(f'Chunks: {chunk_count:,}')
+    print(f'Embeddings: {embedding_count:,}')
+    print(f'Coverage: {(embedding_count/chunk_count*100):.1f}%')
 "
+
+if [ -f failed_runs.log ]; then
+    echo ""
+    echo "⚠️  Failed runs logged to: failed_runs.log"
+fi

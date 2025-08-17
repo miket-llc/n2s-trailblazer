@@ -330,7 +330,25 @@ def _create_safe_chunk(
             )
             final_tokens = count_tokens(chunk_text, model)
             chunk_meta["truncated"] = True
-            chunk_meta["original_tokens"] = count_tokens(chunk_text, model)
+            chunk_meta["original_tokens"] = final_tokens
+
+        # CRITICAL FIX: If we're STILL over the limit after digest/truncation, force truncate
+        if final_tokens > max_tokens:
+            # Binary search to find the right length
+            low, high = 0, len(chunk_text)
+            while low < high:
+                mid = (low + high + 1) // 2
+                test_text = chunk_text[:mid] + "\n[TRUNCATED]"
+                test_tokens = count_tokens(test_text, model)
+                if test_tokens <= max_tokens:
+                    low = mid
+                else:
+                    high = mid - 1
+
+            chunk_text = chunk_text[:low] + "\n[TRUNCATED]"
+            final_tokens = count_tokens(chunk_text, model)
+            chunk_meta["force_truncated"] = True
+            chunk_meta["final_tokens"] = final_tokens
 
         # Emit digest event if we created one
         emit_event(

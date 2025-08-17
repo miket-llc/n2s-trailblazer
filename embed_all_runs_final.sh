@@ -5,8 +5,8 @@ RUN_IDS=$(find var/runs -name "normalized.ndjson" | sed 's|var/runs/||' | sed 's
 TOTAL_RUNS=$(echo "$RUN_IDS" | wc -l)
 CURRENT=0
 
-echo "🚀 Starting FRESH bulk embedding for $TOTAL_RUNS runs - FORCING ALL PROCESSING!"
-echo "==================================="
+echo "🚀 Starting FINAL bulk embedding for $TOTAL_RUNS runs - VIRGIN DATABASE!"
+echo "=================================================================="
 
 # export OPENAI_API_KEY="your-api-key-here"  # Set in .env instead
 
@@ -16,27 +16,31 @@ for RUN_ID in $RUN_IDS; do
     echo "🔥 [$CURRENT/$TOTAL_RUNS] Processing run: $RUN_ID"
     echo "=================================="
     
-    # Run embedding with --reembed-all to force processing everything
+    # Run embedding WITHOUT --reembed-all since database is virgin
     if trailblazer embed load \
         --run-id "$RUN_ID" \
         --provider openai \
         --model text-embedding-3-small \
-        --dimensions 1536 \
-        --reembed-all; then
+        --dimensions 1536; then
         echo "✅ SUCCESS: $RUN_ID"
+        
+        # Quick check for any skips in this run
+        SKIP_COUNT=$(grep -c "skipped" /tmp/last_run.log 2>/dev/null || echo "0")
+        if [ "$SKIP_COUNT" -gt 0 ]; then
+            echo "⚠️  WARNING: $SKIP_COUNT skips found in $RUN_ID"
+        fi
     else
         echo "❌ FAILED: $RUN_ID" | tee -a failed_runs.log
     fi
     
-    # Brief pause
     sleep 0.1
 done
 
 echo ""
-echo "🎉 BULK EMBEDDING COMPLETE!"
+echo "🎉 FINAL BULK EMBEDDING COMPLETE!"
 echo "=================================="
 
-# Check final stats
+# Final stats
 python3 -c "
 import trailblazer.db.engine
 from sqlalchemy import text
