@@ -1,32 +1,54 @@
 # Monitoring Scripts
 
-This directory contains monitoring scripts for embedding processes.
+This directory contains monitoring scripts for various processes.
 
 ## Scripts
 
-### `monitor_batched.sh`
-
-Real-time monitoring for the batched embedding process.
-
 ### `monitor_embedding.sh`
 
-General embedding process monitoring.
+Simple monitoring for the corpus embedding process that reads CLI progress and status:
+
+```bash
+./scripts/monitoring/monitor_embedding.sh
+```
+
+**What it shows:**
+
+- Current embedding progress and status
+- Database statistics (documents, chunks, embeddings)
+- Recent log entries
+- Usage examples
+
+**Prerequisites:**
+
+- Corpus embedding must be running via `trailblazer embed corpus`
+- Progress file at `var/progress/embedding.json`
+
+### `monitor_batched.sh`
+
+Monitoring for batched processes (legacy, may be removed).
 
 ### `monitor_retry.sh`
 
-Monitoring for retry processes.
+Monitoring for retry processes (legacy, may be removed).
 
 ## Usage
 
-Run these scripts from the project root while embedding processes are running:
+Run these scripts from the project root while processes are running:
 
 ```bash
+# Monitor embedding progress
+./scripts/monitoring/monitor_embedding.sh
+
+# Monitor other processes (if applicable)
 ./scripts/monitoring/monitor_batched.sh
+./scripts/monitoring/monitor_retry.sh
 ```
 
-The scripts show:
+## Integration with CLI
 
-- Live progress updates
-- Database statistics
-- Error summaries
-- Performance metrics
+The monitoring scripts now work with the consolidated CLI commands:
+
+- **Embedding**: `trailblazer embed corpus` → `monitor_embedding.sh`
+- **Progress**: Stored in `var/progress/embedding.json`
+- **Logs**: Stored in `var/logs/embedding/`

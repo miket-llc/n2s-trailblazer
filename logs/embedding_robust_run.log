@@ -1,8 +1,0 @@
-nohup: ignoring input
-2025-08-17T01:13:45+00:00 [INFO] 🚀 Starting robust bulk embedding process
-2025-08-17T01:13:45+00:00 [INFO] ============================================
-2025-08-17T01:13:45+00:00 [INFO] Setting up environment...
-2025-08-17T01:13:45+00:00 [INFO] Virtual environment activated
-./embed_robust.sh: line 41: export: `#': not a valid identifier
-./embed_robust.sh: line 41: export: `|': not a valid identifier
-./embed_robust.sh: line 41: export: `|': not a valid identifier

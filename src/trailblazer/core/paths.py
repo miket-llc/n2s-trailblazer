@@ -46,6 +46,11 @@ def tmp() -> Path:
     return workdir() / "tmp"
 
 
+def progress() -> Path:
+    """Progress tracking directory (default: var/progress/)"""
+    return workdir() / "progress"
+
+
 def ensure_all() -> None:
     """Create all workspace directories if they don't exist."""
     dirs_to_create = [
@@ -56,6 +61,7 @@ def ensure_all() -> None:
         logs(),
         cache(),
         tmp(),
+        progress(),
     ]
 
     for dir_path in dirs_to_create:

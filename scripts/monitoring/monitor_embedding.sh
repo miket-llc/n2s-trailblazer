@@ -1,22 +1,63 @@
 #!/bin/bash
 
-echo "🔍 EMBEDDING MONITOR - Real-time Status"
-echo "======================================"
+# Simple embedding monitoring script that wraps CLI output
+# ======================================================
 
-PID_FILE="embedding_process.pid"
-if [[ -f "$PID_FILE" ]]; then
-    PID=$(cat $PID_FILE)
-    if ps -p $PID > /dev/null 2>&1; then
-        echo "✅ Embedding process is RUNNING (PID: $PID)"
-    else
-        echo "❌ Embedding process is NOT running (PID: $PID)"
-    fi
+echo "🔍 EMBEDDING MONITOR - CLI Status"
+echo "================================="
+
+# Check if corpus embedding is running
+PROGRESS_FILE="var/progress/embedding.json"
+if [[ -f "$PROGRESS_FILE" ]]; then
+    echo "📊 Current Progress:"
+    python3 -c "
+import json
+import sys
+from datetime import datetime
+
+try:
+    with open('$PROGRESS_FILE', 'r') as f:
+        data = json.load(f)
+    
+    status = data.get('status', 'unknown')
+    current_run = data.get('current_run', 'none')
+    processed = data.get('processed_runs', 0)
+    total = data.get('total_runs', 0)
+    successful = data.get('successful_runs', 0)
+    failed = data.get('failed_runs', 0)
+    
+    print(f'Status: {status.upper()}')
+    if current_run and current_run != 'none':
+        print(f'Current Run: {current_run}')
+    print(f'Progress: {processed}/{total} runs')
+    print(f'Successful: {successful}, Failed: {failed}')
+    
+    if status == 'running' and total > 0:
+        percent = (processed / total) * 100
+        print(f'Completion: {percent:.1f}%')
+    
+    if 'started_at' in data:
+        started = datetime.fromisoformat(data['started_at'].replace('Z', '+00:00'))
+        now = datetime.now(started.tzinfo)
+        duration = now - started
+        print(f'Duration: {duration}')
+    
+    if 'total_docs' in data:
+        print(f'Documents: {data.get("total_docs", 0):,}')
+        print(f'Chunks: {data.get("total_chunks", 0):,}')
+        print(f'Cost: ${data.get("estimated_cost", 0):.4f}')
+        
+except Exception as e:
+    print(f'Error reading progress: {e}')
+    sys.exit(1)
+"
 else
-    echo "❓ No PID file found"
+    echo "❓ No embedding progress found"
+    echo "Run 'trailblazer embed corpus' to start embedding"
 fi
 
 echo ""
-echo "📊 Current Database Stats:"
+echo "📊 Database Stats:"
 python3 -c "
 try:
     import trailblazer.db.engine
@@ -37,27 +78,24 @@ except Exception as e:
 "
 
 echo ""
-echo "🔍 Checking for errors/skips..."
-LOG_FILE="embedding_fixed_run.log"
-if [[ -f "$LOG_FILE" ]]; then
-    if grep -q -i "skip\|error\|fail" "$LOG_FILE"; then
-        echo "⚠️  ISSUES FOUND:"
-        grep -i "skip\|error\|fail" "$LOG_FILE" | tail -3
+echo "📝 Recent Logs:"
+LOG_DIR="var/logs/embedding"
+if [[ -d "$LOG_DIR" ]]; then
+    LATEST_LOG=$(ls -t "$LOG_DIR"/corpus_embedding_*.log 2>/dev/null | head -1)
+    if [[ -n "$LATEST_LOG" ]]; then
+        echo "Latest log: $(basename "$LATEST_LOG")"
+        echo "Recent entries:"
+        tail -5 "$LATEST_LOG" 2>/dev/null || echo "  (log file empty or unreadable)"
     else
-        echo "✅ No issues detected"
+        echo "No corpus embedding logs found"
     fi
-    
-    echo ""
-    echo "📝 Recent Progress:"
-    tail -5 "$LOG_FILE"
 else
-    echo "❓ Log file not found"
+    echo "Log directory not found: $LOG_DIR"
 fi
 
 echo ""
-echo "🔄 Following log in real-time (Ctrl+C to exit)..."
-if [[ -f "$LOG_FILE" ]]; then
-    tail -f "$LOG_FILE"
-else
-    echo "❌ Log file not accessible"
-fi
+echo "💡 Usage:"
+echo "  trailblazer embed corpus --help                    # Show options"
+echo "  trailblazer embed corpus                          # Start embedding"
+echo "  trailblazer embed corpus --resume-from RUN_ID     # Resume from specific run"
+echo "  trailblazer embed corpus --max-runs 10            # Limit runs to process"

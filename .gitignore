@@ -28,3 +28,6 @@ archive/
 *.sqlite*
 .trailblazer.db
 logs/*.json
+
+# Log archives (contain large files)
+logs/archive_*/

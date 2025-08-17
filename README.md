@@ -84,10 +84,10 @@ trailblazer status
 make db.up && trailblazer db init && trailblazer db doctor
 
 # 6. Load embeddings (requires PostgreSQL + pgvector)
-trailblazer embed load --run-id <RUN_ID> --provider dummy
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
 
 # 7. Query your knowledge base
-trailblazer ask "How do I configure SSO?" --provider dummy
+trailblazer ask "How do I configure SSO?" --provider openai
 ```
 
 **Key Points:**
@@ -174,7 +174,7 @@ trailblazer db check
 trailblazer db init
 
 # Load normalized documents with embeddings (idempotent)
-trailblazer embed load --run-id <RUN_ID> --provider dummy
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
 
 # Query the embedded knowledge base
 trailblazer ask "How do I configure SSO?"
@@ -195,13 +195,13 @@ When you run enrichment multiple times and only want to re-embed documents whose
 
 ```bash
 # First embedding run - embeds all documents
-trailblazer embed load --run-id <RUN_ID> --provider dummy
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
 
 # Re-run enrichment with changes
 trailblazer enrich <RUN_ID> --llm
 
 # Second embedding run - only embeds documents with changed enrichment fingerprints
-trailblazer embed load --run-id <RUN_ID> --provider dummy --changed-only
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536 --changed-only
 ```
 
 **How it works:**
@@ -230,9 +230,53 @@ trailblazer embed load --run-id <RUN_ID> --provider dummy --changed-only
 **Environment Variables:**
 
 - `TRAILBLAZER_DB_URL`: PostgreSQL connection string (required)
-- `EMBED_PROVIDER`: Provider selection (dummy|openai|sentencetransformers)
+- `EMBED_PROVIDER`: Provider selection (openai|sentencetransformers)
 - `OPENAI_API_KEY`: For OpenAI embeddings
 - `OPENAI_EMBED_MODEL`: Model selection (default: text-embedding-3-small)
+
+### Corpus Embedding
+
+For embedding the entire corpus with comprehensive observability and batching support:
+
+```bash
+# Embed entire corpus with default settings
+trailblazer embed corpus
+
+# Customize provider and model
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
+
+# Resume from specific run
+trailblazer embed corpus --resume-from 2025-08-15_080633_c4f3
+
+# Limit runs to process
+trailblazer embed corpus --max-runs 10
+
+# Force re-embed all documents
+trailblazer embed corpus --reembed-all
+
+# Only embed changed documents
+trailblazer embed corpus --changed-only
+```
+
+**Corpus Embedding Features:**
+
+- **Automatic batching** for large runs (>2000 chunks by default)
+- **Progress tracking** with real-time status updates
+- **Resume capability** from any run ID
+- **Cost estimation** with --dry-run-cost
+- **Selective re-embedding** with --changed-only
+- **Comprehensive logging** under var/logs/embedding/
+- **Progress persistence** under var/progress/embedding.json
+
+**Monitoring:**
+
+```bash
+# Check embedding progress
+./scripts/monitoring/monitor_embedding.sh
+
+# View progress file
+cat var/progress/embedding.json
+```
 
 ## Ask - Semantic Search & Retrieval
 
@@ -246,7 +290,7 @@ trailblazer ask "How do I configure SSO?"
 trailblazer ask "authentication setup" \
   --top-k 10 \
   --max-chunks-per-doc 2 \
-  --provider dummy \
+  --provider openai \
   --max-chars 4000
 
 # JSON output for programmatic use
@@ -442,15 +486,15 @@ Chunk normalized documents and generate embeddings for retrieval:
 make db.up && trailblazer db init && trailblazer db doctor
 
 # Load documents with embeddings (requires PostgreSQL + pgvector)
-trailblazer embed load --run-id <RUN_ID> --provider dummy --batch 128
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
 
 # Or load from custom file
-trailblazer embed load --input normalized.ndjson --provider dummy
+trailblazer embed load --input normalized.ndjson --provider openai --model text-embedding-3-small --dimensions 1536
 ```
 
 **Environment variables for embeddings:**
 
-- `EMBED_PROVIDER` - Embedding provider: `dummy` (default, offline), `openai`, `sentencetransformers`
+- `EMBED_PROVIDER` - Embedding provider: `openai` (default), `sentencetransformers`
 - `OPENAI_API_KEY` - Required for OpenAI embeddings
 - `SENTENCE_TRANSFORMER_MODEL` - Local model name for sentence-transformers
 
@@ -462,12 +506,12 @@ Query your embedded knowledge base using dense vector similarity:
 
 ```bash
 # DB initialized and embeddings loaded from step 4
-trailblazer ask "How do I configure SSO in Navigate to SaaS?" --top-k 8 --max-chunks-per-doc 3 --provider dummy
+trailblazer ask "How do I configure SSO in Navigate to SaaS?" --top-k 8 --max-chunks-per-doc 3 --provider openai
 # artifacts → runs/<RUN_ID>/ask/
 
 # More options
 trailblazer ask "SAML configuration steps" \
-  --provider dummy \
+  --provider openai \
   --top-k 10 \
   --max-chunks-per-doc 2 \
   --max-chars 8000 \
@@ -479,7 +523,7 @@ trailblazer ask "SAML configuration steps" \
 
 - `--top-k N` - Number of top chunks to retrieve (default: 8)
 - `--max-chunks-per-doc N` - Max chunks per document (default: 3)
-- `--provider NAME` - Embedding provider: `dummy` (default), `openai`, `sentencetransformers`
+- `--provider NAME` - Embedding provider: `openai` (default), `sentencetransformers`
 - `--max-chars N` - Max characters in packed context (default: 6000)
 - `--format FORMAT` - Output format: `text` (default) or `json`
 - `--out DIR` - Output directory (default: `runs/<run_id>/ask/`)
@@ -491,7 +535,7 @@ trailblazer ask "SAML configuration steps" \
 - `summary.json` - Query metadata, counts, timing, and score statistics
 - `context.txt` - Packed context with separators, ready for LLM consumption
 
-**Note:** Default provider is `dummy` for offline safety. Configure `EMBED_PROVIDER` and `DB_URL` for production use.
+**Note:** Default provider is `openai` for production use. Configure `OPENAI_API_KEY` and `DB_URL` for production use.
 
 ### 5. Observability & Operations
 
