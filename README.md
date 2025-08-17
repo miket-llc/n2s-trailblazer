@@ -477,6 +477,41 @@ make db.down  # Stop PostgreSQL container
 make db.wait  # Wait for database readiness
 ```
 
+### 3.5. Backup & Daily Operations
+
+**⚠️ CRITICAL: Always backup before destructive operations!**
+
+```bash
+# Create daily backup (REQUIRED before any destructive ops)
+scripts/backup_pg_embeddings.sh
+
+# Check backup contents
+ls -la var/backups/$(date -u +%Y%m%dT*)/
+
+# Emergency restore (documentation only - manual execution required)
+scripts/restore_pg_embeddings.sh var/backups/20250101T120000Z
+```
+
+**Daily Operations Checklist:**
+
+1. **Backup First** → `scripts/backup_pg_embeddings.sh`
+1. **Status Check** → `trailblazer db doctor` / `trailblazer embed status`
+1. **Monitor Workers** → `bash scripts/monitor_embedding.sh` (if embedding)
+1. **Stop Workers** → `bash scripts/kill_embedding.sh` (if needed)
+
+**Backup Contents:**
+
+- `schema.sql` - Database schema (tables, indexes, extensions)
+- `embeddings.dump` - Embeddings data in PostgreSQL custom format
+- `manifest.json` - Backup metadata and restore instructions
+
+**⚠️ IMPORTANT:**
+
+- **Do not** run any destructive cleanup without a same-day backup
+- Embeddings are expensive to regenerate - protect them!
+- Use `trailblazer embed status` to monitor current counts
+- Archive logs instead of deleting: `var/logs/_archive/`
+
 ### 4. Embed & Graph v0
 
 Chunk normalized documents and generate embeddings for retrieval:

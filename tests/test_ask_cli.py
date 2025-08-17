@@ -169,10 +169,6 @@ def test_ask_json_format(mock_search_hits):
                 )
 
 
-@pytest.mark.skipif(
-    os.getenv("TB_TESTING") != "1",
-    reason="Requires TB_TESTING=1 for database tests",
-)
 def test_ask_no_results(mock_search_hits):
     """Test ask command when no results are found."""
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -200,10 +196,6 @@ def test_ask_no_results(mock_search_hits):
                 assert "No results found" in result.output
 
 
-@pytest.mark.skipif(
-    os.getenv("TB_TESTING") != "1",
-    reason="Requires TB_TESTING=1 for database tests",
-)
 def test_ask_ndjson_events(mock_search_hits):
     """Test that ask command emits proper NDJSON events."""
     with tempfile.TemporaryDirectory() as temp_dir:

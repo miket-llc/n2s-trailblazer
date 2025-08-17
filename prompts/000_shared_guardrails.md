@@ -39,3 +39,29 @@ Reports: Assurance artifacts live in var/reports/\<run_id>/ and are never autoâ€
 On macOS (Darwin), all runtime commands must run inside a virtual environment. If not detected (VIRTUAL_ENV, Poetry/Conda, or sys.prefix != sys.base_prefix), fail fast with clear guidance: "Activate your venv: source .venv/bin/activate or run make setup."
 
 CI/automation may bypass with TB_ALLOW_SYSTEM_PYTHON=1 only if explicitly set in CI config.
+
+## Production Operations Non-Negotiables
+
+### Database Safety
+
+- **Postgres-only in ops**: Runtime must use `TRAILBLAZER_DB_URL=postgresql://â€¦`. SQLite allowed **only** in unit tests behind `TB_TESTING=1`.
+- **No destructive ops without backup**: Any task that *could* impact embeddings must refuse to run unless a **fresh backup** exists from today.
+- **Embedding tables protected**: Never drop or clear `documents`, `chunks`, or `chunk_embeddings` tables.
+
+### Script Safety
+
+- **No pagers ever**: Export `PAGER=cat` and `LESS=-RFX` in all scripts and CLI entrypoints.
+- **zsh-safe commands**: Prefer **single quotes** and heredocs; avoid smart quotes; show both bash/zsh forms when needed.
+- **Zero IDE linter errors**: Use existing tooling first (`make fmt`, `make lint`, `make check-md`, `pre-commit`).
+
+### Backup Requirements
+
+- **Daily backups mandatory**: Run `scripts/backup_pg_embeddings.sh` before any destructive operations.
+- **Backup verification**: Confirm backup contains `schema.sql`, `embeddings.dump`, and `manifest.json`.
+- **Restore documentation**: Use `scripts/restore_pg_embeddings.sh` for emergency restore procedures.
+
+### No Regressions
+
+- **Read code before edits**: Be **surgical** unless a tiny refactor reduces risk.
+- **Script/CLI alignment**: Scripts must use existing CLI options; no phantom flags.
+- **Zero destructive changes**: Only add, never remove or modify existing functionality.

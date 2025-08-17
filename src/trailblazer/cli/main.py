@@ -3414,6 +3414,97 @@ def embed_corpus_cmd(
         log_message("✅ All runs completed successfully!", "INFO")
 
 
+@embed_app.command("status")
+def embed_status_cmd() -> None:
+    """Show current embedding status and database counts."""
+    # Run database preflight check first
+    _run_db_preflight_check()
+
+    from ..db.engine import get_engine
+    from sqlalchemy import text
+    from ..core.paths import logs
+    import time
+
+    typer.echo("📊 Embedding Status Report")
+    typer.echo("=" * 40)
+
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            # Get document counts
+            result = conn.execute(text("SELECT COUNT(*) FROM documents"))
+            doc_count = result.fetchone()[0]
+
+            result = conn.execute(text("SELECT COUNT(*) FROM chunks"))
+            chunk_count = result.fetchone()[0]
+
+            result = conn.execute(
+                text("SELECT COUNT(*) FROM chunk_embeddings")
+            )
+            embedding_count = result.fetchone()[0]
+
+            # Get provider and dimension info
+            result = conn.execute(
+                text("""
+                SELECT provider, dim, COUNT(*) as count
+                FROM chunk_embeddings 
+                GROUP BY provider, dim 
+                ORDER BY count DESC
+            """)
+            )
+            provider_info = result.fetchall()
+
+            # Get latest embedding timestamp
+            result = conn.execute(
+                text("""
+                SELECT MAX(created_at) as latest_embedding
+                FROM chunk_embeddings
+            """)
+            )
+            latest_embedding = result.fetchone()[0]
+
+        typer.echo(f"📄 Documents: {doc_count:,}")
+        typer.echo(f"🔤 Chunks: {chunk_count:,}")
+        typer.echo(f"🧠 Embeddings: {embedding_count:,}")
+
+        if provider_info:
+            typer.echo("\n🔌 Embedding Providers:")
+            for provider, dim, count in provider_info:
+                typer.echo(f"  • {provider} (dim={dim}): {count:,} embeddings")
+
+        if latest_embedding:
+            typer.echo(f"\n⏰ Latest embedding: {latest_embedding}")
+
+        # Show latest logs
+        logs_dir = logs() / "embedding"
+        if logs_dir.exists():
+            log_files = list(logs_dir.glob("*.log"))
+            if log_files:
+                latest_log = max(log_files, key=lambda x: x.stat().st_mtime)
+                typer.echo(f"\n📋 Latest log: {latest_log.name}")
+
+                # Show last few lines if it's a recent log
+                if latest_log.stat().st_mtime > (
+                    time.time() - 3600
+                ):  # Last hour
+                    typer.echo("📝 Recent log entries:")
+                    try:
+                        with open(latest_log, "r") as f:
+                            lines = f.readlines()
+                            for line in lines[-5:]:  # Last 5 lines
+                                typer.echo(f"  {line.rstrip()}")
+                    except Exception:
+                        typer.echo("  (Unable to read log file)")
+
+        typer.echo(
+            f"\n💾 Database: {engine.url.drivername}://{engine.url.host}:{engine.url.port}/{engine.url.database}"
+        )
+
+    except Exception as e:
+        typer.echo(f"❌ Error getting status: {e}", err=True)
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     # Enforce macOS venv check before any commands
     from ..env_checks import assert_virtualenv_on_macos

@@ -1,6 +1,5 @@
 """Tests for dense retrieval functionality."""
 
-import os
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -147,10 +146,6 @@ def test_pack_context_empty_hits():
     assert selected_hits == []
 
 
-@pytest.mark.skipif(
-    os.getenv("TB_TESTING") != "1",
-    reason="Requires TB_TESTING=1 for database tests",
-)
 def test_dense_retriever_initialization():
     """Test DenseRetriever initialization."""
     test_db_url = "postgresql://test:test@localhost:5432/test"
@@ -160,10 +155,6 @@ def test_dense_retriever_initialization():
     assert retriever.provider == "dummy"
 
 
-@pytest.mark.skipif(
-    os.getenv("TB_TESTING") != "1",
-    reason="Requires TB_TESTING=1 for database tests",
-)
 def test_dense_retriever_embed_query():
     """Test query embedding functionality."""
     with patch(
