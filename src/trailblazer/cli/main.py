@@ -3414,6 +3414,170 @@ def embed_corpus_cmd(
         log_message("✅ All runs completed successfully!", "INFO")
 
 
+@embed_app.command("preflight")
+def embed_preflight_cmd(
+    run: str = typer.Argument(
+        ..., help="Run ID to validate for embedding preflight"
+    ),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="Embedding provider (openai, sentencetransformers)",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Model name (e.g., text-embedding-3-small)",
+    ),
+    dim: Optional[int] = typer.Option(
+        None,
+        "--dim",
+        help="Embedding dimensions (e.g., 512, 1024, 1536)",
+    ),
+) -> None:
+    """
+    Validate a run is ready for embedding with preflight checks.
+
+    Validates that:
+    - Enriched and chunk files exist and have content
+    - Tokenizer is available
+    - Provider/model/dimensions are resolved
+    - Chunk statistics are computed
+
+    Writes preflight.json with validation results and stats.
+    """
+    import json
+    import statistics
+    from datetime import datetime, timezone
+    from ..core.paths import runs
+    from ..core.config import SETTINGS
+
+    # Resolve provider/model/dim from CLI args, env, or defaults
+    resolved_provider = provider or SETTINGS.EMBED_PROVIDER or "openai"
+    resolved_model = model or SETTINGS.EMBED_MODEL or "text-embedding-3-small"
+    resolved_dim = dim or SETTINGS.EMBED_DIMENSIONS or 1536
+
+    typer.echo(f"🔍 Preflight check for run: {run}", err=True)
+    typer.echo(
+        f"Provider: {resolved_provider}, Model: {resolved_model}, Dimensions: {resolved_dim}",
+        err=True,
+    )
+
+    # Validate run directory exists
+    run_dir = runs() / run
+    if not run_dir.exists():
+        typer.echo(f"❌ Run directory not found: {run_dir}", err=True)
+        raise typer.Exit(1)
+
+    # Check enriched.jsonl
+    enriched_file = run_dir / "enrich" / "enriched.jsonl"
+    if not enriched_file.exists():
+        typer.echo(f"❌ Enriched file not found: {enriched_file}", err=True)
+        typer.echo("Run 'trailblazer enrich <RID>' first", err=True)
+        raise typer.Exit(1)
+
+    # Count lines in enriched file
+    with open(enriched_file) as f:
+        enriched_lines = sum(1 for line in f if line.strip())
+
+    if enriched_lines == 0:
+        typer.echo(f"❌ Enriched file is empty: {enriched_file}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"✓ Enriched file: {enriched_lines} documents", err=True)
+
+    # Check chunks.ndjson
+    chunks_file = run_dir / "chunk" / "chunks.ndjson"
+    if not chunks_file.exists():
+        typer.echo(f"❌ Chunks file not found: {chunks_file}", err=True)
+        typer.echo("Run chunking phase first", err=True)
+        raise typer.Exit(1)
+
+    # Load and analyze chunks
+    chunks = []
+    with open(chunks_file) as f:
+        for line in f:
+            if line.strip():
+                chunk_data = json.loads(line.strip())
+                chunks.append(chunk_data)
+
+    if not chunks:
+        typer.echo(f"❌ Chunks file is empty: {chunks_file}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"✓ Chunks file: {len(chunks)} chunks", err=True)
+
+    # Verify tokenizer availability
+    try:
+        import tiktoken
+
+        tokenizer_version = tiktoken.__version__
+        typer.echo(f"✓ Tokenizer: tiktoken v{tokenizer_version}", err=True)
+    except ImportError:
+        typer.echo(
+            "❌ Tokenizer not available: tiktoken not installed", err=True
+        )
+        raise typer.Exit(1)
+
+    # Compute chunk statistics
+    token_counts = [chunk.get("token_count", 0) for chunk in chunks]
+    if not token_counts or all(t == 0 for t in token_counts):
+        typer.echo("❌ No valid token counts found in chunks", err=True)
+        raise typer.Exit(1)
+
+    # Compute P95 manually since statistics.quantile is not available in all Python versions
+    sorted_tokens = sorted(token_counts)
+    p95_index = int(0.95 * len(sorted_tokens))
+    p95_value = sorted_tokens[min(p95_index, len(sorted_tokens) - 1)]
+
+    token_stats = {
+        "count": len(token_counts),
+        "min": min(token_counts),
+        "median": int(statistics.median(token_counts)),
+        "p95": p95_value,
+        "max": max(token_counts),
+        "total": sum(token_counts),
+    }
+
+    typer.echo(
+        f"✓ Token stats: {token_stats['count']} chunks, {token_stats['min']}-{token_stats['max']} tokens (median: {token_stats['median']})",
+        err=True,
+    )
+
+    # Create preflight directory and write results
+    preflight_dir = run_dir / "preflight"
+    preflight_dir.mkdir(exist_ok=True)
+
+    preflight_data = {
+        "status": "success",
+        "run_id": run,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "counts": {
+            "enriched_docs": enriched_lines,
+            "chunks": len(chunks),
+        },
+        "tokenStats": token_stats,
+        "provider": resolved_provider,
+        "model": resolved_model,
+        "dimensions": resolved_dim,
+        "notes": [
+            f"Validated {enriched_lines} enriched documents",
+            f"Validated {len(chunks)} chunks with token range {token_stats['min']}-{token_stats['max']}",
+            f"Tokenizer: tiktoken v{tokenizer_version}",
+        ],
+    }
+
+    preflight_file = preflight_dir / "preflight.json"
+    with open(preflight_file, "w") as f:
+        json.dump(preflight_data, f, indent=2)
+
+    typer.echo(f"✅ Preflight complete: {preflight_file}", err=True)
+    typer.echo(
+        f"Run ready for embedding with {resolved_provider}/{resolved_model} at {resolved_dim} dimensions",
+        err=True,
+    )
+
+
 @embed_app.command("status")
 def embed_status_cmd() -> None:
     """Show current embedding status and database counts."""
@@ -3447,8 +3611,8 @@ def embed_status_cmd() -> None:
             result = conn.execute(
                 text("""
                 SELECT provider, dim, COUNT(*) as count
-                FROM chunk_embeddings 
-                GROUP BY provider, dim 
+                FROM chunk_embeddings
+                GROUP BY provider, dim
                 ORDER BY count DESC
             """)
             )

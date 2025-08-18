@@ -149,6 +149,9 @@ def _execute_phase(
         # Chunk phase: process normalized docs into chunks
         from .steps.embed.chunker import chunk_normalized_record
         import json
+        import hashlib
+        import statistics
+        from datetime import datetime, timezone
         from pathlib import Path
 
         # Extract run_id from output path (runs/<run_id>/chunk)
@@ -161,11 +164,29 @@ def _execute_phase(
 
         chunks_file = chunk_dir / "chunks.ndjson"
         total_chunks = 0
+        total_docs = 0
+        token_counts = []
+        chunk_config = {
+            "target_tokens": 700,
+            "max_tokens": 8000,
+            "overlap_pct": 0.15,
+            "model": "text-embedding-3-small",
+        }
+
+        # Compute hash of enriched file for traceability
+        enriched_file = Path(out).parent / "enrich" / "enriched.jsonl"
+        enriched_hash = None
+        if enriched_file.exists():
+            with open(enriched_file, "rb") as f:
+                enriched_hash = hashlib.sha256(f.read()).hexdigest()
 
         with open(normalized_file, "r") as fin, open(chunks_file, "w") as fout:
             for line in fin:
+                if not line.strip():
+                    continue
                 record = json.loads(line.strip())
                 chunks = chunk_normalized_record(record)
+                total_docs += 1
                 for chunk in chunks:
                     chunk_data = {
                         "chunk_id": chunk.chunk_id,
@@ -179,6 +200,55 @@ def _execute_phase(
                     }
                     fout.write(json.dumps(chunk_data) + "\n")
                     total_chunks += 1
+                    token_counts.append(chunk.token_count)
+
+        # Compute token statistics
+        token_stats = {}
+        if token_counts:
+            # Compute P95 manually since statistics.quantile is not available in all Python versions
+            sorted_tokens = sorted(token_counts)
+            p95_index = int(0.95 * len(sorted_tokens))
+            p95_value = sorted_tokens[min(p95_index, len(sorted_tokens) - 1)]
+
+            token_stats = {
+                "count": len(token_counts),
+                "min": min(token_counts),
+                "median": int(statistics.median(token_counts)),
+                "p95": p95_value,
+                "max": max(token_counts),
+                "total": sum(token_counts),
+            }
+
+        # Write chunk assurance file
+        chunk_assurance = {
+            "run_id": run_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "docCount": total_docs,
+            "chunkCount": total_chunks,
+            "tokenStats": token_stats,
+            "tokenizer": "tiktoken",
+            "chunkConfig": chunk_config,
+            "enrichedHash": enriched_hash,
+            "artifacts": {
+                "chunks_file": str(chunks_file),
+                "normalized_file": str(normalized_file),
+                "enriched_file": str(enriched_file)
+                if enriched_file.exists()
+                else None,
+            },
+        }
+
+        assurance_file = chunk_dir / "chunk_assurance.json"
+        with open(assurance_file, "w") as f:
+            json.dump(chunk_assurance, f, indent=2)
+
+        log.info(
+            "chunk.assurance",
+            run_id=run_id,
+            docs=total_docs,
+            chunks=total_chunks,
+            assurance_file=str(assurance_file),
+        )
 
         # Mark chunking complete in backlog
         try:
@@ -190,9 +260,57 @@ def _execute_phase(
 
     elif phase == "embed":
         from .steps.embed.loader import load_normalized_to_db
+        import json
+        from datetime import datetime, timezone
+        from pathlib import Path
 
         # Extract run_id from output path (runs/<run_id>/embed)
         run_id = out.split("/")[-2]
+
+        # Create embed assurance by copying chunk assurance
+        embed_dir = Path(out)
+        embed_dir.mkdir(parents=True, exist_ok=True)
+
+        chunk_assurance_file = (
+            embed_dir.parent / "chunk" / "chunk_assurance.json"
+        )
+        embed_assurance_file = embed_dir / "embed_assurance.json"
+
+        embed_assurance = {
+            "run_id": run_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "chunk": None,
+            "embed": {
+                "provider": settings.EMBED_PROVIDER if settings else "dummy",
+                "model": settings.EMBED_MODEL if settings else None,
+                "dimensions": settings.EMBED_DIMENSIONS if settings else None,
+                "batch_size": settings.EMBED_BATCH_SIZE if settings else 128,
+            },
+        }
+
+        # Copy chunk assurance data if available
+        if chunk_assurance_file.exists():
+            with open(chunk_assurance_file) as f:
+                chunk_assurance = json.load(f)
+            embed_assurance["chunk"] = chunk_assurance
+            log.info(
+                "embed.assurance.chunk_copied",
+                run_id=run_id,
+                chunk_docs=chunk_assurance.get("docCount"),
+                chunk_count=chunk_assurance.get("chunkCount"),
+            )
+        else:
+            log.warning("embed.assurance.no_chunk_data", run_id=run_id)
+
+        # Write embed assurance
+        with open(embed_assurance_file, "w") as f:
+            json.dump(embed_assurance, f, indent=2)
+
+        log.info(
+            "embed.assurance.created",
+            run_id=run_id,
+            assurance_file=str(embed_assurance_file),
+        )
 
         # Use settings for embedding configuration
         provider_name = settings.EMBED_PROVIDER if settings else "dummy"
