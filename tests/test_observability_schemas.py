@@ -3,7 +3,7 @@
 import json
 import tempfile
 from pathlib import Path
-from src.trailblazer.obs.events import (
+from trailblazer.obs.events import (
     EventEmitter,
     ObservabilityEvent,
     EventLevel,

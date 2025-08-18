@@ -30,7 +30,8 @@ def db_doctor(
         # Check connection
         with get_session() as session:
             result = session.execute(text("SELECT version()"))
-            version = result.fetchone()[0]
+            row = result.fetchone()
+            version = row[0] if row else "unknown"
             console.print("✅ Database connection successful")
             if verbose:
                 console.print(f"   Version: {version}")
@@ -55,7 +56,8 @@ def db_doctor(
                 result = session.execute(
                     text(f"SELECT to_regclass('{table}')")
                 )
-                if result.fetchone()[0]:
+                row = result.fetchone()
+                if row and row[0]:
                     console.print(f"✅ Table '{table}' exists")
                 else:
                     console.print(f"❌ Table '{table}' missing")
@@ -135,9 +137,9 @@ def db_stats() -> None:
             # Get embedding providers
             provider_stats = session.execute(
                 text("""
-                SELECT provider, COUNT(*) as count 
-                FROM chunk_embeddings 
-                GROUP BY provider 
+                SELECT provider, COUNT(*) as count
+                FROM chunk_embeddings
+                GROUP BY provider
                 ORDER BY count DESC
             """)
             ).fetchall()
