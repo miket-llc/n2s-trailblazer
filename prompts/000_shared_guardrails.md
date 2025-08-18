@@ -4,7 +4,7 @@
 
 Trailblazer builds a bespoke knowledge base from Confluence and Oxygen/DITA; pipeline is Normalize → Enrich → Chunk → Embed into Postgres + pgvector for retrieval.
 
-Embeddings: OpenAI text-embedding-3-small (1536 dims) for production.
+Embeddings: OpenAI text-embedding-3-small (1536 dimension) for production.
 
 Past incident: vectors were mistakenly stored as JSON; a new schema was created; vectors were converted and missing rows patched.
 
@@ -62,11 +62,12 @@ CI/automation may bypass with TB_ALLOW_SYSTEM_PYTHON=1 only if explicitly set in
 
 ### Embedding Operations
 
-- **Preflight mandatory**: Run `trailblazer embed preflight --run <RID> --provider openai --model text-embedding-3-small --dimension 1536` before dispatch.
-- **Tokenizer pinning**: Log tiktoken version in preflight; echo version in embedding operations for reproducibility.
-- **Quality distribution gates**: Default thresholds `minQuality=0.60`, `maxBelowThresholdPct=0.20` (configurable via enrich command).
-- **Provider/dimension sanity**: Use canonical SQL: `SELECT provider, dimension, COUNT(*) AS n FROM public.chunk_embeddings GROUP BY 1,2 ORDER BY 1,2;`
-- **Operator proofs bundle**: Maintain preflight JSON, chunk assurance, embed assurance, monitor snapshot, provider/dimension SQL output.
+- **Preflight mandatory**: Run `trailblazer embed preflight --run <RID> --provider openai --model text-embedding-3-small --dimension 1536` before any embed.
+- **Plan-preflight preferred**: Run `trailblazer embed plan-preflight --plan-file var/temp_runs_to_embed.txt --provider openai --model text-embedding-3-small --dimension 1536` and prefer dispatching from `ready.txt`.
+- **Tokenizer pinning**: Pin tiktoken version; emit version in assurance; gate on quality distribution (defaults: `minQuality=0.60`, `maxBelowThresholdPct=0.20`).
+- **Provider/dimension sanity**: Use canonical SQL: `SELECT provider, dimension, COUNT(*) AS n FROM public.chunk_embeddings GROUP BY 1,2 ORDER BY 1,2;` → expect 1 row `(openai, 1536, N)`.
+- **Operator proofs bundle**: Capture preflight JSON, chunk assurance, embed assurance, monitor snapshot, provider/dimension SQL output.
+- **Terminology**: Use `dimension` (singular) only; `dimensions` is deprecated for compatibility.
 
 ### No Regressions
 

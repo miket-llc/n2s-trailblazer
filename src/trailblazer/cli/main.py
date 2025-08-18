@@ -3792,6 +3792,568 @@ def embed_preflight_cmd(
     )
 
 
+@embed_app.command("plan-preflight")
+def embed_plan_preflight_cmd(
+    plan_file: str = typer.Option(
+        "var/temp_runs_to_embed.txt",
+        "--plan-file",
+        help="Plan file with runs to validate (format: run_id:chunk_count per line)",
+    ),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="Embedding provider (openai, sentencetransformers)",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Model name (e.g., text-embedding-3-small)",
+    ),
+    dimension: Optional[int] = typer.Option(
+        None,
+        "--dimension",
+        help="Embedding dimension (e.g., 512, 1024, 1536)",
+    ),
+    price_per_1k: Optional[float] = typer.Option(
+        None,
+        "--price-per-1k",
+        help="Price per 1K tokens (USD) for cost estimation",
+    ),
+    tps_per_worker: Optional[float] = typer.Option(
+        None,
+        "--tps-per-worker",
+        help="Tokens per second per worker for time estimation",
+    ),
+    workers: Optional[int] = typer.Option(
+        None,
+        "--workers",
+        help="Number of workers for time estimation",
+    ),
+    out_dir: str = typer.Option(
+        "var/plan_preflight/",
+        "--out-dir",
+        help="Output directory (tool creates timestamped subdirectory)",
+    ),
+) -> None:
+    """
+    Run preflight checks for all runs in a plan file.
+
+    Reads a plan file (default: var/temp_runs_to_embed.txt) and runs
+    preflight validation for each run, then produces aggregated reports
+    with ready/blocked decisions, reasons, and optional cost/time estimates.
+
+    Writes plan_preflight.json, plan_preflight.csv, plan_preflight.md,
+    ready.txt, blocked.txt, and log.out to a timestamped output directory.
+
+    Exit codes:
+    - 0: Success (even if some runs are blocked)
+    - 1: Fatal error (missing plan file, no runs, CLI misuse)
+    """
+    import json
+    import csv
+    import subprocess
+    from datetime import datetime, timezone
+    from pathlib import Path
+    from ..core.paths import runs
+    from ..core.config import SETTINGS
+
+    # Resolve provider/model/dimension from CLI args, env, or defaults
+    resolved_provider = provider or SETTINGS.EMBED_PROVIDER or "openai"
+    resolved_model = model or SETTINGS.EMBED_MODEL or "text-embedding-3-small"
+    resolved_dimension = dimension or SETTINGS.EMBED_DIMENSIONS or 1536
+
+    typer.echo("🔍 Plan preflight check", err=True)
+    typer.echo(f"Plan file: {plan_file}", err=True)
+    typer.echo(
+        f"Provider: {resolved_provider}, Model: {resolved_model}, Dimension: {resolved_dimension}",
+        err=True,
+    )
+
+    # Check plan file exists
+    plan_path = Path(plan_file)
+    if not plan_path.exists():
+        typer.echo(f"❌ Plan file not found: {plan_file}", err=True)
+        raise typer.Exit(1)
+
+    # Read plan file and parse run IDs
+    run_entries = []
+    with open(plan_path, "r") as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            # Skip blank lines and comments
+            if not line or line.startswith("#"):
+                continue
+
+            if ":" not in line:
+                typer.echo(
+                    f"⚠️  Skipping invalid line {line_num}: {line}", err=True
+                )
+                continue
+
+            run_id, chunk_count_str = line.split(":", 1)
+            run_id = run_id.strip()
+            chunk_count_str = chunk_count_str.strip()
+
+            try:
+                chunk_count = int(chunk_count_str)
+            except ValueError:
+                typer.echo(
+                    f"⚠️  Skipping line {line_num} with invalid chunk count: {line}",
+                    err=True,
+                )
+                continue
+
+            run_entries.append((run_id, chunk_count))
+
+    if not run_entries:
+        typer.echo(
+            f"❌ No valid runs found in plan file: {plan_file}", err=True
+        )
+        raise typer.Exit(1)
+
+    typer.echo(f"📊 Found {len(run_entries)} runs in plan", err=True)
+
+    # Create timestamped output directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = Path(out_dir) / timestamp
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    typer.echo(f"📁 Output directory: {output_dir}", err=True)
+
+    # Initialize collections for results
+    runs_data = []
+    ready_runs = []
+    blocked_runs = []
+    log_entries = []
+
+    # Process each run
+    for run_id, expected_chunk_count in run_entries:
+        typer.echo(f"🔍 Processing run: {run_id}", err=True)
+        log_entries.append(f"Processing run: {run_id}")
+
+        # Run preflight for this run
+        try:
+            # Build preflight command
+            preflight_cmd = [
+                "python",
+                "-m",
+                "trailblazer.cli.main",
+                "embed",
+                "preflight",
+                run_id,
+                "--provider",
+                resolved_provider,
+                "--model",
+                resolved_model,
+                "--dim",
+                str(resolved_dimension),
+            ]
+
+            # Set PYTHONPATH to ensure module can be found
+            import os
+
+            env = os.environ.copy()
+            env["PYTHONPATH"] = "src"
+
+            result = subprocess.run(
+                preflight_cmd,
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=Path.cwd(),
+            )
+
+            preflight_exit_code = result.returncode
+            log_entries.append(
+                f"Preflight exit code for {run_id}: {preflight_exit_code}"
+            )
+
+        except Exception as e:
+            typer.echo(
+                f"❌ Failed to run preflight for {run_id}: {e}", err=True
+            )
+            log_entries.append(f"Failed to run preflight for {run_id}: {e}")
+
+            # Add to blocked with error reason
+            blocked_runs.append(run_id)
+            runs_data.append(
+                {
+                    "rid": run_id,
+                    "status": "BLOCKED",
+                    "reason": f"PREFLIGHT_ERROR: {str(e)}",
+                    "docCount": 0,
+                    "chunkCount": 0,
+                    "tokenStats": {
+                        "min": 0,
+                        "median": 0,
+                        "p95": 0,
+                        "max": 0,
+                        "total": 0,
+                    },
+                    "qualityDistribution": {
+                        "p50": 0,
+                        "p90": 0,
+                        "belowThresholdPct": 0,
+                        "minQuality": 0,
+                        "maxBelowThresholdPct": 0,
+                    },
+                    "provider": resolved_provider,
+                    "model": resolved_model,
+                    "dimension": resolved_dimension,
+                    "estimatedCalls": 0,
+                    "estimatedTokens": 0,
+                    "estCostUSD": None,
+                    "estTimeSec": None,
+                }
+            )
+            continue
+
+        # Parse preflight results
+        run_dir = runs() / run_id
+        preflight_file = run_dir / "preflight" / "preflight.json"
+
+        # Initialize run data with defaults
+        run_data = {
+            "rid": run_id,
+            "status": "BLOCKED",
+            "reason": None,
+            "docCount": 0,
+            "chunkCount": 0,
+            "tokenStats": {
+                "min": 0,
+                "median": 0,
+                "p95": 0,
+                "max": 0,
+                "total": 0,
+            },
+            "qualityDistribution": {
+                "p50": 0,
+                "p90": 0,
+                "belowThresholdPct": 0,
+                "minQuality": 0,
+                "maxBelowThresholdPct": 0,
+            },
+            "provider": resolved_provider,
+            "model": resolved_model,
+            "dimension": resolved_dimension,
+            "estimatedCalls": 0,
+            "estimatedTokens": 0,
+            "estCostUSD": None,
+            "estTimeSec": None,
+        }
+
+        if preflight_exit_code == 0:
+            # Preflight passed - parse results
+            if preflight_file.exists():
+                try:
+                    with open(preflight_file) as f:
+                        preflight_data = json.load(f)
+
+                    run_data.update(
+                        {
+                            "status": "READY",
+                            "docCount": preflight_data.get("counts", {}).get(
+                                "enriched_docs", 0
+                            ),
+                            "chunkCount": preflight_data.get("counts", {}).get(
+                                "chunks", 0
+                            ),
+                            "tokenStats": preflight_data.get("tokenStats", {}),
+                            "qualityDistribution": preflight_data.get(
+                                "qualityDistribution", {}
+                            ),
+                            "estimatedCalls": preflight_data.get(
+                                "counts", {}
+                            ).get("chunks", 0),
+                            "estimatedTokens": preflight_data.get(
+                                "tokenStats", {}
+                            ).get("total", 0),
+                        }
+                    )
+
+                    ready_runs.append(run_id)
+                    log_entries.append(f"✅ {run_id}: READY")
+
+                except Exception as e:
+                    run_data.update(
+                        {
+                            "status": "BLOCKED",
+                            "reason": f"PREFLIGHT_PARSE_ERROR: {str(e)}",
+                        }
+                    )
+                    blocked_runs.append(run_id)
+                    log_entries.append(
+                        f"❌ {run_id}: BLOCKED - parse error: {e}"
+                    )
+            else:
+                run_data.update(
+                    {"status": "BLOCKED", "reason": "PREFLIGHT_FILE_MISSING"}
+                )
+                blocked_runs.append(run_id)
+                log_entries.append(
+                    f"❌ {run_id}: BLOCKED - preflight file missing"
+                )
+        else:
+            # Preflight failed - determine reason
+            reason = "UNKNOWN_ERROR"
+            if (
+                "enriched.jsonl" in result.stderr
+                or "MISSING_ENRICH" in result.stderr
+            ):
+                reason = "MISSING_ENRICH"
+            elif (
+                "chunks.ndjson" in result.stderr
+                or "MISSING_CHUNKS" in result.stderr
+            ):
+                reason = "MISSING_CHUNKS"
+            elif (
+                "quality" in result.stderr.lower()
+                or "QUALITY_GATE" in result.stderr
+            ):
+                reason = "QUALITY_GATE"
+            elif (
+                "tiktoken" in result.stderr
+                or "TOKENIZER_MISSING" in result.stderr
+            ):
+                reason = "TOKENIZER_MISSING"
+            elif (
+                "provider" in result.stderr.lower()
+                or "model" in result.stderr.lower()
+            ):
+                reason = "CONFIG_INVALID"
+
+            run_data.update({"status": "BLOCKED", "reason": reason})
+            blocked_runs.append(run_id)
+            log_entries.append(f"❌ {run_id}: BLOCKED - {reason}")
+
+        # Add cost/time estimates if pricing info provided
+        estimated_tokens = run_data["estimatedTokens"]
+        if (
+            price_per_1k is not None
+            and isinstance(estimated_tokens, int)
+            and estimated_tokens > 0
+        ):
+            run_data["estCostUSD"] = (estimated_tokens / 1000.0) * price_per_1k
+
+        if (
+            tps_per_worker is not None
+            and workers is not None
+            and isinstance(estimated_tokens, int)
+            and estimated_tokens > 0
+        ):
+            total_tps = tps_per_worker * workers
+            run_data["estTimeSec"] = estimated_tokens / total_tps
+
+        runs_data.append(run_data)
+
+    # Calculate aggregate totals
+    total_docs = sum(
+        run["docCount"]
+        for run in runs_data
+        if isinstance(run["docCount"], int)
+    )
+    total_chunks = sum(
+        run["chunkCount"]
+        for run in runs_data
+        if isinstance(run["chunkCount"], int)
+    )
+    total_tokens = sum(
+        run["tokenStats"].get("total", 0)
+        for run in runs_data
+        if isinstance(run.get("tokenStats"), dict)
+        and isinstance(run["tokenStats"].get("total"), int)
+    )
+
+    est_cost_usd = None
+    est_time_sec = None
+    if price_per_1k is not None:
+        est_cost_usd = sum(
+            run["estCostUSD"]
+            for run in runs_data
+            if run["estCostUSD"] is not None
+            and isinstance(run["estCostUSD"], (int, float))
+        )
+    if tps_per_worker is not None and workers is not None:
+        est_time_sec = sum(
+            run["estTimeSec"]
+            for run in runs_data
+            if run["estTimeSec"] is not None
+            and isinstance(run["estTimeSec"], (int, float))
+        )
+
+    # Build final JSON report
+    report_data = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "provider": resolved_provider,
+        "model": resolved_model,
+        "dimension": resolved_dimension,
+        "pricePer1k": price_per_1k,
+        "tpsPerWorker": tps_per_worker,
+        "workers": workers,
+        "runsTotal": len(runs_data),
+        "runsReady": len(ready_runs),
+        "runsBlocked": len(blocked_runs),
+        "totals": {
+            "docs": total_docs,
+            "chunks": total_chunks,
+            "tokens": total_tokens,
+            "estCostUSD": est_cost_usd,
+            "estTimeSec": est_time_sec,
+        },
+        "runs": runs_data,
+    }
+
+    # Write JSON report
+    json_file = output_dir / "plan_preflight.json"
+    with open(json_file, "w") as f:
+        json.dump(report_data, f, indent=2)
+
+    # Write CSV report
+    csv_file = output_dir / "plan_preflight.csv"
+    with open(csv_file, "w", newline="") as f:
+        fieldnames = [
+            "rid",
+            "status",
+            "reason",
+            "docCount",
+            "chunkCount",
+            "tokenTotal",
+            "estCalls",
+            "estTokens",
+            "estCostUSD",
+            "estTimeSec",
+            "provider",
+            "model",
+            "dimension",
+        ]
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for run in runs_data:
+            writer.writerow(
+                {
+                    "rid": run["rid"],
+                    "status": run["status"],
+                    "reason": run["reason"] or "",
+                    "docCount": run["docCount"],
+                    "chunkCount": run["chunkCount"],
+                    "tokenTotal": run["tokenStats"].get("total", 0)
+                    if isinstance(run.get("tokenStats"), dict)
+                    else 0,
+                    "estCalls": run["estimatedCalls"],
+                    "estTokens": run["estimatedTokens"],
+                    "estCostUSD": run["estCostUSD"] or "",
+                    "estTimeSec": run["estTimeSec"] or "",
+                    "provider": run["provider"],
+                    "model": run["model"],
+                    "dimension": run["dimension"],
+                }
+            )
+
+    # Write Markdown report
+    md_file = output_dir / "plan_preflight.md"
+    with open(md_file, "w") as f:
+        f.write("# Plan Preflight Report\n\n")
+        f.write(f"**Timestamp:** {report_data['timestamp']}\n")
+        f.write(f"**Provider:** {resolved_provider}\n")
+        f.write(f"**Model:** {resolved_model}\n")
+        f.write(f"**Dimension:** {resolved_dimension}\n\n")
+
+        f.write("## Summary\n\n")
+        f.write(f"- **Total Runs:** {len(runs_data)}\n")
+        f.write(f"- **Ready:** {len(ready_runs)}\n")
+        f.write(f"- **Blocked:** {len(blocked_runs)}\n")
+        f.write(f"- **Total Documents:** {total_docs:,}\n")
+        f.write(f"- **Total Chunks:** {total_chunks:,}\n")
+        f.write(f"- **Total Tokens:** {total_tokens:,}\n")
+
+        if est_cost_usd is not None:
+            f.write(f"- **Estimated Cost:** ${est_cost_usd:.4f} USD\n")
+        if est_time_sec is not None:
+            f.write(f"- **Estimated Time:** {est_time_sec:.1f} seconds\n")
+
+        f.write(f"\n## Ready Runs ({len(ready_runs)})\n\n")
+        if ready_runs:
+            f.write(
+                "| Run ID | Docs | Chunks | Tokens | Est Cost | Est Time |\n"
+            )
+            f.write(
+                "|--------|------|--------|--------|----------|----------|\n"
+            )
+            for run in runs_data:
+                if run["status"] == "READY":
+                    cost_str = (
+                        f"${run['estCostUSD']:.4f}"
+                        if run["estCostUSD"]
+                        else "N/A"
+                    )
+                    time_str = (
+                        f"{run['estTimeSec']:.1f}s"
+                        if run["estTimeSec"]
+                        else "N/A"
+                    )
+                    f.write(
+                        f"| {run['rid']} | {run['docCount']} | {run['chunkCount']} | {run['tokenStats'].get('total', 0) if isinstance(run.get('tokenStats'), dict) else 0:,} | {cost_str} | {time_str} |\n"
+                    )
+        else:
+            f.write("*No ready runs*\n")
+
+        f.write(f"\n## Blocked Runs ({len(blocked_runs)})\n\n")
+        if blocked_runs:
+            f.write("| Run ID | Reason |\n")
+            f.write("|--------|--------|\n")
+            for run in runs_data:
+                if run["status"] == "BLOCKED":
+                    f.write(f"| {run['rid']} | {run['reason']} |\n")
+        else:
+            f.write("*No blocked runs*\n")
+
+        f.write("\n## How to fix common failures\n\n")
+        f.write(
+            "- **MISSING_ENRICH** → run `trailblazer enrich run --run <RID>`\n"
+        )
+        f.write(
+            "- **MISSING_CHUNKS** → run `trailblazer chunk run --run <RID>`\n"
+        )
+        f.write(
+            "- **QUALITY_GATE** → re-run enrich with `--min-quality` lowered (carefully) or fix source docs\n"
+        )
+        f.write(
+            "- **TOKENIZER_MISSING** → install/ensure tokenizer in ops venv\n"
+        )
+        f.write(
+            "- **CONFIG_INVALID** → ensure provider/model/dimension set in env or flags\n"
+        )
+
+    # Write ready.txt
+    ready_file = output_dir / "ready.txt"
+    with open(ready_file, "w") as f:
+        for run_id in ready_runs:
+            f.write(f"{run_id}\n")
+
+    # Write blocked.txt
+    blocked_file = output_dir / "blocked.txt"
+    with open(blocked_file, "w") as f:
+        for run in runs_data:
+            if run["status"] == "BLOCKED":
+                f.write(f"{run['rid']}: {run['reason']}\n")
+
+    # Write log.out
+    log_file = output_dir / "log.out"
+    with open(log_file, "w") as f:
+        for entry in log_entries:
+            f.write(f"{entry}\n")
+
+    # Final summary
+    typer.echo("\n📊 Plan Preflight Complete", err=True)
+    typer.echo(f"✅ Ready: {len(ready_runs)} runs", err=True)
+    typer.echo(f"❌ Blocked: {len(blocked_runs)} runs", err=True)
+    typer.echo(f"📁 Reports written to: {output_dir}", err=True)
+
+    # Always exit 0 - this is a reporting tool
+    typer.echo("✅ Plan preflight completed successfully", err=True)
+
+
 @embed_app.command("status")
 def embed_status_cmd() -> None:
     """Show current embedding status and database counts."""

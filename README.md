@@ -268,6 +268,82 @@ trailblazer embed corpus --changed-only
 - **Comprehensive logging** under var/logs/embedding/
 - **Progress persistence** under var/progress/embedding.json
 
+### Plan Preflight
+
+Before dispatching embedding jobs, you can validate all runs in your plan file and get cost/time estimates:
+
+```bash
+# Basic plan preflight check
+trailblazer embed plan-preflight --plan-file var/temp_runs_to_embed.txt
+
+# With cost and time estimation
+trailblazer embed plan-preflight \
+  --plan-file var/temp_runs_to_embed.txt \
+  --provider openai --model text-embedding-3-small --dimension 1536 \
+  --price-per-1k 0.00002 --tps-per-worker 1000 --workers 2
+
+# Custom output directory
+trailblazer embed plan-preflight \
+  --plan-file my_plan.txt \
+  --out-dir var/custom_preflight/
+```
+
+**Plan Preflight Features:**
+
+- **Batch validation**: Runs `trailblazer embed preflight` for each run in your plan file
+- **Ready/blocked classification**: Identifies which runs are ready for embedding vs blocked
+- **Failure reason detection**: Categorizes common failure modes (MISSING_ENRICH, MISSING_CHUNKS, QUALITY_GATE, etc.)
+- **Cost estimation**: Optional pricing calculations if `--price-per-1k` provided
+- **Time estimation**: Optional duration estimates if `--tps-per-worker` and `--workers` provided
+- **Multiple output formats**: JSON, CSV, Markdown reports plus ready.txt and blocked.txt lists
+
+**Plan File Format:**
+
+The plan file should contain one run per line in `run_id:chunk_count` format:
+
+```text
+# Example plan file
+2025-08-18_1234_confluence_full:1500
+2025-08-18_5678_dita_docs:800
+2025-08-18_9999_user_guides:200
+```
+
+**Generated Artifacts:**
+
+Plan preflight creates a timestamped directory under `var/plan_preflight/` with:
+
+- `plan_preflight.json` - Complete report with per-run details and aggregated totals
+- `plan_preflight.csv` - Tabular format for spreadsheet analysis
+- `plan_preflight.md` - Human-readable report with ready/blocked tables and fix guidance
+- `ready.txt` - List of run IDs ready for embedding (use with dispatcher)
+- `blocked.txt` - List of blocked run IDs with reasons
+- `log.out` - Processing log with per-run status
+
+**Plan-preflight → Dispatch Workflow:**
+
+The recommended workflow integrates plan-preflight with existing dispatcher scripts:
+
+```bash
+# 1. Run plan-preflight with cost/time estimates
+trailblazer embed plan-preflight \
+  --plan-file var/temp_runs_to_embed.txt \
+  --provider openai --model text-embedding-3-small --dimension 1536 \
+  --price-per-1k 0.00002 --tps-per-worker 1000 --workers 2
+
+# 2. Dispatch using only validated runs
+scripts/embed_dispatch.sh --plan-file var/plan_preflight/<TS>/ready.txt
+```
+
+This ensures only runs that pass preflight validation are dispatched, avoiding surprises and providing accurate cost/time estimates. See the [Trailblazer mindfile](docs/2025-08-18-0839_trailblazer-mindfile.md) for the complete reset/dispatch/monitor flow and operator proofs.
+
+**Common Failure Reasons & Fixes:**
+
+- **MISSING_ENRICH** → run `trailblazer enrich run --run <RID>`
+- **MISSING_CHUNKS** → run `trailblazer chunk run --run <RID>`  
+- **QUALITY_GATE** → re-run enrich with `--min-quality` lowered (carefully) or fix source docs
+- **TOKENIZER_MISSING** → install/ensure tokenizer in ops venv
+- **CONFIG_INVALID** → ensure provider/model/dimension set in env or flags
+
 **Monitoring:**
 
 ```bash
