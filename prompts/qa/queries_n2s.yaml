@@ -1,0 +1,78 @@
+# Navigate to SaaS (N2S) Domain Queries for Retrieval QA
+# These queries test retrieval quality using canonical N2S methodology questions
+
+queries:
+  - id: "n2s_stages"
+    text: "What are the stages of the Navigate to SaaS methodology?"
+    notes: "Core methodology question - should retrieve foundational N2S content"
+    expectations: "Should find methodology overview, stage definitions, and process flow"
+
+  - id: "sprint0_vs_prepare"
+    text: "What is the difference between Sprint 0 and the Prepare stage?"
+    notes: "Disambiguation question - tests ability to distinguish similar concepts"
+    expectations: "Should clearly differentiate these two phases with specific activities"
+
+  - id: "banner_integrations"
+    text: "How do Banner integrations work in the Navigate to SaaS process?"
+    notes: "Technical integration question - tests domain-specific knowledge"
+    expectations: "Should cover Banner ERP integration patterns, data migration, API considerations"
+
+  - id: "sa_responsibilities"
+    text: "What are the Solution Architect responsibilities during implementation?"
+    notes: "Role-specific question - tests retrieval of responsibility matrices"
+    expectations: "Should outline SA duties, deliverables, and collaboration patterns"
+
+  - id: "curriculum_management"
+    text: "What are the Curriculum Management runbooks and procedures?"
+    notes: "Operational question - tests retrieval of procedural documentation"
+    expectations: "Should find step-by-step procedures, troubleshooting guides, best practices"
+
+  - id: "data_migration_strategy"
+    text: "What is the recommended data migration strategy for SaaS transitions?"
+    notes: "Strategic question - tests high-level guidance retrieval"
+    expectations: "Should cover migration planning, data validation, rollback procedures"
+
+  - id: "go_live_checklist"
+    text: "What items should be included in the go-live checklist?"
+    notes: "Operational readiness question - tests checklist and procedure retrieval"
+    expectations: "Should find comprehensive go-live activities, validation steps, rollback plans"
+
+  - id: "risk_mitigation"
+    text: "How should implementation risks be identified and mitigated?"
+    notes: "Risk management question - tests process and framework retrieval"
+    expectations: "Should cover risk assessment frameworks, mitigation strategies, escalation paths"
+
+  - id: "stakeholder_communication"
+    text: "What are the stakeholder communication protocols during transitions?"
+    notes: "Change management question - tests communication framework retrieval"
+    expectations: "Should outline communication plans, stakeholder matrices, update cadences"
+
+  - id: "performance_monitoring"
+    text: "How should system performance be monitored post-implementation?"
+    notes: "Operations question - tests monitoring and observability guidance"
+    expectations: "Should cover KPIs, monitoring tools, alerting strategies, performance baselines"
+
+  - id: "user_training_approach"
+    text: "What is the recommended approach for user training and adoption?"
+    notes: "Change management question - tests training methodology retrieval"
+    expectations: "Should find training frameworks, adoption strategies, success metrics"
+
+  - id: "integration_testing"
+    text: "What are the integration testing requirements and procedures?"
+    notes: "Quality assurance question - tests technical procedure retrieval"
+    expectations: "Should cover test planning, execution procedures, acceptance criteria"
+
+  - id: "security_compliance"
+    text: "What security and compliance requirements must be addressed?"
+    notes: "Security question - tests compliance framework retrieval"
+    expectations: "Should find security controls, compliance checklists, audit procedures"
+
+  - id: "support_transition"
+    text: "How should support responsibilities transition from implementation to operations?"
+    notes: "Operational handoff question - tests transition procedure retrieval"
+    expectations: "Should cover knowledge transfer, documentation handoff, support model changes"
+
+  - id: "success_metrics"
+    text: "What metrics should be used to measure implementation success?"
+    notes: "Success criteria question - tests KPI and measurement retrieval"
+    expectations: "Should find success frameworks, measurement approaches, reporting requirements"

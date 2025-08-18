@@ -34,6 +34,7 @@ confluence_app = typer.Typer(help="Confluence commands")
 ops_app = typer.Typer(help="Operations commands")
 paths_app = typer.Typer(help="Workspace path commands")
 runs_app = typer.Typer(help="Runs management commands")
+qa_app = typer.Typer(help="Quality assurance commands")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(normalize_app, name="normalize")
 app.add_typer(db_app, name="db")
@@ -43,6 +44,7 @@ app.add_typer(confluence_app, name="confluence")
 app.add_typer(ops_app, name="ops")
 app.add_typer(paths_app, name="paths")
 app.add_typer(runs_app, name="runs")
+app.add_typer(qa_app, name="qa")
 
 
 def _run_db_preflight_check() -> None:
@@ -4805,6 +4807,136 @@ def embed_reembed_if_changed_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Embedding error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@qa_app.command("retrieval")
+def qa_retrieval_cmd(
+    queries_file: str = typer.Option(
+        "prompts/qa/queries_n2s.yaml",
+        "--queries-file",
+        help="YAML file containing queries to test",
+    ),
+    budgets: str = typer.Option(
+        "1500,4000,6000",
+        "--budgets",
+        help="Comma-separated character budgets for context packing",
+    ),
+    top_k: int = typer.Option(
+        12,
+        "--top-k",
+        help="Number of top results to retrieve per query",
+    ),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="Embedding provider (defaults from env: TRAILBLAZER_EMBED_PROVIDER)",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Embedding model (defaults from env: TRAILBLAZER_EMBED_MODEL)",
+    ),
+    dimension: Optional[int] = typer.Option(
+        None,
+        "--dimension",
+        help="Embedding dimension (defaults from env: TRAILBLAZER_EMBED_DIMENSION)",
+    ),
+    out_dir: str = typer.Option(
+        "var/retrieval_qc",
+        "--out-dir",
+        help="Output directory for QA artifacts",
+    ),
+    min_unique_docs: int = typer.Option(
+        3,
+        "--min-unique-docs",
+        help="Minimum unique documents required per budget",
+    ),
+    max_tie_rate: float = typer.Option(
+        0.35,
+        "--max-tie-rate",
+        help="Maximum allowed tie rate (identical scores)",
+    ),
+    require_traceability: bool = typer.Option(
+        True,
+        "--require-traceability/--no-require-traceability",
+        help="Require title, url, source_system fields",
+    ),
+) -> None:
+    """
+    Run retrieval QA harness with domain queries and health metrics.
+
+    Tests retrieval quality using curated N2S domain questions across
+    multiple context budgets. Generates readiness report with health
+    metrics including doc diversity, tie rates, and traceability.
+
+    Example:
+        trailblazer qa retrieval \\
+          --queries-file prompts/qa/queries_n2s.yaml \\
+          --budgets 1500,4000,6000 \\
+          --provider openai --model text-embedding-3-small --dimension 1536
+    """
+    import os
+    from datetime import datetime, timezone
+    from ..qa.retrieval import run_retrieval_qa
+
+    # Set pager environment variables
+    os.environ["PAGER"] = "cat"
+    os.environ["LESS"] = "-RFX"
+
+    # Run preflight check
+    _run_db_preflight_check()
+
+    # Parse budgets
+    try:
+        budget_list = [int(b.strip()) for b in budgets.split(",")]
+    except ValueError:
+        typer.echo(
+            "❌ Invalid budgets format. Use comma-separated integers.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    # Get defaults from environment
+    if provider is None:
+        provider = os.getenv("TRAILBLAZER_EMBED_PROVIDER", "openai")
+    if model is None:
+        model = os.getenv("TRAILBLAZER_EMBED_MODEL", "text-embedding-3-small")
+    if dimension is None:
+        dimension = int(os.getenv("TRAILBLAZER_EMBED_DIMENSION", "1536"))
+
+    # Create timestamped output directory
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    output_dir = Path(out_dir) / timestamp
+
+    try:
+        # Run the QA harness
+        results = run_retrieval_qa(
+            queries_file=queries_file,
+            budgets=budget_list,
+            top_k=top_k,
+            provider=provider,
+            model=model,
+            dimension=dimension,
+            output_dir=output_dir,
+            min_unique_docs=min_unique_docs,
+            max_tie_rate=max_tie_rate,
+            require_traceability=require_traceability,
+        )
+
+        # Print summary
+        typer.echo(
+            f"✅ QA completed: {results['total_queries']} queries", err=True
+        )
+        typer.echo(f"📊 Pass rate: {results['pass_rate']:.1%}", err=True)
+        typer.echo(f"📁 Results: {output_dir}", err=True)
+
+        # Exit with error code if overall failure
+        if not results["overall_pass"]:
+            raise typer.Exit(1)
+
+    except Exception as e:
+        typer.echo(f"❌ QA error: {e}", err=True)
         raise typer.Exit(1)
 
 

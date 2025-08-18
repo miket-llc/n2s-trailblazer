@@ -47,7 +47,7 @@ def get_tokenizer_info() -> Dict[str, str]:
             return {"name": "tiktoken", "version": tiktoken.__version__}
     except (AttributeError, NameError):
         pass
-    
+
     return {"name": "unknown", "version": "unknown"}
 
 

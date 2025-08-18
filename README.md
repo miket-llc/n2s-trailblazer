@@ -394,6 +394,61 @@ trailblazer ask "deployment guide" --out ./my-search/
 
 Text mode shows a brief summary and top results. JSON mode outputs the full summary object for integration with other tools.
 
+## Running Retrieval QA
+
+Test retrieval quality using curated domain queries with comprehensive health metrics:
+
+```bash
+# Run QA with default N2S domain queries
+trailblazer qa retrieval \
+  --queries-file prompts/qa/queries_n2s.yaml \
+  --budgets 1500,4000,6000 \
+  --provider openai --model text-embedding-3-small --dimension 1536
+
+# Custom queries and thresholds
+trailblazer qa retrieval \
+  --queries-file my-custom-queries.yaml \
+  --budgets 2000,5000 \
+  --top-k 15 \
+  --min-unique-docs 4 \
+  --max-tie-rate 0.25 \
+  --out-dir var/custom_qa/
+
+# Skip traceability checks for testing
+trailblazer qa retrieval --no-require-traceability
+```
+
+**Generated Artifacts (under `var/retrieval_qc/<timestamp>/`):**
+
+- `ask_<slug>_<budget>.json` - Per-query results with hits, scores, and packed context
+- `pack_stats.json` - Aggregate statistics across budgets (diversity, tie rates, coverage)
+- `readiness.json` - Machine-readable health report with pass/fail status
+- `overview.md` - Human-readable summary with READY/BLOCKED status and remediation tips
+
+**Health Metrics:**
+
+- **Doc Diversity**: Shannon entropy of document distribution (higher = more diverse)
+- **Tie Rate**: Frequency of identical scores (lower = better ranking stability)
+- **Duplication**: Repeated chunk/document pairs (lower = less redundancy)
+- **Traceability**: Presence of title, URL, source_system metadata (required for production)
+
+**Quality Gates (configurable):**
+
+- Minimum unique documents per budget (default: 3)
+- Maximum tie rate threshold (default: 35%)
+- Required traceability fields (title, URL, source_system)
+- Overall pass rate threshold (80% of queries must pass)
+
+**Example Output:**
+
+```
+✅ QA completed: 15 queries
+📊 Pass rate: 93.3%
+📁 Results: var/retrieval_qc/20250120_143022/
+```
+
+The system is marked **READY** if ≥80% of queries pass all health checks, otherwise **BLOCKED** with specific remediation guidance.
+
 ## What You'll See
 
 **Rich Progress Output:**
