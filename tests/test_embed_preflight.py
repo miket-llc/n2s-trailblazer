@@ -178,7 +178,7 @@ def test_preflight_success(temp_run_dir):
     assert "✓ Chunks file: 3 chunks" in result.stderr
     assert "✓ Tokenizer: tiktoken v0.5.1" in result.stderr
     assert (
-        "Run ready for embedding with openai/text-embedding-3-small at 1536 dimensions"
+        "Run ready for embedding with openai/text-embedding-3-small at dimension 1536"
         in result.stderr
     )
 
@@ -195,7 +195,7 @@ def test_preflight_success(temp_run_dir):
     assert preflight_data["counts"]["chunks"] == 3
     assert preflight_data["provider"] == "openai"
     assert preflight_data["model"] == "text-embedding-3-small"
-    assert preflight_data["dimensions"] == 1536
+    assert preflight_data["dimension"] == 1536
     assert preflight_data["tokenStats"]["count"] == 3
     assert preflight_data["tokenStats"]["min"] == 100
     assert preflight_data["tokenStats"]["max"] == 200

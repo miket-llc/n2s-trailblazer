@@ -1049,7 +1049,7 @@ def embed_load_cmd(
     dimensions: Optional[int] = typer.Option(
         None,
         "--dimensions",
-        help="Embedding dimensions (e.g., 512, 1024, 1536)",
+        help="Embedding dimension (e.g., 512, 1024, 1536)",
     ),
     batch_size: int = typer.Option(
         128, "--batch", help="Batch size for embedding generation"
@@ -3185,7 +3185,7 @@ def embed_corpus_cmd(
     dimensions: int = typer.Option(
         1536,
         "--dimensions",
-        help="Embedding dimensions (e.g., 512, 1024, 1536)",
+        help="Embedding dimension (e.g., 512, 1024, 1536)",
     ),
     batch_size: int = typer.Option(
         1000,
@@ -3275,7 +3275,7 @@ def embed_corpus_cmd(
 
     log_message("🚀 Starting corpus embedding", "INFO")
     log_message(
-        f"Provider: {provider}, Model: {model}, Dimensions: {dimensions}",
+        f"Provider: {provider}, Model: {model}, Dimension: {dimensions}",
         "INFO",
     )
     log_message(
@@ -3576,7 +3576,7 @@ def embed_preflight_cmd(
     dim: Optional[int] = typer.Option(
         None,
         "--dim",
-        help="Embedding dimensions (e.g., 512, 1024, 1536)",
+        help="Embedding dimension (e.g., 512, 1024, 1536)",
     ),
 ) -> None:
     """
@@ -3585,7 +3585,7 @@ def embed_preflight_cmd(
     Validates that:
     - Enriched and chunk files exist and have content
     - Tokenizer is available
-    - Provider/model/dimensions are resolved
+    - Provider/model/dimension are resolved
     - Chunk statistics are computed
 
     Writes preflight.json with validation results and stats.
@@ -3603,7 +3603,7 @@ def embed_preflight_cmd(
 
     typer.echo(f"🔍 Preflight check for run: {run}", err=True)
     typer.echo(
-        f"Provider: {resolved_provider}, Model: {resolved_model}, Dimensions: {resolved_dim}",
+        f"Provider: {resolved_provider}, Model: {resolved_model}, Dimension: {resolved_dim}",
         err=True,
     )
 
@@ -3771,7 +3771,8 @@ def embed_preflight_cmd(
         },
         "provider": resolved_provider,
         "model": resolved_model,
-        "dimensions": resolved_dim,
+        "dimension": resolved_dim,
+        "dimensions": resolved_dim,  # transitional alias for compatibility
         "notes": [
             f"Validated {enriched_lines} enriched documents",
             f"Validated {len(chunks)} chunks with token range {token_stats['min']}-{token_stats['max']}",
@@ -3786,7 +3787,7 @@ def embed_preflight_cmd(
 
     typer.echo(f"✅ Preflight complete: {preflight_file}", err=True)
     typer.echo(
-        f"Run ready for embedding with {resolved_provider}/{resolved_model} at {resolved_dim} dimensions",
+        f"Run ready for embedding with {resolved_provider}/{resolved_model} at dimension {resolved_dim}",
         err=True,
     )
 

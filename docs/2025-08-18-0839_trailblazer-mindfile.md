@@ -17,8 +17,8 @@ ______________________________________________________________________
 1. **Ingest** (Confluence ADF; DITA XML) → `var/runs/<RID>/ingest/`
 1. **Normalize** → canonical doc records (`normalized.ndjson`)
 1. **Enrich** → rule-based (+ optional LLM) signals and **fingerprints** (`enriched.jsonl`)
-1. **Chunk** → handled within embed load path (chunking happens before upsert)
-1. **Embed** → Postgres+pgvector (`public.documents`, `public.chunks`, `public.chunk_embeddings`)
+1. **Chunk** (materialize) → chunks with token counts (`chunks.ndjson`, `chunk_assurance.json`)
+1. **Embed** (preflight-gated) → Postgres+pgvector (`public.documents`, `public.chunks`, `public.chunk_embeddings`)
 1. **Retrieve & Pack** → dense (pgvector), deterministic tie-breakers, budget-aware packer
 1. **Ask** → artifacts (hits/context/summary) with traceability
 
@@ -30,7 +30,10 @@ ______________________________________________________________________
 
 - `var/runs/<RID>/normalize/normalized.ndjson` — normalized docs per run
 - `var/runs/<RID>/enrich/enriched.jsonl` — enrichment signals & fingerprints
-- `var/runs/<RID>/embed_assurance.json` — per-run embed metrics (provider/model/dim/docs/chunks)
+- `var/runs/<RID>/chunk/chunks.ndjson` — materialized chunks with token counts
+- `var/runs/<RID>/chunk/chunk_assurance.json` — chunk quality metrics and validation
+- `var/runs/<RID>/preflight/preflight.json` — preflight validation results and stats
+- `var/runs/<RID>/embed_assurance.json` — per-run embed metrics (references chunk assurance)
 - `var/logs/` — embedding/ask logs; monitored, archived (no deletion without archive)
 - `var/backups/` — **pg_dump** artifacts (`schema.sql`, `embeddings.dump`, `manifest.json`)
 - `var/progress/embedding.json` — progress tracker (if present)
@@ -72,8 +75,9 @@ ______________________________________________________________________
 1. **Reset DB:** `docker compose -f docker-compose.db.yml down -v && up -d` → `trailblazer db init && db doctor`
 1. **Verify enrichment exists:** ensure `var/runs/*/enrich/enriched.jsonl` lines > 0.
 1. **Plan:** `reembed_corpus_openai.sh --list-only` → `var/temp_runs_to_embed.txt` (largest first).
-1. **Pilot:** run 1 plan entry end-to-end → expect **provider=openai**, **dim=1536**, **docs/chunks > 0** in `embed_assurance.json`.
-1. **Dispatch:** start `tmux` session; set env via `tmux setenv` (provider/model/dim/workers); `send-keys` `embed_dispatch.sh`.
+1. **Preflight:** run `trailblazer embed preflight --run <RID> --provider openai --model text-embedding-3-small --dimension 1536` → accept if docs/chunks > 0 via assurance.
+1. **Pilot:** run 1 plan entry end-to-end → expect **provider=openai**, **dimension=1536**, **docs/chunks > 0** in `embed_assurance.json`.
+1. **Dispatch:** start `tmux` session; set env via `tmux setenv` (provider/model/dimension/workers); `send-keys` `embed_dispatch.sh`.
 1. **Monitor:** `monitor_embedding.sh` → expect rising docs/chunks, **active_workers**, **EWMA rate**, stable **ETA**.
 1. **Verify:** `SELECT provider, dimension, COUNT(*) FROM chunk_embeddings GROUP BY 1,2;` and `trailblazer ask "<N2S query>"` smoke tests.
 
@@ -115,11 +119,12 @@ ______________________________________________________________________
 
 ## Known Pitfalls / How We Avoid Them
 
-- **Env leakage into tmux** → fix by `tmux setenv -g VAR value` for all embed vars (provider/model/dim/batch/workers).
+- **Env leakage into tmux** → fix by `tmux setenv -g VAR value` for all embed vars (provider/model/dimension/batch/workers).
 - **Pager blocking output** → fix by `PAGER=cat`, `LESS=-RFX`, `psql -P pager=off -X`.
 - **Skipping work silently** → ensure `--reembed-all` as needed; check `embed_assurance.json` per run.
+- **Zero-work embeds** → always preflight; reject runs with empty chunks or failed quality gates.
 - **SQLite reappearing** → forbid in ops; gate unit tests with `TB_TESTING=1`.
-- **Confusing logs** → consolidate under `var/logs/`, archive old runs in `var/logs/_archive/<TS>/` (don’t delete blindly).
+- **Confusing logs** → consolidate under `var/logs/`, archive old runs in `var/logs/_archive/<TS>/` (don't delete blindly).
 
 ______________________________________________________________________
 
@@ -136,6 +141,7 @@ ______________________________________________________________________
 - [ ] Postgres up, `db doctor` OK (pgvector).
 - [ ] Enriched runs present & non-empty.
 - [ ] Plan built: `var/temp_runs_to_embed.txt`.
+- [ ] Preflight passed: chunk/preflight assurance present.
 - [ ] Pilot succeeded (openai, 1536, docs/chunks > 0).
 - [ ] Dispatcher running in tmux with env set via `tmux setenv`.
 - [ ] Monitor shows progress + ETA.

@@ -60,6 +60,14 @@ CI/automation may bypass with TB_ALLOW_SYSTEM_PYTHON=1 only if explicitly set in
 - **Backup verification**: Confirm backup contains `schema.sql`, `embeddings.dump`, and `manifest.json`.
 - **Restore documentation**: Use `scripts/restore_pg_embeddings.sh` for emergency restore procedures.
 
+### Embedding Operations
+
+- **Preflight mandatory**: Run `trailblazer embed preflight --run <RID> --provider openai --model text-embedding-3-small --dimension 1536` before dispatch.
+- **Tokenizer pinning**: Log tiktoken version in preflight; echo version in embedding operations for reproducibility.
+- **Quality distribution gates**: Default thresholds `minQuality=0.60`, `maxBelowThresholdPct=0.20` (configurable via enrich command).
+- **Provider/dimension sanity**: Use canonical SQL: `SELECT provider, dimension, COUNT(*) AS n FROM public.chunk_embeddings GROUP BY 1,2 ORDER BY 1,2;`
+- **Operator proofs bundle**: Maintain preflight JSON, chunk assurance, embed assurance, monitor snapshot, provider/dimension SQL output.
+
 ### No Regressions
 
 - **Read code before edits**: Be **surgical** unless a tiny refactor reduces risk.
