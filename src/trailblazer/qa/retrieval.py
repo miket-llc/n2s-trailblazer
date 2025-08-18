@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import math
 import re
-import yaml
+import yaml  # type: ignore
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path

@@ -1,5 +1,5 @@
 import typer
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 from urllib.parse import urlparse
 from pathlib import Path
@@ -3967,10 +3967,10 @@ def embed_plan_preflight_cmd(
     typer.echo(f"📁 Output directory: {output_dir}", err=True)
 
     # Initialize collections for results
-    runs_data = []
-    ready_runs = []
-    blocked_runs = []
-    log_entries = []
+    runs_data: List[Dict[str, Any]] = []
+    ready_runs: List[str] = []
+    blocked_runs: List[str] = []
+    log_entries: List[str] = []
 
     # Process each run
     for run_id, expected_chunk_count in run_entries:
@@ -4059,7 +4059,7 @@ def embed_plan_preflight_cmd(
         preflight_file = run_dir / "preflight" / "preflight.json"
 
         # Initialize run data with defaults
-        run_data = {
+        run_data: Dict[str, Any] = {
             "rid": run_id,
             "status": "BLOCKED",
             "reason": None,
@@ -4196,12 +4196,12 @@ def embed_plan_preflight_cmd(
     total_docs = sum(
         run["docCount"]
         for run in runs_data
-        if isinstance(run["docCount"], int)
+        if isinstance(run.get("docCount"), int)
     )
     total_chunks = sum(
         run["chunkCount"]
         for run in runs_data
-        if isinstance(run["chunkCount"], int)
+        if isinstance(run.get("chunkCount"), int)
     )
     total_tokens = sum(
         run["tokenStats"].get("total", 0)
@@ -4338,8 +4338,13 @@ def embed_plan_preflight_cmd(
                         if run["estTimeSec"]
                         else "N/A"
                     )
+                    token_total = (
+                        run["tokenStats"].get("total", 0)
+                        if isinstance(run.get("tokenStats"), dict)
+                        else 0
+                    )
                     f.write(
-                        f"| {run['rid']} | {run['docCount']} | {run['chunkCount']} | {run['tokenStats'].get('total', 0) if isinstance(run.get('tokenStats'), dict) else 0:,} | {cost_str} | {time_str} |\n"
+                        f"| {run['rid']} | {run['docCount']} | {run['chunkCount']} | {token_total:,} | {cost_str} | {time_str} |\n"
                     )
         else:
             f.write("*No ready runs*\n")
@@ -4797,6 +4802,7 @@ def embed_reembed_if_changed_cmd(
             embed_cmd,
             env={**dict(os.environ), "PYTHONPATH": "src"},
             cwd=Path.cwd(),
+            text=True,
         )
 
         if result.returncode != 0:
