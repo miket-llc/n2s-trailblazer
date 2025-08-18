@@ -339,7 +339,7 @@ This ensures only runs that pass preflight validation are dispatched, avoiding s
 **Common Failure Reasons & Fixes:**
 
 - **MISSING_ENRICH** → run `trailblazer enrich run --run <RID>`
-- **MISSING_CHUNKS** → run `trailblazer chunk run --run <RID>`  
+- **MISSING_CHUNKS** → run `trailblazer chunk run --run <RID>`
 - **QUALITY_GATE** → re-run enrich with `--min-quality` lowered (carefully) or fix source docs
 - **TOKENIZER_MISSING** → install/ensure tokenizer in ops venv
 - **CONFIG_INVALID** → ensure provider/model/dimension set in env or flags
