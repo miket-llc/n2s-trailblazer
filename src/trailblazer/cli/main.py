@@ -2172,6 +2172,433 @@ Run `trailblazer embed load --run-id {run_id}` to embed the enriched documents i
     output_path.write_text(content, encoding="utf-8")
 
 
+@app.command("enrich-sweep")
+def enrich_sweep(
+    runs_glob: str = typer.Option(
+        "var/runs/*", "--runs-glob", help="Glob pattern for run directories"
+    ),
+    min_quality: float = typer.Option(
+        0.60, "--min-quality", help="Minimum quality score threshold (0.0-1.0)"
+    ),
+    max_below_threshold_pct: float = typer.Option(
+        0.20,
+        "--max-below-threshold-pct",
+        help="Maximum percentage of docs below quality threshold",
+    ),
+    max_workers: int = typer.Option(
+        8, "--max-workers", help="Maximum concurrent workers for enrichment"
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Recompute even if enriched.jsonl exists"
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Discovery only; write candidate lists, don't run enrich",
+    ),
+    out_dir: str = typer.Option(
+        "var/enrich_sweep",
+        "--out-dir",
+        help="Output directory for sweep results",
+    ),
+) -> None:
+    """
+    Enrichment sweep over all runs under var/runs/* (ONLY enrichment).
+
+    Enumerates all run directories, validates each has normalize/normalized.ndjson
+    with >0 lines, runs enrich for valid runs, and produces comprehensive reports.
+
+    Outputs under var/enrich_sweep/<TS>/:
+    - sweep.json — structured report with runs, statuses, timings, and counts
+    - sweep.csv — tabular (rid,status,reason,elapsed_ms,enriched_lines)
+    - overview.md — human summary with PASS/BLOCKED/FAIL tables
+    - ready_for_chunk.txt — list of RID with PASS
+    - blocked.txt — list with RID,reason for MISSING_NORMALIZE
+    - failures.txt — list with RID,reason for ENRICH_ERROR
+    - log.out — tmux-friendly progress log
+
+    Examples:
+        # Dry-run to see how many will run
+        trailblazer enrich sweep --dry-run
+
+        # Run enrichment across ALL runs (8 workers), forcing recompute
+        trailblazer enrich sweep --force --max-workers 8
+
+        # Then, inspect results
+        ls -1 var/enrich_sweep/<TS>/
+        sed -n '1,120p' var/enrich_sweep/<TS>/overview.md
+        wc -l var/enrich_sweep/<TS>/ready_for_chunk.txt
+    """
+    import concurrent.futures
+    import csv
+    import glob
+    import json
+    import subprocess
+    import time
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from ..core.artifacts import runs_dir
+
+    # Create timestamped output directory
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    output_dir = Path(out_dir) / timestamp
+    output_dir.mkdir(parents=True, exist_ok=True)
+    runs_output_dir = output_dir / "runs"
+    runs_output_dir.mkdir(exist_ok=True)
+
+    # Setup output files
+    log_file = output_dir / "log.out"
+    sweep_json_file = output_dir / "sweep.json"
+    sweep_csv_file = output_dir / "sweep.csv"
+    overview_md_file = output_dir / "overview.md"
+    ready_file = output_dir / "ready_for_chunk.txt"
+    blocked_file = output_dir / "blocked.txt"
+    failures_file = output_dir / "failures.txt"
+
+    def log_progress(message: str):
+        """Log progress to both stderr and log file."""
+        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_msg = f"[{timestamp_str}] {message}"
+        typer.echo(log_msg, err=True)
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(log_msg + "\n")
+
+    log_progress(f"🔍 ENRICH SWEEP STARTING - Output: {output_dir}")
+    log_progress(f"📂 Discovering runs with pattern: {runs_glob}")
+
+    # Discover runs
+    run_dirs = []
+    pattern = (
+        runs_glob if runs_glob.startswith("var/") else f"var/runs/{runs_glob}"
+    )
+
+    for run_path_str in sorted(glob.glob(pattern)):
+        run_path = Path(run_path_str)
+        if run_path.is_dir():
+            run_dirs.append(run_path)
+
+    log_progress(f"📊 Found {len(run_dirs)} run directories")
+
+    # Classify runs
+    candidates = []
+    blocked = []
+
+    for run_dir in run_dirs:
+        run_id = run_dir.name
+        normalize_file = run_dir / "normalize" / "normalized.ndjson"
+
+        if not normalize_file.exists():
+            blocked.append((run_id, "MISSING_NORMALIZE"))
+            continue
+
+        # Check if file has content
+        try:
+            with open(normalize_file, "r") as f:
+                first_line = f.readline()
+                if not first_line.strip():
+                    blocked.append((run_id, "MISSING_NORMALIZE"))
+                    continue
+        except Exception:
+            blocked.append((run_id, "MISSING_NORMALIZE"))
+            continue
+
+        candidates.append(run_id)
+
+    log_progress(f"✅ Candidates: {len(candidates)}, Blocked: {len(blocked)}")
+
+    # Write blocked runs
+    with open(blocked_file, "w", encoding="utf-8") as f:
+        for run_id, reason in blocked:
+            f.write(f"{run_id},{reason}\n")
+
+    if dry_run:
+        # Write candidates and exit
+        candidates_file = output_dir / "candidates.txt"
+        with open(candidates_file, "w", encoding="utf-8") as f:
+            for run_id in candidates:
+                f.write(f"{run_id}\n")
+
+        log_progress(
+            f"🔍 DRY RUN COMPLETE - {len(candidates)} candidates, {len(blocked)} blocked"
+        )
+        log_progress(f"📄 Candidates: {candidates_file}")
+        log_progress(f"📄 Blocked: {blocked_file}")
+        return
+
+    # Execute enrichment for candidates
+    results = []
+    ready_runs = []
+    failed_runs = []
+
+    def enrich_single_run(run_id: str) -> dict:
+        """Enrich a single run and return result."""
+        start_time = time.time()
+
+        try:
+            # Build command
+            cmd = [
+                "trailblazer",
+                "enrich",
+                run_id,
+                "--min-quality",
+                str(min_quality),
+                "--max-below-threshold-pct",
+                str(max_below_threshold_pct),
+            ]
+            # Note: trailblazer enrich doesn't have a --force flag
+            # It will overwrite existing enriched.jsonl by default
+
+            # Capture output
+            stdout_file = runs_output_dir / f"{run_id}.out"
+            stderr_file = runs_output_dir / f"{run_id}.err"
+
+            with open(stdout_file, "w") as out, open(stderr_file, "w") as err:
+                result = subprocess.run(
+                    cmd,
+                    stdout=out,
+                    stderr=err,
+                    text=True,
+                    timeout=3600,  # 1 hour timeout
+                )
+
+            elapsed_ms = int((time.time() - start_time) * 1000)
+
+            if result.returncode == 0:
+                # Verify enriched.jsonl exists and has content
+                enrich_file = runs_dir() / run_id / "enrich" / "enriched.jsonl"
+                if enrich_file.exists():
+                    with open(enrich_file, "r") as f:
+                        line_count = sum(1 for _ in f)
+                    if line_count > 0:
+                        return {
+                            "run_id": run_id,
+                            "status": "PASS",
+                            "reason": "",
+                            "elapsed_ms": elapsed_ms,
+                            "enriched_lines": line_count,
+                        }
+
+                return {
+                    "run_id": run_id,
+                    "status": "FAIL",
+                    "reason": "ENRICH_ERROR: No enriched output",
+                    "elapsed_ms": elapsed_ms,
+                    "enriched_lines": 0,
+                }
+            else:
+                # Get last error line from stderr
+                try:
+                    with open(stderr_file, "r") as f:
+                        lines = f.readlines()
+                        last_error = (
+                            lines[-1].strip() if lines else "Unknown error"
+                        )
+                except Exception:
+                    last_error = f"Exit code {result.returncode}"
+
+                return {
+                    "run_id": run_id,
+                    "status": "FAIL",
+                    "reason": f"ENRICH_ERROR: {last_error}",
+                    "elapsed_ms": elapsed_ms,
+                    "enriched_lines": 0,
+                }
+
+        except subprocess.TimeoutExpired:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            return {
+                "run_id": run_id,
+                "status": "FAIL",
+                "reason": "ENRICH_ERROR: Timeout after 1 hour",
+                "elapsed_ms": elapsed_ms,
+                "enriched_lines": 0,
+            }
+        except Exception as e:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            return {
+                "run_id": run_id,
+                "status": "FAIL",
+                "reason": f"ENRICH_ERROR: {str(e)}",
+                "elapsed_ms": elapsed_ms,
+                "enriched_lines": 0,
+            }
+
+    # Process runs with bounded concurrency
+    log_progress(
+        f"🚀 Processing {len(candidates)} runs with {max_workers} workers"
+    )
+
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as executor:
+        future_to_run = {
+            executor.submit(enrich_single_run, run_id): run_id
+            for run_id in candidates
+        }
+
+        completed = 0
+        for future in concurrent.futures.as_completed(future_to_run):
+            run_id = future_to_run[future]
+            try:
+                result = future.result()
+                results.append(result)
+
+                completed += 1
+                status = result["status"]
+                elapsed_ms = result["elapsed_ms"]
+                reason = (
+                    f" reason={result['reason']}" if result["reason"] else ""
+                )
+
+                log_progress(
+                    f"ENRICH [{status}] {run_id} (ms={elapsed_ms}){reason} [{completed}/{len(candidates)}]"
+                )
+
+                if status == "PASS":
+                    ready_runs.append(run_id)
+                else:
+                    failed_runs.append((run_id, result["reason"]))
+
+            except Exception as e:
+                log_progress(
+                    f"ENRICH [FAIL] {run_id} (ms=0) reason=Exception: {str(e)} [{completed + 1}/{len(candidates)}]"
+                )
+                results.append(
+                    {
+                        "run_id": run_id,
+                        "status": "FAIL",
+                        "reason": f"ENRICH_ERROR: {str(e)}",
+                        "elapsed_ms": 0,
+                        "enriched_lines": 0,
+                    }
+                )
+                failed_runs.append((run_id, f"ENRICH_ERROR: {str(e)}"))
+                completed += 1
+
+    # Write output files
+    log_progress("📝 Writing output files...")
+
+    # ready_for_chunk.txt
+    with open(ready_file, "w", encoding="utf-8") as f:
+        for run_id in ready_runs:
+            f.write(f"{run_id}\n")
+
+    # failures.txt
+    with open(failures_file, "w", encoding="utf-8") as f:
+        for run_id, reason in failed_runs:
+            f.write(f"{run_id},{reason}\n")
+
+    # sweep.csv
+    with open(sweep_csv_file, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            ["rid", "status", "reason", "elapsed_ms", "enriched_lines"]
+        )
+        for result in results:
+            writer.writerow(
+                [
+                    result["run_id"],
+                    result["status"],
+                    result["reason"],
+                    result["elapsed_ms"],
+                    result["enriched_lines"],
+                ]
+            )
+
+    # sweep.json
+    sweep_data = {
+        "timestamp": timestamp,
+        "runs_glob": runs_glob,
+        "parameters": {
+            "min_quality": min_quality,
+            "max_below_threshold_pct": max_below_threshold_pct,
+            "max_workers": max_workers,
+            "force": force,
+        },
+        "summary": {
+            "total_discovered": len(run_dirs),
+            "candidates": len(candidates),
+            "blocked": len(blocked),
+            "passed": len(ready_runs),
+            "failed": len(failed_runs),
+        },
+        "results": results,
+        "blocked_runs": [
+            {"run_id": run_id, "reason": reason} for run_id, reason in blocked
+        ],
+    }
+
+    with open(sweep_json_file, "w", encoding="utf-8") as f:
+        json.dump(sweep_data, f, indent=2)
+
+    # overview.md
+    total_runs = len(run_dirs)
+    pass_count = len(ready_runs)
+    fail_count = len(failed_runs)
+    blocked_count = len(blocked)
+
+    overview_content = f"""# Enrichment Sweep Overview
+
+**Timestamp:** {timestamp}
+**Output Directory:** {output_dir}
+**Runs Pattern:** {runs_glob}
+
+## Summary
+
+- **Total Runs Discovered:** {total_runs:,}
+- **Candidates (valid normalize):** {len(candidates):,}
+- **Blocked (missing normalize):** {blocked_count:,}
+- **Passed Enrichment:** {pass_count:,}
+- **Failed Enrichment:** {fail_count:,}
+
+## Parameters
+
+- **Min Quality:** {min_quality}
+- **Max Below Threshold %:** {max_below_threshold_pct}
+- **Max Workers:** {max_workers}
+- **Force Recompute:** {force}
+
+## Results by Status
+
+### PASS ({pass_count:,} runs)
+Ready for chunking. See `ready_for_chunk.txt`.
+
+### BLOCKED ({blocked_count:,} runs)
+Missing or empty normalize/normalized.ndjson. See `blocked.txt`.
+
+### FAILED ({fail_count:,} runs)
+Enrichment errors. See `failures.txt` and individual run logs in `runs/`.
+
+## Next Steps
+
+1. Review failed runs in `failures.txt` and `runs/*.err` files
+2. Use `ready_for_chunk.txt` for the next pipeline stage
+3. Re-run blocked runs after fixing normalization issues
+
+## Files Generated
+
+- `sweep.json` - Structured data with all results
+- `sweep.csv` - Tabular format for analysis
+- `ready_for_chunk.txt` - {pass_count:,} runs ready for chunking
+- `blocked.txt` - {blocked_count:,} runs missing normalization
+- `failures.txt` - {fail_count:,} runs with enrichment errors
+- `log.out` - Execution log
+- `runs/` - Individual run stdout/stderr logs
+"""
+
+    with open(overview_md_file, "w", encoding="utf-8") as f:
+        f.write(overview_content)
+
+    # Final summary
+    log_progress("✅ ENRICH SWEEP COMPLETE")
+    log_progress(
+        f"📊 Results: {pass_count} PASS, {fail_count} FAIL, {blocked_count} BLOCKED"
+    )
+    log_progress(f"📄 Overview: {overview_md_file}")
+    log_progress(f"📄 Ready for chunk: {ready_file} ({pass_count:,} runs)")
+
+
 @app.command()
 def chunk(
     run_id: str = typer.Argument(
