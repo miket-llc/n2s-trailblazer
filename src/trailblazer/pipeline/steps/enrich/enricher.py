@@ -59,7 +59,6 @@ class DocumentEnricher:
         self, doc: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Apply fast, deterministic rule-based enrichment."""
-        source_system = doc.get("source_system", "unknown")
         text_md = doc.get("text_md", "")
         attachments = doc.get("attachments", [])
         links = doc.get("links", [])
@@ -98,21 +97,27 @@ class DocumentEnricher:
             )
         self.quality_scores.append(quality_score)
 
-        return {
-            "id": doc.get("id"),
-            "source_system": source_system,
-            "collection": collection,
-            "path_tags": path_tags,
-            "readability": readability,
-            "media_density": media_density,
-            "link_density": link_density,
-            "quality_flags": quality_flags,
-            "fingerprint": fingerprint,
-            "section_map": section_map,
-            "chunk_hints": chunk_hints,
-            "quality": quality_metrics,
-            "quality_score": quality_score,
-        }
+        # Start with original document and add enrichment fields
+        enriched = dict(doc)  # Preserve all original fields
+
+        # Add/update enrichment fields
+        enriched.update(
+            {
+                "collection": collection,
+                "path_tags": path_tags,
+                "readability": readability,
+                "media_density": media_density,
+                "link_density": link_density,
+                "quality_flags": quality_flags,
+                "fingerprint": fingerprint,
+                "section_map": section_map,
+                "chunk_hints": chunk_hints,
+                "quality": quality_metrics,
+                "quality_score": quality_score,
+            }
+        )
+
+        return enriched
 
     def _apply_llm_enrichment(self, doc: Dict[str, Any]) -> Dict[str, Any]:
         """Apply LLM-based enrichment (mocked for now)."""

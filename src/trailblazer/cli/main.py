@@ -2728,6 +2728,496 @@ def chunk(
         raise typer.Exit(1)
 
 
+@app.command("chunk-sweep")
+def chunk_sweep(
+    input_file: str = typer.Option(
+        ..., "--input-file", help="Input file with list of run IDs to chunk"
+    ),
+    max_tokens: int = typer.Option(
+        800, "--max-tokens", help="Maximum tokens per chunk"
+    ),
+    min_tokens: int = typer.Option(
+        120, "--min-tokens", help="Minimum tokens per chunk"
+    ),
+    max_workers: int = typer.Option(
+        8, "--max-workers", help="Maximum concurrent workers for chunking"
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Re-chunk even if files exist"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="List targets only; no chunking"
+    ),
+    out_dir: str = typer.Option(
+        "var/chunk_sweep",
+        "--out-dir",
+        help="Output directory for sweep results",
+    ),
+) -> None:
+    """
+    Chunk sweep over runs listed in input file (ONLY chunking).
+
+    Reads run IDs from input file, validates each has enrich/enriched.jsonl
+    with >0 lines, runs chunk for valid runs, and produces comprehensive reports.
+
+    Outputs under var/chunk_sweep/<TS>/:
+    - sweep.json — structured report with runs, statuses, timings, and counts
+    - sweep.csv — tabular (rid,status,reason,elapsed_ms,chunk_lines,tokens_total,tokens_p95)
+    - overview.md — human summary with PASS/BLOCKED/FAIL tables
+    - ready_for_preflight.txt — list of RID with PASS
+    - blocked.txt — list with RID,reason for MISSING_ENRICH
+    - failures.txt — list with RID,reason for CHUNK_ERROR
+    - log.out — tmux-friendly progress log
+    - runs/ — individual run stdout/stderr logs
+
+    Examples:
+        # Dry-run to confirm targets
+        trailblazer chunk sweep --input-file var/enrich_sweep/20250818_184044/ready_for_chunk.txt --dry-run
+
+        # Run chunking across all targets (8 workers), forcing recompute
+        trailblazer chunk sweep \\
+          --input-file var/enrich_sweep/20250818_184044/ready_for_chunk.txt \\
+          --force --max-workers 8
+
+        # Inspect results
+        ls -1 var/chunk_sweep/<TS>/
+        sed -n '1,120p' var/chunk_sweep/<TS>/overview.md
+        wc -l var/chunk_sweep/<TS>/ready_for_preflight.txt
+    """
+    import concurrent.futures
+    import csv
+    import json
+    import subprocess
+    import time
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from ..core.artifacts import runs_dir
+
+    # Validate input file exists
+    input_path = Path(input_file)
+    if not input_path.exists():
+        typer.echo(f"❌ Input file not found: {input_file}", err=True)
+        raise typer.Exit(1)
+
+    # Create timestamped output directory
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    output_dir = Path(out_dir) / timestamp
+    output_dir.mkdir(parents=True, exist_ok=True)
+    runs_output_dir = output_dir / "runs"
+    runs_output_dir.mkdir(exist_ok=True)
+
+    # Setup output files
+    log_file = output_dir / "log.out"
+    sweep_json_file = output_dir / "sweep.json"
+    sweep_csv_file = output_dir / "sweep.csv"
+    overview_md_file = output_dir / "overview.md"
+    ready_file = output_dir / "ready_for_preflight.txt"
+    blocked_file = output_dir / "blocked.txt"
+    failures_file = output_dir / "failures.txt"
+
+    def log_progress(message: str):
+        """Log progress to both stderr and log file."""
+        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_msg = f"[{timestamp_str}] {message}"
+        typer.echo(log_msg, err=True)
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(log_msg + "\n")
+
+    log_progress(f"🔍 CHUNK SWEEP STARTING - Output: {output_dir}")
+    log_progress(f"📂 Loading targets from: {input_file}")
+
+    # Load targets from input file
+    targets = []
+    try:
+        with open(input_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    targets.append(line)
+    except Exception as e:
+        typer.echo(f"❌ Failed to read input file: {e}", err=True)
+        raise typer.Exit(1)
+
+    # Sort deterministically
+    targets = sorted(targets)
+    log_progress(f"📊 Loaded {len(targets)} target runs")
+
+    # Classify runs
+    candidates = []
+    blocked = []
+
+    for run_id in targets:
+        enrich_file = runs_dir() / run_id / "enrich" / "enriched.jsonl"
+
+        if not enrich_file.exists():
+            blocked.append((run_id, "MISSING_ENRICH"))
+            continue
+
+        # Check if file has content
+        try:
+            with open(enrich_file, "r") as f:
+                first_line = f.readline()
+                if not first_line.strip():
+                    blocked.append((run_id, "MISSING_ENRICH"))
+                    continue
+        except Exception:
+            blocked.append((run_id, "MISSING_ENRICH"))
+            continue
+
+        candidates.append(run_id)
+
+    log_progress(f"✅ Candidates: {len(candidates)}, Blocked: {len(blocked)}")
+
+    # Write blocked runs
+    with open(blocked_file, "w", encoding="utf-8") as f:
+        for run_id, reason in blocked:
+            f.write(f"{run_id},{reason}\n")
+
+    if dry_run:
+        # Write candidates and exit
+        candidates_file = output_dir / "candidates.txt"
+        with open(candidates_file, "w", encoding="utf-8") as f:
+            for run_id in candidates:
+                f.write(f"{run_id}\n")
+
+        log_progress(
+            f"🔍 DRY RUN COMPLETE - {len(candidates)} candidates, {len(blocked)} blocked"
+        )
+        log_progress(f"📄 Candidates: {candidates_file}")
+        log_progress(f"📄 Blocked: {blocked_file}")
+        return
+
+    # Execute chunking for candidates
+    results = []
+    ready_runs = []
+    failed_runs = []
+
+    def chunk_single_run(run_id: str) -> dict:
+        """Chunk a single run and return result."""
+        start_time = time.time()
+
+        try:
+            # Build command
+            cmd = [
+                "trailblazer",
+                "chunk",
+                run_id,
+                "--max-tokens",
+                str(max_tokens),
+                "--min-tokens",
+                str(min_tokens),
+            ]
+            # Note: trailblazer chunk doesn't have a --force flag
+            # It will overwrite existing chunks.ndjson by default
+
+            # Capture output
+            stdout_file = runs_output_dir / f"{run_id}.out"
+            stderr_file = runs_output_dir / f"{run_id}.err"
+
+            with open(stdout_file, "w") as out, open(stderr_file, "w") as err:
+                result = subprocess.run(
+                    cmd,
+                    stdout=out,
+                    stderr=err,
+                    text=True,
+                    timeout=3600,  # 1 hour timeout
+                )
+
+            elapsed_ms = int((time.time() - start_time) * 1000)
+
+            if result.returncode == 0:
+                # Verify chunks.ndjson exists and has content
+                chunk_file = runs_dir() / run_id / "chunk" / "chunks.ndjson"
+                assurance_file = (
+                    runs_dir() / run_id / "chunk" / "chunk_assurance.json"
+                )
+
+                if chunk_file.exists() and assurance_file.exists():
+                    with open(chunk_file, "r") as f:
+                        chunk_lines = sum(1 for _ in f)
+
+                    # Parse assurance for token stats
+                    try:
+                        with open(assurance_file, "r") as f:
+                            assurance_data = json.load(f)
+                        token_stats = assurance_data.get("tokenStats", {})
+                        tokens_total = token_stats.get("total", 0)
+                        tokens_p95 = token_stats.get("p95", 0)
+                    except Exception:
+                        tokens_total = 0
+                        tokens_p95 = 0
+
+                    if chunk_lines > 0:
+                        return {
+                            "run_id": run_id,
+                            "status": "PASS",
+                            "reason": "",
+                            "elapsed_ms": elapsed_ms,
+                            "chunk_lines": chunk_lines,
+                            "tokens_total": tokens_total,
+                            "tokens_p95": tokens_p95,
+                        }
+
+                return {
+                    "run_id": run_id,
+                    "status": "FAIL",
+                    "reason": "CHUNK_ERROR: No chunk output",
+                    "elapsed_ms": elapsed_ms,
+                    "chunk_lines": 0,
+                    "tokens_total": 0,
+                    "tokens_p95": 0,
+                }
+            else:
+                # Get last error line from stderr
+                try:
+                    with open(stderr_file, "r") as f:
+                        lines = f.readlines()
+                        last_error = (
+                            lines[-1].strip() if lines else "Unknown error"
+                        )
+                except Exception:
+                    last_error = f"Exit code {result.returncode}"
+
+                return {
+                    "run_id": run_id,
+                    "status": "FAIL",
+                    "reason": f"CHUNK_ERROR: {last_error}",
+                    "elapsed_ms": elapsed_ms,
+                    "chunk_lines": 0,
+                    "tokens_total": 0,
+                    "tokens_p95": 0,
+                }
+
+        except subprocess.TimeoutExpired:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            return {
+                "run_id": run_id,
+                "status": "FAIL",
+                "reason": "CHUNK_ERROR: Timeout after 1 hour",
+                "elapsed_ms": elapsed_ms,
+                "chunk_lines": 0,
+                "tokens_total": 0,
+                "tokens_p95": 0,
+            }
+        except Exception as e:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            return {
+                "run_id": run_id,
+                "status": "FAIL",
+                "reason": f"CHUNK_ERROR: {str(e)}",
+                "elapsed_ms": elapsed_ms,
+                "chunk_lines": 0,
+                "tokens_total": 0,
+                "tokens_p95": 0,
+            }
+
+    # Process runs with bounded concurrency
+    log_progress(
+        f"🚀 Processing {len(candidates)} runs with {max_workers} workers"
+    )
+
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as executor:
+        future_to_run = {
+            executor.submit(chunk_single_run, run_id): run_id
+            for run_id in candidates
+        }
+
+        completed = 0
+        for future in concurrent.futures.as_completed(future_to_run):
+            run_id = future_to_run[future]
+            try:
+                result = future.result()
+                results.append(result)
+
+                completed += 1
+                status = result["status"]
+                elapsed_ms = result["elapsed_ms"]
+                reason = (
+                    f" reason={result['reason']}" if result["reason"] else ""
+                )
+
+                log_progress(
+                    f"CHUNK [{status}] {run_id} (ms={elapsed_ms}){reason} [{completed}/{len(candidates)}]"
+                )
+
+                if status == "PASS":
+                    ready_runs.append(run_id)
+                else:
+                    failed_runs.append((run_id, result["reason"]))
+
+            except Exception as e:
+                log_progress(
+                    f"CHUNK [FAIL] {run_id} (ms=0) reason=Exception: {str(e)} [{completed + 1}/{len(candidates)}]"
+                )
+                results.append(
+                    {
+                        "run_id": run_id,
+                        "status": "FAIL",
+                        "reason": f"CHUNK_ERROR: {str(e)}",
+                        "elapsed_ms": 0,
+                        "chunk_lines": 0,
+                        "tokens_total": 0,
+                        "tokens_p95": 0,
+                    }
+                )
+                failed_runs.append((run_id, f"CHUNK_ERROR: {str(e)}"))
+                completed += 1
+
+    # Write output files
+    log_progress("📝 Writing output files...")
+
+    # ready_for_preflight.txt
+    with open(ready_file, "w", encoding="utf-8") as f:
+        for run_id in ready_runs:
+            f.write(f"{run_id}\n")
+
+    # failures.txt
+    with open(failures_file, "w", encoding="utf-8") as f:
+        for run_id, reason in failed_runs:
+            f.write(f"{run_id},{reason}\n")
+
+    # sweep.csv
+    with open(sweep_csv_file, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "rid",
+                "status",
+                "reason",
+                "elapsed_ms",
+                "chunk_lines",
+                "tokens_total",
+                "tokens_p95",
+            ]
+        )
+        for result in results:
+            writer.writerow(
+                [
+                    result["run_id"],
+                    result["status"],
+                    result["reason"],
+                    result["elapsed_ms"],
+                    result["chunk_lines"],
+                    result["tokens_total"],
+                    result["tokens_p95"],
+                ]
+            )
+
+    # Calculate totals for summary
+    total_chunk_lines = sum(
+        r["chunk_lines"] for r in results if r["status"] == "PASS"
+    )
+    total_tokens = sum(
+        r["tokens_total"] for r in results if r["status"] == "PASS"
+    )
+
+    # sweep.json
+    sweep_data = {
+        "timestamp": timestamp,
+        "input_file": input_file,
+        "parameters": {
+            "max_tokens": max_tokens,
+            "min_tokens": min_tokens,
+            "max_workers": max_workers,
+            "force": force,
+        },
+        "summary": {
+            "total_targets": len(targets),
+            "candidates": len(candidates),
+            "blocked": len(blocked),
+            "passed": len(ready_runs),
+            "failed": len(failed_runs),
+            "total_chunks": total_chunk_lines,
+            "total_tokens": total_tokens,
+        },
+        "results": results,
+        "blocked_runs": [
+            {"run_id": run_id, "reason": reason} for run_id, reason in blocked
+        ],
+    }
+
+    with open(sweep_json_file, "w", encoding="utf-8") as f:
+        json.dump(sweep_data, f, indent=2)
+
+    # overview.md
+    total_targets = len(targets)
+    pass_count = len(ready_runs)
+    fail_count = len(failed_runs)
+    blocked_count = len(blocked)
+
+    overview_content = f"""# Chunk Sweep Overview
+
+**Timestamp:** {timestamp}
+**Output Directory:** {output_dir}
+**Input File:** {input_file}
+
+## Summary
+
+- **Total Targets:** {total_targets:,}
+- **Candidates (valid enrich):** {len(candidates):,}
+- **Blocked (missing enrich):** {blocked_count:,}
+- **Passed Chunking:** {pass_count:,}
+- **Failed Chunking:** {fail_count:,}
+
+## Chunk Statistics
+
+- **Total Chunks Created:** {total_chunk_lines:,}
+- **Total Tokens:** {total_tokens:,}
+- **Average Chunks per Run:** {total_chunk_lines / max(1, pass_count):.1f}
+
+## Parameters
+
+- **Max Tokens:** {max_tokens}
+- **Min Tokens:** {min_tokens}
+- **Max Workers:** {max_workers}
+- **Force Recompute:** {force}
+
+## Results by Status
+
+### PASS ({pass_count:,} runs)
+Ready for preflight and embedding. See `ready_for_preflight.txt`.
+
+### BLOCKED ({blocked_count:,} runs)
+Missing or empty enrich/enriched.jsonl. See `blocked.txt`.
+
+### FAILED ({fail_count:,} runs)
+Chunking errors. See `failures.txt` and individual run logs in `runs/`.
+
+## Next Steps
+
+1. Review failed runs in `failures.txt` and `runs/*.err` files
+2. Use `ready_for_preflight.txt` for the preflight and embedding phase
+3. Re-run blocked runs after fixing enrichment issues
+
+## Files Generated
+
+- `sweep.json` - Structured data with all results
+- `sweep.csv` - Tabular format for analysis
+- `ready_for_preflight.txt` - {pass_count:,} runs ready for preflight
+- `blocked.txt` - {blocked_count:,} runs missing enrichment
+- `failures.txt` - {fail_count:,} runs with chunking errors
+- `log.out` - Execution log
+- `runs/` - Individual run stdout/stderr logs
+"""
+
+    with open(overview_md_file, "w", encoding="utf-8") as f:
+        f.write(overview_content)
+
+    # Final summary
+    log_progress("✅ CHUNK SWEEP COMPLETE")
+    log_progress(
+        f"📊 Results: {pass_count} PASS, {fail_count} FAIL, {blocked_count} BLOCKED"
+    )
+    log_progress(
+        f"📊 Chunks: {total_chunk_lines:,} chunks, {total_tokens:,} tokens"
+    )
+    log_progress(f"📄 Overview: {overview_md_file}")
+    log_progress(f"📄 Ready for preflight: {ready_file} ({pass_count:,} runs)")
+
+
 @app.command()
 def status() -> None:
     """
