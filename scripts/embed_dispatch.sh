@@ -271,6 +271,12 @@ RUNS=()
 TOTAL_CHUNKS=0
 DISPATCHER_LOG="${DISPATCH_LOG_DIR}/dispatcher.out"
 
+# Initialize counters early
+QUEUED_COUNT=0
+SKIPPED_PREFLIGHT_COUNT=0
+SKIPPED_UNCHANGED_COUNT=0
+ERROR_COUNT=0
+
 while IFS=':' read -r run_id chunk_count; do
     # Skip empty lines and comments
     if [[ -z "$run_id" || "$run_id" =~ ^[[:space:]]*# ]]; then
@@ -290,7 +296,7 @@ while IFS=':' read -r run_id chunk_count; do
 
     # Always run per-RID preflight check for safety
     echo "🔍 Running preflight check for ${run_id}..."
-    if trailblazer embed preflight --run "${run_id}" --provider "${RESOLVED_PROVIDER}" --model "${RESOLVED_MODEL}" --dim "${RESOLVED_DIMENSION}" >/dev/null 2>&1; then
+    if trailblazer embed preflight "${run_id}" --provider "${RESOLVED_PROVIDER}" --model "${RESOLVED_MODEL}" --dim "${RESOLVED_DIMENSION}" >/dev/null 2>&1; then
         RUNS+=("${run_id}:${chunk_count}")
         TOTAL_CHUNKS=$((TOTAL_CHUNKS + chunk_count))
         echo "✅ Run: ${run_id} (${chunk_count} chunks) - preflight passed"
@@ -338,11 +344,7 @@ done
 echo
 echo "👥 Starting ${WORKERS} embedding workers..."
 
-# Global counters for final summary
-QUEUED_COUNT=0
-SKIPPED_PREFLIGHT_COUNT=0
-SKIPPED_UNCHANGED_COUNT=0
-ERROR_COUNT=0
+# Global counters for final summary (initialized earlier)
 
 # Function to process a run
 process_run() {
@@ -386,7 +388,7 @@ EOF
         # Use reembed-if-changed mode
         echo "[Worker ${worker_id}] 🔄 Using reembed-if-changed for ${run_id}" | tee -a "${worker_log}"
 
-        if trailblazer embed reembed-if-changed --run "${run_id}" --provider "${RESOLVED_PROVIDER}" --model "${RESOLVED_MODEL}" --dimension "${RESOLVED_DIMENSION}" --batch "${RESOLVED_BATCH_SIZE}" 2>&1 | tee -a "${worker_log}"; then
+        if trailblazer embed reembed-if-changed "${run_id}" --provider "${RESOLVED_PROVIDER}" --model "${RESOLVED_MODEL}" --dimension "${RESOLVED_DIMENSION}" --batch "${RESOLVED_BATCH_SIZE}" 2>&1 | tee -a "${worker_log}"; then
             local end_time=$(date +%s)
             local duration=$((end_time - start_time))
 
