@@ -688,6 +688,25 @@ def load_normalized_to_db(
     if run_id and run_id != "unknown":
         _generate_assurance_report(run_id, metrics)
 
+    # Write embed manifest after successful embedding
+    if run_id and run_id != "unknown" and chunks_embedded > 0:
+        try:
+            from .manifest import write_embed_manifest
+
+            manifest_file = write_embed_manifest(
+                run_id=run_id,
+                provider=embedder.provider_name,
+                model=getattr(embedder, "model", "unknown"),
+                dimension=embedder.dimension,
+                chunks_embedded=chunks_embedded,
+            )
+            emit_event(
+                "embed.manifest_written", manifest_file=str(manifest_file)
+            )
+        except Exception as e:
+            emit_event("embed.manifest_write_error", error=str(e))
+            log.warning("embed.manifest_write_failed", error=str(e))
+
     # Mark embedding complete in backlog
     if run_id and run_id != "unknown":
         try:

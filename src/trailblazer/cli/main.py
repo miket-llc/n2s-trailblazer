@@ -3781,6 +3781,50 @@ def embed_preflight_cmd(
         ],
     }
 
+    # Add delta section if previous manifest exists (non-blocking)
+    try:
+        from ..pipeline.steps.embed.manifest import (
+            find_last_manifest,
+            load_manifest,
+            compute_current_state,
+            compare_manifests,
+        )
+
+        manifest_path = find_last_manifest(run)
+        if manifest_path is not None:
+            previous_manifest = load_manifest(manifest_path)
+            if previous_manifest is not None:
+                # Compute current state for comparison
+                current_state = compute_current_state(
+                    run, resolved_provider, resolved_model, resolved_dim
+                )
+
+                # Compare manifests
+                has_changes, reasons = compare_manifests(
+                    current_state, previous_manifest
+                )
+
+                preflight_data["delta"] = {
+                    "changed": has_changes,
+                    "reasons": reasons,
+                    "previousManifest": str(manifest_path),
+                    "previousTimestamp": previous_manifest.get("timestamp"),
+                }
+
+                typer.echo(f"📄 Previous manifest: {manifest_path}", err=True)
+                if has_changes:
+                    typer.echo(
+                        f"🔄 Changes detected: {', '.join(reasons)}", err=True
+                    )
+                else:
+                    typer.echo(
+                        "✅ No changes detected since last manifest", err=True
+                    )
+
+    except Exception as e:
+        # Delta computation failed, but this is non-blocking for preflight
+        typer.echo(f"⚠️  Could not compute delta: {e}", err=True)
+
     preflight_file = preflight_dir / "preflight.json"
     with open(preflight_file, "w") as f:
         json.dump(preflight_data, f, indent=2)
@@ -4442,6 +4486,325 @@ def embed_status_cmd() -> None:
 
     except Exception as e:
         typer.echo(f"❌ Error getting status: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@embed_app.command("diff")
+def embed_diff_cmd(
+    run: str = typer.Argument(..., help="Run ID to compare against manifest"),
+    against: str = typer.Option(
+        "last",
+        "--against",
+        help="Compare against 'last' manifest or path to specific manifest",
+    ),
+    format_type: str = typer.Option(
+        "json",
+        "--format",
+        help="Output format: 'json' or 'md'",
+    ),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="Embedding provider (openai, sentencetransformers)",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Model name (e.g., text-embedding-3-small)",
+    ),
+    dimension: Optional[int] = typer.Option(
+        None,
+        "--dimension",
+        help="Embedding dimension (e.g., 512, 1024, 1536)",
+    ),
+) -> None:
+    """
+    Compare current embedding state against a previous manifest.
+
+    Detects changes in content, provider, model, dimension, tokenizer,
+    chunker version, or chunk configuration that would require re-embedding.
+
+    Outputs diff report to var/delta/<RID>/<timestamp>/.
+    """
+    import json
+    from datetime import datetime
+    from pathlib import Path
+    from ..core.config import SETTINGS
+    from ..pipeline.steps.embed.manifest import (
+        compute_current_state,
+        find_last_manifest,
+        load_manifest,
+        compare_manifests,
+        create_diff_report,
+        format_diff_as_markdown,
+    )
+
+    # Resolve provider/model/dimension from CLI args, env, or defaults
+    resolved_provider = provider or SETTINGS.EMBED_PROVIDER or "openai"
+    resolved_model = model or SETTINGS.EMBED_MODEL or "text-embedding-3-small"
+    resolved_dimension = dimension or SETTINGS.EMBED_DIMENSIONS or 1536
+
+    typer.echo(f"🔍 Computing diff for run: {run}", err=True)
+    typer.echo(
+        f"Provider: {resolved_provider}, Model: {resolved_model}, Dimension: {resolved_dimension}",
+        err=True,
+    )
+
+    # Determine comparison target
+    if against == "last":
+        manifest_path = find_last_manifest(run)
+        if manifest_path is None:
+            typer.echo(
+                f"❌ No previous manifest found for run: {run}", err=True
+            )
+            raise typer.Exit(1)
+        typer.echo(f"📄 Comparing against: {manifest_path}", err=True)
+    else:
+        manifest_path = Path(against)
+        if not manifest_path.exists():
+            typer.echo(f"❌ Manifest not found: {manifest_path}", err=True)
+            raise typer.Exit(1)
+        typer.echo(f"📄 Comparing against: {manifest_path}", err=True)
+
+    # Load previous manifest
+    previous_manifest = load_manifest(manifest_path)
+    if previous_manifest is None:
+        typer.echo(f"❌ Failed to load manifest: {manifest_path}", err=True)
+        raise typer.Exit(1)
+
+    # Compute current state
+    try:
+        current_state = compute_current_state(
+            run, resolved_provider, resolved_model, resolved_dimension
+        )
+    except Exception as e:
+        typer.echo(f"❌ Failed to compute current state: {e}", err=True)
+        raise typer.Exit(1)
+
+    # Compare manifests
+    has_changes, reasons = compare_manifests(current_state, previous_manifest)
+
+    # Create diff report
+    diff_report = create_diff_report(
+        run, current_state, previous_manifest, has_changes, reasons
+    )
+
+    # Create output directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    delta_dir = Path("var") / "delta" / run / timestamp
+    delta_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write diff report
+    if format_type == "json":
+        diff_file = delta_dir / "diff.json"
+        with open(diff_file, "w", encoding="utf-8") as f:
+            json.dump(diff_report, f, indent=2, ensure_ascii=False)
+        typer.echo(f"📄 Diff report written: {diff_file}", err=True)
+    elif format_type == "md":
+        diff_file = delta_dir / "diff.md"
+        markdown_content = format_diff_as_markdown(diff_report)
+        with open(diff_file, "w", encoding="utf-8") as f:
+            f.write(markdown_content)
+        typer.echo(f"📄 Diff report written: {diff_file}", err=True)
+    else:
+        typer.echo(f"❌ Unknown format: {format_type}", err=True)
+        raise typer.Exit(1)
+
+    # Print summary
+    if has_changes:
+        typer.echo(f"🔄 Changes detected: {', '.join(reasons)}", err=True)
+        raise typer.Exit(0)  # Changed but successful
+    else:
+        typer.echo("✅ No changes detected", err=True)
+        raise typer.Exit(0)
+
+
+@embed_app.command("reembed-if-changed")
+def embed_reembed_if_changed_cmd(
+    run: str = typer.Argument(..., help="Run ID to conditionally re-embed"),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Force re-embedding even if no changes detected",
+    ),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="Embedding provider (openai, sentencetransformers)",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Model name (e.g., text-embedding-3-small)",
+    ),
+    dimension: Optional[int] = typer.Option(
+        None,
+        "--dimension",
+        help="Embedding dimension (e.g., 512, 1024, 1536)",
+    ),
+    batch_size: int = typer.Option(
+        128, "--batch", help="Batch size for embedding generation"
+    ),
+) -> None:
+    """
+    Conditionally re-embed a run only if changes are detected.
+
+    This command:
+    1. Runs preflight checks
+    2. Compares current state against the last manifest
+    3. Skips embedding if no changes and --force not set
+    4. Proceeds with embedding if changes detected or --force set
+    5. Writes a new manifest after successful embedding
+    """
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    from ..core.config import SETTINGS
+    from ..pipeline.steps.embed.manifest import (
+        find_last_manifest,
+        load_manifest,
+        compute_current_state,
+        compare_manifests,
+    )
+
+    # Resolve provider/model/dimension from CLI args, env, or defaults
+    resolved_provider = provider or SETTINGS.EMBED_PROVIDER or "openai"
+    resolved_model = model or SETTINGS.EMBED_MODEL or "text-embedding-3-small"
+    resolved_dimension = dimension or SETTINGS.EMBED_DIMENSIONS or 1536
+
+    typer.echo(f"🔍 Conditional re-embed for run: {run}", err=True)
+    typer.echo(
+        f"Provider: {resolved_provider}, Model: {resolved_model}, Dimension: {resolved_dimension}",
+        err=True,
+    )
+
+    # Step 1: Run preflight checks
+    typer.echo("1️⃣ Running preflight checks...", err=True)
+    try:
+        preflight_cmd = [
+            sys.executable,
+            "-m",
+            "trailblazer.cli.main",
+            "embed",
+            "preflight",
+            run,
+            "--provider",
+            resolved_provider,
+            "--model",
+            resolved_model,
+            "--dim",
+            str(resolved_dimension),
+        ]
+
+        result = subprocess.run(
+            preflight_cmd,
+            capture_output=True,
+            text=True,
+            env={**dict(os.environ), "PYTHONPATH": "src"},
+            cwd=Path.cwd(),
+        )
+
+        if result.returncode != 0:
+            typer.echo("❌ Preflight checks failed", err=True)
+            typer.echo(result.stderr, err=True)
+            raise typer.Exit(1)
+
+        typer.echo("✅ Preflight checks passed", err=True)
+    except Exception as e:
+        typer.echo(f"❌ Preflight error: {e}", err=True)
+        raise typer.Exit(1)
+
+    # Step 2: Check for changes (unless force is set)
+    if not force:
+        typer.echo("2️⃣ Checking for changes...", err=True)
+
+        # Find last manifest
+        manifest_path = find_last_manifest(run)
+        if manifest_path is None:
+            typer.echo(
+                "📄 No previous manifest found, proceeding with embedding",
+                err=True,
+            )
+        else:
+            # Load previous manifest
+            previous_manifest = load_manifest(manifest_path)
+            if previous_manifest is None:
+                typer.echo(
+                    "⚠️  Failed to load previous manifest, proceeding with embedding",
+                    err=True,
+                )
+            else:
+                try:
+                    # Compute current state
+                    current_state = compute_current_state(
+                        run,
+                        resolved_provider,
+                        resolved_model,
+                        resolved_dimension,
+                    )
+
+                    # Compare manifests
+                    has_changes, reasons = compare_manifests(
+                        current_state, previous_manifest
+                    )
+
+                    if not has_changes:
+                        typer.echo(
+                            "✅ No changes detected, skipping embedding",
+                            err=True,
+                        )
+                        return  # Exit successfully without embedding
+                    else:
+                        typer.echo(
+                            f"🔄 Changes detected: {', '.join(reasons)}",
+                            err=True,
+                        )
+                        typer.echo("📄 Proceeding with embedding...", err=True)
+
+                except Exception as e:
+                    typer.echo(
+                        f"⚠️  Error checking changes: {e}, proceeding with embedding",
+                        err=True,
+                    )
+    else:
+        typer.echo("2️⃣ Force flag set, skipping change detection", err=True)
+
+    # Step 3: Proceed with embedding
+    typer.echo("3️⃣ Starting embedding...", err=True)
+    try:
+        embed_cmd = [
+            sys.executable,
+            "-m",
+            "trailblazer.cli.main",
+            "embed",
+            "load",
+            "--run-id",
+            run,
+            "--provider",
+            resolved_provider,
+            "--model",
+            resolved_model,
+            "--dimensions",
+            str(resolved_dimension),
+            "--batch",
+            str(batch_size),
+        ]
+
+        result = subprocess.run(
+            embed_cmd,
+            env={**dict(os.environ), "PYTHONPATH": "src"},
+            cwd=Path.cwd(),
+        )
+
+        if result.returncode != 0:
+            typer.echo("❌ Embedding failed", err=True)
+            raise typer.Exit(1)
+
+        typer.echo("✅ Embedding completed successfully", err=True)
+
+    except Exception as e:
+        typer.echo(f"❌ Embedding error: {e}", err=True)
         raise typer.Exit(1)
 
 
