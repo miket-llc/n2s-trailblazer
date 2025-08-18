@@ -8,6 +8,9 @@ set -euo pipefail
 export PAGER=cat
 export LESS=-RFX
 
+# Create logs directory if it doesn't exist
+mkdir -p var/logs
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -61,23 +64,37 @@ fi
 echo "🔌 Database: ${TRAILBLAZER_DB_URL//*@/***@}"
 echo "👥 Workers: ${WORKERS}"
 
-# Read and validate runs
+# Read and validate runs with preflight checks
 RUNS=()
 TOTAL_CHUNKS=0
+DISPATCHER_LOG="var/logs/dispatcher.out"
 
 while IFS=':' read -r run_id chunk_count; do
     # Handle lines without chunk counts
     if [[ -z "${chunk_count:-}" ]]; then
         chunk_count=0
     fi
-    
+
     # Validate run directory exists
-    if [[ -d "var/runs/${run_id}" ]]; then
+    if [[ ! -d "var/runs/${run_id}" ]]; then
+        echo -e "${YELLOW}⚠️  Warning: Run directory 'var/runs/${run_id}' not found${NC}"
+        continue
+    fi
+
+    # Run preflight check before enqueuing
+    echo "🔍 Running preflight check for ${run_id}..."
+    if trailblazer embed preflight --run "${run_id}" --provider openai --model text-embedding-3-small --dim 1536 >/dev/null 2>&1; then
         RUNS+=("${run_id}:${chunk_count}")
         TOTAL_CHUNKS=$((TOTAL_CHUNKS + chunk_count))
-        echo "✅ Run: ${run_id} (${chunk_count} chunks)"
+        echo "✅ Run: ${run_id} (${chunk_count} chunks) - preflight passed"
     else
-        echo -e "${YELLOW}⚠️  Warning: Run directory 'var/runs/${run_id}' not found${NC}"
+        # Log preflight failure to dispatcher.out
+        local preflight_json="var/runs/${run_id}/preflight/preflight.json"
+        if [[ -f "${preflight_json}" ]]; then
+            echo -e "${RED}❌ SKIPPED RID ${run_id}: preflight failed - see ${preflight_json}${NC}" | tee -a "${DISPATCHER_LOG}"
+        else
+            echo -e "${RED}❌ SKIPPED RID ${run_id}: preflight failed - no preflight.json generated${NC}" | tee -a "${DISPATCHER_LOG}"
+        fi
     fi
 done < "${RUNS_FILE}"
 
@@ -119,24 +136,46 @@ process_run() {
     local worker_id="$2"
     local run_id="${run_info%:*}"
     local chunk_count="${run_info#*:}"
-    
+
     local worker_log="${WORKER_DIRS[worker_id-1]}/worker_${worker_id}.log"
-    
+
     echo "[Worker ${worker_id}] 🚀 Processing run: ${run_id}" | tee -a "${worker_log}"
-    
+
     # Check if run is already processed
     if [[ -f "var/runs/${run_id}/embed/embed_assurance.json" ]]; then
         echo "[Worker ${worker_id}] ✅ Run ${run_id} already embedded, skipping" | tee -a "${worker_log}"
         return 0
     fi
-    
+
+    # Capture worker environment before starting embed process
+    local embed_pid=$$
+    local resolved_batch=128
+    local resolved_workers="${WORKERS}"
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    local env_file="var/logs/embed_env.${embed_pid}.json"
+    cat > "${env_file}" <<EOF
+{
+  "pid": ${embed_pid},
+  "provider": "openai",
+  "model": "text-embedding-3-small",
+  "dimension": 1536,
+  "batch_size": ${resolved_batch},
+  "workers": ${resolved_workers},
+  "timestamp": "${timestamp}",
+  "rid": "${run_id}"
+}
+EOF
+
     # Process the run
     local start_time=$(date +%s)
-    
+
     if trailblazer embed load --run-id "${run_id}" --provider openai --model text-embedding-3-small --dimensions 1536 --batch 128; then
         local end_time=$(date +%s)
         local duration=$((end_time - start_time))
         echo "[Worker ${worker_id}] ✅ Run ${run_id} completed in ${duration}s" | tee -a "${worker_log}"
+        # Log successful enqueue to dispatcher.out
+        echo "✅ ENQUEUED RID ${run_id}: preflight passed, worker ${worker_id} completed in ${duration}s" >> "${DISPATCHER_LOG}"
         return 0
     else
         local end_time=$(date +%s)

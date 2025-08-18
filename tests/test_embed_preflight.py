@@ -3,7 +3,7 @@
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 from typer.testing import CliRunner
@@ -150,24 +150,27 @@ def test_preflight_success(temp_run_dir):
     with patch("trailblazer.core.paths.runs") as mock_runs:
         mock_runs.return_value = Path(temp_run_dir["temp_dir"]) / "runs"
 
-        # Mock tiktoken to be available
-        with patch("trailblazer.cli.main.tiktoken") as mock_tiktoken:
-            mock_tiktoken.__version__ = "0.5.1"
+        # Mock tiktoken module directly
+        import sys
 
-            result = runner.invoke(
-                app,
-                [
-                    "embed",
-                    "preflight",
-                    temp_run_dir["run_id"],
-                    "--provider",
-                    "openai",
-                    "--model",
-                    "text-embedding-3-small",
-                    "--dim",
-                    "1536",
-                ],
-            )
+        mock_tiktoken = MagicMock()
+        mock_tiktoken.__version__ = "0.5.1"
+        sys.modules["tiktoken"] = mock_tiktoken
+
+        result = runner.invoke(
+            app,
+            [
+                "embed",
+                "preflight",
+                temp_run_dir["run_id"],
+                "--provider",
+                "openai",
+                "--model",
+                "text-embedding-3-small",
+                "--dim",
+                "1536",
+            ],
+        )
 
     assert result.exit_code == 0
     assert "✅ Preflight complete" in result.stderr
@@ -203,24 +206,26 @@ def test_preflight_no_tiktoken():
     """Test preflight fails when tiktoken is not available."""
     runner = CliRunner()
 
-    with (
-        patch("trailblazer.core.paths.runs") as mock_runs,
-        patch("trailblazer.cli.main.tiktoken", None),
-    ):
+    with patch("trailblazer.core.paths.runs") as mock_runs:
         mock_runs.return_value = Path("/tmp")
 
-        # Mock the import to raise ImportError
-        with patch(
-            "builtins.__import__",
-            side_effect=ImportError("No module named 'tiktoken'"),
-        ):
-            result = runner.invoke(app, ["embed", "preflight", "test_run"])
+        # Remove tiktoken from sys.modules to simulate it not being installed
+        import sys
 
-            # Will fail earlier due to missing run dir, but this tests the tiktoken check logic
-            assert (
-                "tiktoken" in result.stderr
-                or "Run directory not found" in result.stderr
-            )
+        original_tiktoken = sys.modules.pop("tiktoken", None)
+
+        try:
+            result = runner.invoke(app, ["embed", "preflight", "test_run"])
+        finally:
+            # Restore original state
+            if original_tiktoken:
+                sys.modules["tiktoken"] = original_tiktoken
+
+        # Will fail earlier due to missing run dir, but this tests the tiktoken check logic
+        assert (
+            "tiktoken" in result.stderr
+            or "Run directory not found" in result.stderr
+        )
 
 
 def test_preflight_invalid_token_counts(temp_run_dir):
@@ -245,12 +250,16 @@ def test_preflight_invalid_token_counts(temp_run_dir):
     with patch("trailblazer.core.paths.runs") as mock_runs:
         mock_runs.return_value = Path(temp_run_dir["temp_dir"]) / "runs"
 
-        with patch("trailblazer.cli.main.tiktoken") as mock_tiktoken:
-            mock_tiktoken.__version__ = "0.5.1"
+        # Mock tiktoken module directly
+        import sys
 
-            result = runner.invoke(
-                app, ["embed", "preflight", temp_run_dir["run_id"]]
-            )
+        mock_tiktoken = MagicMock()
+        mock_tiktoken.__version__ = "0.5.1"
+        sys.modules["tiktoken"] = mock_tiktoken
+
+        result = runner.invoke(
+            app, ["embed", "preflight", temp_run_dir["run_id"]]
+        )
 
     assert result.exit_code == 1
     assert "❌ No valid token counts found in chunks" in result.stderr
