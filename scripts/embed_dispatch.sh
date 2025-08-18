@@ -277,21 +277,25 @@ SKIPPED_PREFLIGHT_COUNT=0
 SKIPPED_UNCHANGED_COUNT=0
 ERROR_COUNT=0
 
-while IFS=':' read -r run_id chunk_count; do
+while IFS= read -r run_id; do
     # Skip empty lines and comments
     if [[ -z "$run_id" || "$run_id" =~ ^[[:space:]]*# ]]; then
         continue
     fi
-
-    # Handle lines without chunk counts
-    if [[ -z "${chunk_count:-}" ]]; then
-        chunk_count=0
-    fi
+    
+    # Remove any trailing colon and chunk count if present
+    run_id="${run_id%%:*}"
 
     # Validate run directory exists
     if [[ ! -d "var/runs/${run_id}" ]]; then
         echo -e "${YELLOW}⚠️  Warning: Run directory 'var/runs/${run_id}' not found${NC}"
         continue
+    fi
+
+    # Count actual chunks from chunk file
+    chunk_count=0
+    if [[ -f "var/runs/${run_id}/chunk/chunks.ndjson" ]]; then
+        chunk_count=$(wc -l < "var/runs/${run_id}/chunk/chunks.ndjson" 2>/dev/null || echo 0)
     fi
 
     # Always run per-RID preflight check for safety
