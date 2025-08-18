@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Embed dispatch script - orchestrates embedding runs with worker management
-# Usage: ./embed_dispatch.sh <runs_file> [WORKERS=N]
+# Usage: ./embed_dispatch.sh [OPTIONS]
 
 set -euo pipefail
 
@@ -21,27 +21,165 @@ NC='\033[0m' # No Color
 echo -e "${BLUE}🚀 Embed Dispatch Script${NC}"
 echo "========================"
 
-# Check if runs file was provided
-if [[ $# -eq 0 ]]; then
-    echo -e "${RED}❌ Error: No runs file specified${NC}"
-    echo
-    echo "Usage: $0 <runs_file> [WORKERS=N]"
-    echo "Example: $0 var/temp_runs_to_embed.txt WORKERS=3"
-    echo
-    echo "The runs file should contain one run ID per line, optionally with chunk counts:"
-    echo "  run_id_1:1000"
-    echo "  run_id_2:500"
-    echo
+# Default values
+WORKERS="${WORKERS:-2}"
+PLAN_PREFLIGHT_DIR=""
+PLAN_FILE=""
+QA_DIR=""
+SKIP_UNCHANGED=false
+NOTES=""
+RUNS_FILE=""
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --plan-preflight-dir)
+            PLAN_PREFLIGHT_DIR="$2"
+            shift 2
+            ;;
+        --plan-file)
+            PLAN_FILE="$2"
+            shift 2
+            ;;
+        --qa-dir)
+            QA_DIR="$2"
+            shift 2
+            ;;
+        --skip-unchanged)
+            SKIP_UNCHANGED=true
+            shift
+            ;;
+        --notes)
+            NOTES="$2"
+            shift 2
+            ;;
+        --workers)
+            WORKERS="$2"
+            shift 2
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo
+            echo "Options:"
+            echo "  --plan-preflight-dir <DIR>  Use plan from <DIR>/ready.txt"
+            echo "  --plan-file <FILE>          Use specific plan file"
+            echo "  --qa-dir <DIR>              Archive QA results from directory"
+            echo "  --skip-unchanged            Use reembed-if-changed to skip unchanged runs"
+            echo "  --notes \"<TEXT>\"            Add operator notes to manifest"
+            echo "  --workers <N>               Number of parallel workers (default: 2)"
+            echo "  --help                      Show this help"
+            echo
+            echo "Plan resolution order:"
+            echo "  1. --plan-preflight-dir if provided → use <DIR>/ready.txt"
+            echo "  2. --plan-file if provided → use it"
+            echo "  3. Auto-pick latest var/plan_preflight/<TS>/ready.txt if available"
+            echo "  4. Fall back to var/temp_runs_to_embed.txt"
+            echo
+            echo "Examples:"
+            echo "  $0 --plan-preflight-dir var/plan_preflight/20250118_143022/"
+            echo "  $0 --plan-file my_plan.txt --skip-unchanged"
+            echo "  $0 --qa-dir var/retrieval_qc/20250118_143022/ --notes \"Production deployment\""
+            exit 0
+            ;;
+        *)
+            # For backward compatibility, treat first positional arg as runs file
+            if [[ -z "$RUNS_FILE" && ! "$1" =~ ^-- ]]; then
+                RUNS_FILE="$1"
+                shift
+            else
+                echo -e "${RED}❌ Error: Unknown option '$1'${NC}"
+                exit 1
+            fi
+            ;;
+    esac
+done
+
+# Plan source resolution
+SELECTED_PLAN_FILE=""
+PLAN_PREFLIGHT_SOURCE_DIR=""
+
+# 1. If --plan-preflight-dir provided, use <DIR>/ready.txt
+if [[ -n "$PLAN_PREFLIGHT_DIR" ]]; then
+    if [[ ! -d "$PLAN_PREFLIGHT_DIR" ]]; then
+        echo -e "${RED}❌ Error: Plan preflight directory '${PLAN_PREFLIGHT_DIR}' not found${NC}"
+        exit 1
+    fi
+    READY_FILE="${PLAN_PREFLIGHT_DIR}/ready.txt"
+    if [[ ! -f "$READY_FILE" ]]; then
+        echo -e "${RED}❌ Error: ready.txt not found in '${PLAN_PREFLIGHT_DIR}'${NC}"
+        exit 1
+    fi
+    SELECTED_PLAN_FILE="$READY_FILE"
+    PLAN_PREFLIGHT_SOURCE_DIR="$PLAN_PREFLIGHT_DIR"
+
+# 2. Else if --plan-file provided, use it
+elif [[ -n "$PLAN_FILE" ]]; then
+    if [[ ! -f "$PLAN_FILE" ]]; then
+        echo -e "${RED}❌ Error: Plan file '${PLAN_FILE}' not found${NC}"
+        exit 1
+    fi
+    SELECTED_PLAN_FILE="$PLAN_FILE"
+
+# 3. Backward compatibility: if RUNS_FILE set, use it
+elif [[ -n "$RUNS_FILE" ]]; then
+    if [[ ! -f "$RUNS_FILE" ]]; then
+        echo -e "${RED}❌ Error: Runs file '${RUNS_FILE}' not found${NC}"
+        exit 1
+    fi
+    SELECTED_PLAN_FILE="$RUNS_FILE"
+
+# 4. Auto-pick latest var/plan_preflight/<TS>/ready.txt if available
+else
+    LATEST_PREFLIGHT_DIR=$(find var/plan_preflight/ -maxdepth 1 -type d -name "20*" 2>/dev/null | sort -r | head -n1)
+    if [[ -n "$LATEST_PREFLIGHT_DIR" && -f "${LATEST_PREFLIGHT_DIR}/ready.txt" ]]; then
+        SELECTED_PLAN_FILE="${LATEST_PREFLIGHT_DIR}/ready.txt"
+        PLAN_PREFLIGHT_SOURCE_DIR="$LATEST_PREFLIGHT_DIR"
+        echo -e "${YELLOW}ℹ️  Auto-selected latest plan-preflight: ${LATEST_PREFLIGHT_DIR}${NC}"
+    # 5. Fall back to var/temp_runs_to_embed.txt
+    else
+        FALLBACK_FILE="var/temp_runs_to_embed.txt"
+        if [[ ! -f "$FALLBACK_FILE" ]]; then
+            echo -e "${RED}❌ Error: No plan found. Options:${NC}"
+            echo "  1. Use --plan-preflight-dir <DIR> (expects <DIR>/ready.txt)"
+            echo "  2. Use --plan-file <FILE>"
+            echo "  3. Create var/temp_runs_to_embed.txt"
+            echo "  4. Run 'trailblazer embed plan-preflight' to create a plan"
+            exit 1
+        fi
+        SELECTED_PLAN_FILE="$FALLBACK_FILE"
+    fi
+fi
+
+# Validate selected plan file has content
+if [[ ! -s "$SELECTED_PLAN_FILE" ]]; then
+    echo -e "${RED}❌ Error: Selected plan file '${SELECTED_PLAN_FILE}' is empty${NC}"
     exit 1
 fi
 
-RUNS_FILE="$1"
-WORKERS="${WORKERS:-2}"
+# Count runs in plan
+PLAN_RUN_COUNT=$(grep -v '^#' "$SELECTED_PLAN_FILE" | grep -v '^[[:space:]]*$' | wc -l | tr -d ' ')
 
-# Validate runs file
-if [[ ! -f "${RUNS_FILE}" ]]; then
-    echo -e "${RED}❌ Error: Runs file '${RUNS_FILE}' not found${NC}"
-    exit 1
+# Print green confirmation
+echo -e "${GREEN}✅ Using plan: ${SELECTED_PLAN_FILE} (planned: ${PLAN_RUN_COUNT})${NC}"
+
+# If plan-preflight was used, show additional info
+if [[ -n "$PLAN_PREFLIGHT_SOURCE_DIR" ]]; then
+    PLAN_JSON="${PLAN_PREFLIGHT_SOURCE_DIR}/plan_preflight.json"
+    if [[ -f "$PLAN_JSON" ]]; then
+        # Extract summary info from JSON using basic tools (avoid jq dependency)
+        READY_COUNT=$(grep -o '"runsReady":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || echo "0")
+        BLOCKED_COUNT=$(grep -o '"runsBlocked":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || echo "0")
+        EST_TOKENS=$(grep -o '"tokens":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || echo "0")
+        EST_COST=$(grep -o '"estCostUSD":[0-9.]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || echo "0")
+
+        echo "  Plan totals: ready=${READY_COUNT}, blocked=${BLOCKED_COUNT}"
+        if [[ "$EST_TOKENS" != "0" ]]; then
+            echo "  Estimates: ${EST_TOKENS} tokens"
+            if [[ "$EST_COST" != "0" ]]; then
+                echo "  Estimated cost: \$${EST_COST} USD"
+            fi
+        fi
+    fi
 fi
 
 # Check if .env exists and source it
@@ -64,12 +202,81 @@ fi
 echo "🔌 Database: ${TRAILBLAZER_DB_URL//*@/***@}"
 echo "👥 Workers: ${WORKERS}"
 
+# Create dispatch timestamp and log directory
+DISPATCH_TS=$(date -u +"%Y%m%d_%H%M%S")
+DISPATCH_LOG_DIR="var/logs/dispatch/${DISPATCH_TS}"
+mkdir -p "${DISPATCH_LOG_DIR}"
+
+echo "📁 Dispatch logs: ${DISPATCH_LOG_DIR}"
+
+# Archive plan-preflight bundle if used
+if [[ -n "$PLAN_PREFLIGHT_SOURCE_DIR" ]]; then
+    echo "📦 Archiving plan-preflight bundle..."
+    cp -r "$PLAN_PREFLIGHT_SOURCE_DIR" "${DISPATCH_LOG_DIR}/plan_preflight/"
+    echo "  Archived: ${PLAN_PREFLIGHT_SOURCE_DIR} → ${DISPATCH_LOG_DIR}/plan_preflight/"
+fi
+
+# Archive QA directory if provided
+if [[ -n "$QA_DIR" ]]; then
+    if [[ -d "$QA_DIR" ]]; then
+        echo "📦 Archiving QA results..."
+        cp -r "$QA_DIR" "${DISPATCH_LOG_DIR}/retrieval_qc/"
+        echo "  Archived: ${QA_DIR} → ${DISPATCH_LOG_DIR}/retrieval_qc/"
+    else
+        echo -e "${YELLOW}⚠️  Warning: QA directory '${QA_DIR}' not found, skipping archive${NC}"
+        QA_DIR=""  # Clear it so manifest shows null
+    fi
+fi
+
+# Resolve provider/model/dimension from environment or defaults
+RESOLVED_PROVIDER="${TRAILBLAZER_EMBED_PROVIDER:-openai}"
+RESOLVED_MODEL="${TRAILBLAZER_EMBED_MODEL:-text-embedding-3-small}"
+RESOLVED_DIMENSION="${TRAILBLAZER_EMBED_DIMENSIONS:-1536}"
+RESOLVED_BATCH_SIZE="${BATCH_SIZE:-128}"
+
+# Get git commit if available
+GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "null")
+
+# Determine mode
+if [[ "$SKIP_UNCHANGED" == "true" ]]; then
+    MODE="reembed-if-changed"
+else
+    MODE="embed"
+fi
+
+# Create dispatch_manifest.json
+MANIFEST_FILE="${DISPATCH_LOG_DIR}/dispatch_manifest.json"
+cat > "$MANIFEST_FILE" <<EOF
+{
+  "dispatchTs": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "planPreflightDir": $(if [[ -n "$PLAN_PREFLIGHT_SOURCE_DIR" ]]; then echo "\"${PLAN_PREFLIGHT_SOURCE_DIR}\""; else echo "null"; fi),
+  "planFileUsed": "${SELECTED_PLAN_FILE}",
+  "runsPlanned": ${PLAN_RUN_COUNT},
+  "provider": "${RESOLVED_PROVIDER}",
+  "model": "${RESOLVED_MODEL}",
+  "dimension": ${RESOLVED_DIMENSION},
+  "workers": ${WORKERS},
+  "batchSize": ${RESOLVED_BATCH_SIZE},
+  "gitCommit": $(if [[ "$GIT_COMMIT" != "null" ]]; then echo "\"${GIT_COMMIT}\""; else echo "null"; fi),
+  "qaDir": $(if [[ -n "$QA_DIR" ]]; then echo "\"${QA_DIR}\""; else echo "null"; fi),
+  "notes": "${NOTES}",
+  "mode": "${MODE}"
+}
+EOF
+
+echo "📄 Created dispatch manifest: ${MANIFEST_FILE}"
+
 # Read and validate runs with preflight checks
 RUNS=()
 TOTAL_CHUNKS=0
-DISPATCHER_LOG="var/logs/dispatcher.out"
+DISPATCHER_LOG="${DISPATCH_LOG_DIR}/dispatcher.out"
 
 while IFS=':' read -r run_id chunk_count; do
+    # Skip empty lines and comments
+    if [[ -z "$run_id" || "$run_id" =~ ^[[:space:]]*# ]]; then
+        continue
+    fi
+
     # Handle lines without chunk counts
     if [[ -z "${chunk_count:-}" ]]; then
         chunk_count=0
@@ -81,22 +288,23 @@ while IFS=':' read -r run_id chunk_count; do
         continue
     fi
 
-    # Run preflight check before enqueuing
+    # Always run per-RID preflight check for safety
     echo "🔍 Running preflight check for ${run_id}..."
-    if trailblazer embed preflight --run "${run_id}" --provider openai --model text-embedding-3-small --dim 1536 >/dev/null 2>&1; then
+    if trailblazer embed preflight --run "${run_id}" --provider "${RESOLVED_PROVIDER}" --model "${RESOLVED_MODEL}" --dim "${RESOLVED_DIMENSION}" >/dev/null 2>&1; then
         RUNS+=("${run_id}:${chunk_count}")
         TOTAL_CHUNKS=$((TOTAL_CHUNKS + chunk_count))
         echo "✅ Run: ${run_id} (${chunk_count} chunks) - preflight passed"
     else
         # Log preflight failure to dispatcher.out
-        local preflight_json="var/runs/${run_id}/preflight/preflight.json"
+        preflight_json="var/runs/${run_id}/preflight/preflight.json"
         if [[ -f "${preflight_json}" ]]; then
             echo -e "${RED}❌ SKIPPED RID ${run_id}: preflight failed - see ${preflight_json}${NC}" | tee -a "${DISPATCHER_LOG}"
         else
             echo -e "${RED}❌ SKIPPED RID ${run_id}: preflight failed - no preflight.json generated${NC}" | tee -a "${DISPATCHER_LOG}"
         fi
+        SKIPPED_PREFLIGHT_COUNT=$((SKIPPED_PREFLIGHT_COUNT + 1))
     fi
-done < "${RUNS_FILE}"
+done < "${SELECTED_PLAN_FILE}"
 
 if [[ ${#RUNS[@]} -eq 0 ]]; then
     echo -e "${RED}❌ Error: No valid runs found${NC}"
@@ -130,6 +338,12 @@ done
 echo
 echo "👥 Starting ${WORKERS} embedding workers..."
 
+# Global counters for final summary
+QUEUED_COUNT=0
+SKIPPED_PREFLIGHT_COUNT=0
+SKIPPED_UNCHANGED_COUNT=0
+ERROR_COUNT=0
+
 # Function to process a run
 process_run() {
     local run_info="$1"
@@ -141,27 +355,25 @@ process_run() {
 
     echo "[Worker ${worker_id}] 🚀 Processing run: ${run_id}" | tee -a "${worker_log}"
 
-    # Check if run is already processed
-    if [[ -f "var/runs/${run_id}/embed/embed_assurance.json" ]]; then
+    # Check if run is already processed (only for regular embed mode)
+    if [[ "$SKIP_UNCHANGED" != "true" && -f "var/runs/${run_id}/embed/embed_assurance.json" ]]; then
         echo "[Worker ${worker_id}] ✅ Run ${run_id} already embedded, skipping" | tee -a "${worker_log}"
         return 0
     fi
 
     # Capture worker environment before starting embed process
     local embed_pid=$$
-    local resolved_batch=128
-    local resolved_workers="${WORKERS}"
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     local env_file="var/logs/embed_env.${embed_pid}.json"
     cat > "${env_file}" <<EOF
 {
   "pid": ${embed_pid},
-  "provider": "openai",
-  "model": "text-embedding-3-small",
-  "dimension": 1536,
-  "batch_size": ${resolved_batch},
-  "workers": ${resolved_workers},
+  "provider": "${RESOLVED_PROVIDER}",
+  "model": "${RESOLVED_MODEL}",
+  "dimension": ${RESOLVED_DIMENSION},
+  "batch_size": ${RESOLVED_BATCH_SIZE},
+  "workers": ${WORKERS},
   "timestamp": "${timestamp}",
   "rid": "${run_id}"
 }
@@ -170,18 +382,51 @@ EOF
     # Process the run
     local start_time=$(date +%s)
 
-    if trailblazer embed load --run-id "${run_id}" --provider openai --model text-embedding-3-small --dimensions 1536 --batch 128; then
-        local end_time=$(date +%s)
-        local duration=$((end_time - start_time))
-        echo "[Worker ${worker_id}] ✅ Run ${run_id} completed in ${duration}s" | tee -a "${worker_log}"
-        # Log successful enqueue to dispatcher.out
-        echo "✅ ENQUEUED RID ${run_id}: preflight passed, worker ${worker_id} completed in ${duration}s" >> "${DISPATCHER_LOG}"
-        return 0
+    if [[ "$SKIP_UNCHANGED" == "true" ]]; then
+        # Use reembed-if-changed mode
+        echo "[Worker ${worker_id}] 🔄 Using reembed-if-changed for ${run_id}" | tee -a "${worker_log}"
+
+        if trailblazer embed reembed-if-changed --run "${run_id}" --provider "${RESOLVED_PROVIDER}" --model "${RESOLVED_MODEL}" --dimension "${RESOLVED_DIMENSION}" --batch "${RESOLVED_BATCH_SIZE}" 2>&1 | tee -a "${worker_log}"; then
+            local end_time=$(date +%s)
+            local duration=$((end_time - start_time))
+
+            # Check if it was skipped due to no changes (look for specific message in output)
+            if grep -q "No changes detected, skipping embedding" "${worker_log}"; then
+                echo "[Worker ${worker_id}] ⏭️  Run ${run_id} skipped (unchanged) in ${duration}s" | tee -a "${worker_log}"
+                echo "⏭️  SKIPPED RID ${run_id}: unchanged, worker ${worker_id} completed in ${duration}s" >> "${DISPATCHER_LOG}"
+                SKIPPED_UNCHANGED_COUNT=$((SKIPPED_UNCHANGED_COUNT + 1))
+                return 0
+            else
+                echo "[Worker ${worker_id}] ✅ Run ${run_id} completed in ${duration}s" | tee -a "${worker_log}"
+                echo "✅ QUEUED RID ${run_id}: preflight passed, worker ${worker_id} completed in ${duration}s" >> "${DISPATCHER_LOG}"
+                QUEUED_COUNT=$((QUEUED_COUNT + 1))
+                return 0
+            fi
+        else
+            local end_time=$(date +%s)
+            local duration=$((end_time - start_time))
+            echo "[Worker ${worker_id}] ❌ Run ${run_id} failed after ${duration}s" | tee -a "${worker_log}"
+            echo "❌ ERROR RID ${run_id}: reembed-if-changed failed, worker ${worker_id} after ${duration}s" >> "${DISPATCHER_LOG}"
+            ERROR_COUNT=$((ERROR_COUNT + 1))
+            return 1
+        fi
     else
-        local end_time=$(date +%s)
-        local duration=$((end_time - start_time))
-        echo "[Worker ${worker_id}] ❌ Run ${run_id} failed after ${duration}s" | tee -a "${worker_log}"
-        return 1
+        # Use regular embed mode
+        if trailblazer embed load --run-id "${run_id}" --provider "${RESOLVED_PROVIDER}" --model "${RESOLVED_MODEL}" --dimensions "${RESOLVED_DIMENSION}" --batch "${RESOLVED_BATCH_SIZE}"; then
+            local end_time=$(date +%s)
+            local duration=$((end_time - start_time))
+            echo "[Worker ${worker_id}] ✅ Run ${run_id} completed in ${duration}s" | tee -a "${worker_log}"
+            echo "✅ QUEUED RID ${run_id}: preflight passed, worker ${worker_id} completed in ${duration}s" >> "${DISPATCHER_LOG}"
+            QUEUED_COUNT=$((QUEUED_COUNT + 1))
+            return 0
+        else
+            local end_time=$(date +%s)
+            local duration=$((end_time - start_time))
+            echo "[Worker ${worker_id}] ❌ Run ${run_id} failed after ${duration}s" | tee -a "${worker_log}"
+            echo "❌ ERROR RID ${run_id}: embed failed, worker ${worker_id} after ${duration}s" >> "${DISPATCHER_LOG}"
+            ERROR_COUNT=$((ERROR_COUNT + 1))
+            return 1
+        fi
     fi
 }
 
@@ -230,15 +475,19 @@ echo -e "${GREEN}🎉 All workers completed!${NC}"
 echo
 echo "📊 Final Summary:"
 echo "================="
-for i in $(seq 1 "${WORKERS}"); do
-    if [[ -n "${WORKER_QUEUES[$i]}" ]]; then
-        worker_log="${WORKER_DIRS[i-1]}/worker_${i}.log"
-        if [[ -f "${worker_log}" ]]; then
-            echo "👷 Worker ${i}:"
-            tail -5 "${worker_log}" | sed 's/^/  /'
-        fi
-    fi
-done
+echo "Queued: ${QUEUED_COUNT}, Skipped (preflight): ${SKIPPED_PREFLIGHT_COUNT}, Skipped (unchanged): ${SKIPPED_UNCHANGED_COUNT}, Errors: ${ERROR_COUNT}"
+echo
+
+# Show dispatch artifacts
+echo "📄 Dispatch artifacts:"
+echo "  Manifest: ${MANIFEST_FILE}"
+if [[ -n "$PLAN_PREFLIGHT_SOURCE_DIR" ]]; then
+    echo "  Archived plan-preflight: ${DISPATCH_LOG_DIR}/plan_preflight/"
+fi
+if [[ -n "$QA_DIR" && -d "${DISPATCH_LOG_DIR}/retrieval_qc/" ]]; then
+    echo "  Archived QA results: ${DISPATCH_LOG_DIR}/retrieval_qc/"
+fi
+echo "  Dispatcher log: ${DISPATCHER_LOG}"
 
 echo
 echo "🔍 Check individual worker logs in:"

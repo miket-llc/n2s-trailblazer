@@ -321,20 +321,55 @@ Plan preflight creates a timestamped directory under `var/plan_preflight/` with:
 
 **Plan-preflight → Dispatch Workflow:**
 
-The recommended workflow integrates plan-preflight with existing dispatcher scripts:
+The recommended workflow integrates plan-preflight with dispatcher for full provenance tracking:
 
 ```bash
-# 1. Run plan-preflight with cost/time estimates
+# 1. Create/confirm a plan with cost/time estimates
 trailblazer embed plan-preflight \
-  --plan-file var/temp_runs_to_embed.txt \
   --provider openai --model text-embedding-3-small --dimension 1536 \
   --price-per-1k 0.00002 --tps-per-worker 1000 --workers 2
 
-# 2. Dispatch using only validated runs
-scripts/embed_dispatch.sh --plan-file var/plan_preflight/<TS>/ready.txt
+# 2. Dispatch from that plan (with optional QA archival and skip-unchanged optimization)
+scripts/embed_dispatch.sh \
+  --plan-preflight-dir var/plan_preflight/<TS>/ \
+  --qa-dir var/retrieval_qc/<TS>/ \
+  --skip-unchanged \
+  --notes "Production deployment"
+
+# 3. Monitor progress
+scripts/monitoring/monitor_embedding.sh
 ```
 
-This ensures only runs that pass preflight validation are dispatched, avoiding surprises and providing accurate cost/time estimates. See the [Trailblazer mindfile](docs/2025-08-18-0839_trailblazer-mindfile.md) for the complete reset/dispatch/monitor flow and operator proofs.
+**Dispatcher Features:**
+
+- **Plan source resolution**: Automatically uses latest plan-preflight or specify with `--plan-preflight-dir`
+- **Provenance archival**: Archives complete plan-preflight bundle and optional QA results
+- **Skip unchanged runs**: Uses `reembed-if-changed` to avoid unnecessary work when `--skip-unchanged` set
+- **Per-RID safety**: Always runs preflight checks before processing each run
+- **Full traceability**: Creates `dispatch_manifest.json` with provider/model/dimension, git commit, timestamps
+
+**Dispatcher Options:**
+
+```bash
+scripts/embed_dispatch.sh [OPTIONS]
+
+Options:
+  --plan-preflight-dir <DIR>  Use plan from <DIR>/ready.txt
+  --plan-file <FILE>          Use specific plan file  
+  --qa-dir <DIR>              Archive QA results from directory
+  --skip-unchanged            Use reembed-if-changed to skip unchanged runs
+  --notes "<TEXT>"            Add operator notes to manifest
+  --workers <N>               Number of parallel workers (default: 2)
+```
+
+**Plan Resolution Order:**
+
+1. `--plan-preflight-dir` if provided → use `<DIR>/ready.txt`
+1. `--plan-file` if provided → use it
+1. Auto-pick latest `var/plan_preflight/<TS>/ready.txt` if available
+1. Fall back to `var/temp_runs_to_embed.txt`
+
+This ensures only runs that pass preflight validation are dispatched, with full provenance tracking and optional change detection. See the [Trailblazer mindfile](docs/2025-08-18-0839_trailblazer-mindfile.md) for the complete reset/dispatch/monitor flow and operator proofs.
 
 **Common Failure Reasons & Fixes:**
 
