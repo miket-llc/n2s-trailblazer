@@ -146,8 +146,11 @@ def _execute_phase(
 
         normalize_from_ingest(outdir=out)
     elif phase == "chunk":
-        # Chunk phase: process normalized docs into chunks
-        from .steps.embed.chunker import chunk_normalized_record
+        # Chunk phase: process enriched or normalized docs into chunks
+        from .steps.embed.chunker import (
+            chunk_enriched_record,
+            chunk_normalized_record,
+        )
         import json
         import hashlib
         import statistics
@@ -157,8 +160,19 @@ def _execute_phase(
         # Extract run_id from output path (runs/<run_id>/chunk)
         run_id = out.split("/")[-2]
 
-        # Input: normalized.ndjson, Output: chunked records
+        # Prefer enriched input if available, otherwise use normalized
+        enriched_file = Path(out).parent / "enrich" / "enriched.jsonl"
         normalized_file = Path(out).parent / "normalize" / "normalized.ndjson"
+
+        if enriched_file.exists():
+            input_file = enriched_file
+            chunk_func = chunk_enriched_record
+            input_type = "enriched"
+        else:
+            input_file = normalized_file
+            chunk_func = chunk_normalized_record
+            input_type = "normalized"
+
         chunk_dir = Path(out)
         chunk_dir.mkdir(parents=True, exist_ok=True)
 
@@ -173,19 +187,18 @@ def _execute_phase(
             "model": "text-embedding-3-small",
         }
 
-        # Compute hash of enriched file for traceability
-        enriched_file = Path(out).parent / "enrich" / "enriched.jsonl"
-        enriched_hash = None
-        if enriched_file.exists():
-            with open(enriched_file, "rb") as f:
-                enriched_hash = hashlib.sha256(f.read()).hexdigest()
+        # Compute hash of input file for traceability
+        input_hash = None
+        if input_file.exists():
+            with open(input_file, "rb") as f:
+                input_hash = hashlib.sha256(f.read()).hexdigest()
 
-        with open(normalized_file, "r") as fin, open(chunks_file, "w") as fout:
+        with open(input_file, "r") as fin, open(chunks_file, "w") as fout:
             for line in fin:
                 if not line.strip():
                     continue
                 record = json.loads(line.strip())
-                chunks = chunk_normalized_record(record)
+                chunks = chunk_func(record)
                 total_docs += 1
                 for chunk in chunks:
                     chunk_data = {
@@ -219,6 +232,45 @@ def _execute_phase(
                 "total": sum(token_counts),
             }
 
+        # Get quality distribution from enriched data if available
+        quality_distribution = None
+        if input_type == "enriched" and enriched_file.exists():
+            # Try to extract quality distribution from enriched records
+            quality_scores = []
+            try:
+                with open(enriched_file, "r") as f:
+                    for line in f:
+                        if line.strip():
+                            record = json.loads(line.strip())
+                            score = record.get("quality_score")
+                            if score is not None:
+                                quality_scores.append(score)
+
+                if quality_scores:
+                    sorted_scores = sorted(quality_scores)
+                    n = len(sorted_scores)
+                    p50_idx = int(0.5 * n)
+                    p90_idx = int(0.9 * n)
+
+                    # Assume default thresholds if not specified
+                    min_quality = 0.60
+                    max_below_threshold_pct = 0.20
+
+                    below_threshold = sum(
+                        1 for score in quality_scores if score < min_quality
+                    )
+                    below_threshold_pct = below_threshold / n if n > 0 else 1.0
+
+                    quality_distribution = {
+                        "p50": round(sorted_scores[min(p50_idx, n - 1)], 3),
+                        "p90": round(sorted_scores[min(p90_idx, n - 1)], 3),
+                        "belowThresholdPct": round(below_threshold_pct, 3),
+                        "minQuality": min_quality,
+                        "maxBelowThresholdPct": max_below_threshold_pct,
+                    }
+            except Exception as e:
+                log.warning("chunk.quality_distribution_failed", error=str(e))
+
         # Write chunk assurance file
         chunk_assurance = {
             "run_id": run_id,
@@ -228,15 +280,21 @@ def _execute_phase(
             "tokenStats": token_stats,
             "tokenizer": "tiktoken",
             "chunkConfig": chunk_config,
-            "enrichedHash": enriched_hash,
+            "inputType": input_type,
+            "inputHash": input_hash,
             "artifacts": {
                 "chunks_file": str(chunks_file),
+                "input_file": str(input_file),
                 "normalized_file": str(normalized_file),
                 "enriched_file": str(enriched_file)
                 if enriched_file.exists()
                 else None,
             },
         }
+
+        # Add quality distribution if available
+        if quality_distribution:
+            chunk_assurance["qualityDistribution"] = quality_distribution
 
         assurance_file = chunk_dir / "chunk_assurance.json"
         with open(assurance_file, "w") as f:

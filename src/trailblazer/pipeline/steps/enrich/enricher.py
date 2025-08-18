@@ -25,17 +25,22 @@ class DocumentEnricher:
         llm_enabled: bool = False,
         max_docs: Optional[int] = None,
         budget: Optional[str] = None,
+        min_quality: float = 0.60,
+        max_below_threshold_pct: float = 0.20,
     ):
         self.llm_enabled = llm_enabled
         self.max_docs = max_docs
         self.budget = budget
         self.enrichment_version = "v1"
+        self.min_quality = min_quality
+        self.max_below_threshold_pct = max_below_threshold_pct
 
         # Statistics
         self.docs_processed = 0
         self.docs_llm = 0
         self.suggested_edges_count = 0
         self.quality_flags_counts: Dict[str, int] = {}
+        self.quality_scores: List[float] = []
 
     def enrich_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
         """Enrich a single document with rule-based and optional LLM metadata."""
@@ -75,11 +80,23 @@ class DocumentEnricher:
             doc, text_md, attachments
         )
 
+        # Compute new schema fields
+        fingerprint = self._compute_document_fingerprint(doc)
+        section_map = self._extract_section_map(text_md)
+        chunk_hints = self._generate_chunk_hints(doc, text_md)
+        quality_metrics = self._compute_quality_metrics(
+            doc, text_md, attachments, quality_flags, readability
+        )
+        quality_score = self._compute_quality_score(
+            quality_metrics, quality_flags
+        )
+
         # Update statistics
         for flag in quality_flags:
             self.quality_flags_counts[flag] = (
                 self.quality_flags_counts.get(flag, 0) + 1
             )
+        self.quality_scores.append(quality_score)
 
         return {
             "id": doc.get("id"),
@@ -90,6 +107,11 @@ class DocumentEnricher:
             "media_density": media_density,
             "link_density": link_density,
             "quality_flags": quality_flags,
+            "fingerprint": fingerprint,
+            "section_map": section_map,
+            "chunk_hints": chunk_hints,
+            "quality": quality_metrics,
+            "quality_score": quality_score,
         }
 
     def _apply_llm_enrichment(self, doc: Dict[str, Any]) -> Dict[str, Any]:
@@ -277,6 +299,221 @@ class DocumentEnricher:
 
         return flags
 
+    def _compute_document_fingerprint(
+        self, doc: Dict[str, Any]
+    ) -> Dict[str, str]:
+        """Compute document fingerprint with doc and version info."""
+        # Create stable hash of document content for change detection
+        # Normalize whitespace in text_md to make fingerprint stable
+        text_md = doc.get("text_md", "")
+        if text_md:
+            # Normalize whitespace: strip leading/trailing, collapse multiple whitespace
+            import re
+
+            text_md = re.sub(r"\s+", " ", text_md.strip())
+
+        content_fields = {
+            "id": doc.get("id"),
+            "title": doc.get("title"),
+            "text_md": text_md,
+            "source_system": doc.get("source_system"),
+            "url": doc.get("url"),
+        }
+
+        canonical_json = json.dumps(
+            content_fields, sort_keys=True, ensure_ascii=False
+        )
+        doc_hash = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+        return {"doc": doc_hash, "version": self.enrichment_version}
+
+    def _extract_section_map(self, text_md: str) -> List[Dict[str, Any]]:
+        """Extract section map with heading, level, and character/token positions."""
+        if not text_md:
+            return []
+
+        sections = []
+        lines = text_md.split("\n")
+        current_pos = 0
+
+        for line_num, line in enumerate(lines):
+            line_with_newline = (
+                line + "\n" if line_num < len(lines) - 1 else line
+            )
+
+            # Match markdown headings
+            heading_match = re.match(r"^(#{1,6})\s+(.+)", line.strip())
+            if heading_match:
+                level = len(heading_match.group(1))
+                heading_text = heading_match.group(2).strip()
+
+                # Estimate token positions (rough approximation)
+                token_start = max(
+                    0, current_pos // 4
+                )  # Rough chars-to-tokens ratio
+
+                sections.append(
+                    {
+                        "heading": heading_text,
+                        "level": level,
+                        "startChar": current_pos,
+                        "endChar": current_pos + len(line_with_newline),
+                        "tokenStart": token_start,
+                        "tokenEnd": token_start
+                        + max(1, len(line_with_newline) // 4),
+                    }
+                )
+
+            current_pos += len(line_with_newline)
+
+        return sections
+
+    def _generate_chunk_hints(
+        self, doc: Dict[str, Any], text_md: str
+    ) -> Dict[str, Any]:
+        """Generate chunking hints for the document."""
+        # Default chunk hints
+        chunk_hints = {
+            "maxTokens": 800,
+            "minTokens": 120,
+            "preferHeadings": True,
+            "softBoundaries": [],
+        }
+
+        # Find soft boundaries (good places to split)
+        soft_boundaries = []
+        lines = text_md.split("\n")
+        current_pos = 0
+
+        for line_num, line in enumerate(lines):
+            line_with_newline = (
+                line + "\n" if line_num < len(lines) - 1 else line
+            )
+
+            # Headings are good boundaries
+            if re.match(r"^#{1,6}\s+", line.strip()):
+                soft_boundaries.append(current_pos)
+
+            # Double line breaks (paragraph boundaries)
+            elif (
+                line.strip() == ""
+                and line_num > 0
+                and line_num < len(lines) - 1
+            ):
+                if lines[line_num - 1].strip() and lines[line_num + 1].strip():
+                    soft_boundaries.append(current_pos)
+
+            # List item boundaries
+            elif re.match(r"^[\s]*[-*+]\s+", line) or re.match(
+                r"^[\s]*\d+\.\s+", line
+            ):
+                soft_boundaries.append(current_pos)
+
+            current_pos += len(line_with_newline)
+
+        chunk_hints["softBoundaries"] = soft_boundaries
+        return chunk_hints
+
+    def _compute_quality_metrics(
+        self,
+        doc: Dict[str, Any],
+        text_md: str,
+        attachments: List[Dict],
+        quality_flags: List[str],
+        readability: Dict[str, float],
+    ) -> Dict[str, Any]:
+        """Compute detailed quality metrics."""
+        word_count = len(text_md.split()) if text_md else 0
+        char_count = len(text_md) if text_md else 0
+
+        # Count structural elements
+        heading_count = len(re.findall(r"^#+\s", text_md, re.MULTILINE))
+        list_count = len(re.findall(r"^[\s]*[-*+]\s+", text_md, re.MULTILINE))
+        link_count = len(re.findall(r"\[.*?\]\(.*?\)", text_md))
+
+        # Content type analysis
+        code_blocks = len(re.findall(r"```", text_md)) // 2
+        tables = len(re.findall(r"\|.*\|", text_md))
+
+        return {
+            "word_count": word_count,
+            "char_count": char_count,
+            "heading_count": heading_count,
+            "list_count": list_count,
+            "link_count": link_count,
+            "code_blocks": code_blocks,
+            "tables": tables,
+            "attachment_count": len(attachments),
+            "readability_score": readability.get("chars_per_word", 0.0),
+            "structure_score": min(
+                1.0, heading_count / max(1, word_count / 200)
+            ),  # Headings per ~200 words
+        }
+
+    def _compute_quality_score(
+        self, quality_metrics: Dict[str, Any], quality_flags: List[str]
+    ) -> float:
+        """Compute overall quality score (0.0 to 1.0)."""
+        score = 1.0
+
+        # Penalize quality flags
+        flag_penalties = {
+            "empty_body": 1.0,  # Complete penalty
+            "too_short": 0.6,
+            "too_long": 0.2,
+            "image_only": 0.5,
+            "no_structure": 0.3,
+            "broken_links": 0.1,
+        }
+
+        for flag in quality_flags:
+            penalty = flag_penalties.get(flag, 0.1)
+            score = max(0.0, score - penalty)
+
+        # Boost for good structure
+        if quality_metrics.get("structure_score", 0) > 0.1:
+            score = min(1.0, score + 0.1)
+
+        # Boost for reasonable length
+        word_count = quality_metrics.get("word_count", 0)
+        if 50 <= word_count <= 2000:
+            score = min(1.0, score + 0.1)
+
+        return round(score, 3)
+
+    def get_quality_distribution(self) -> Dict[str, Any]:
+        """Get quality score distribution statistics."""
+        if not self.quality_scores:
+            return {
+                "p50": 0.0,
+                "p90": 0.0,
+                "belowThresholdPct": 1.0,
+                "minQuality": self.min_quality,
+                "maxBelowThresholdPct": self.max_below_threshold_pct,
+            }
+
+        sorted_scores = sorted(self.quality_scores)
+        n = len(sorted_scores)
+
+        p50_idx = int(0.5 * n)
+        p90_idx = int(0.9 * n)
+
+        p50 = sorted_scores[min(p50_idx, n - 1)]
+        p90 = sorted_scores[min(p90_idx, n - 1)]
+
+        below_threshold = sum(
+            1 for score in self.quality_scores if score < self.min_quality
+        )
+        below_threshold_pct = below_threshold / n if n > 0 else 1.0
+
+        return {
+            "p50": round(p50, 3),
+            "p90": round(p90, 3),
+            "belowThresholdPct": round(below_threshold_pct, 3),
+            "minQuality": self.min_quality,
+            "maxBelowThresholdPct": self.max_below_threshold_pct,
+        }
+
     def _generate_summary(self, text_md: str) -> str:
         """Generate a short summary (mocked)."""
         # Mock summary generation - in real implementation would use LLM
@@ -444,6 +681,8 @@ def enrich_from_normalized(
     llm_enabled: bool = False,
     max_docs: Optional[int] = None,
     budget: Optional[str] = None,
+    min_quality: float = 0.60,
+    max_below_threshold_pct: float = 0.20,
     progress_callback: Optional[Callable] = None,
     emit_event: Optional[Callable] = None,
 ) -> Dict[str, Any]:
@@ -482,6 +721,8 @@ def enrich_from_normalized(
         llm_enabled=llm_enabled,
         max_docs=max_docs,
         budget=budget,
+        min_quality=min_quality,
+        max_below_threshold_pct=max_below_threshold_pct,
     )
 
     start_time = time.time()
@@ -564,6 +805,9 @@ def enrich_from_normalized(
 
     duration = time.time() - start_time
 
+    # Get quality distribution statistics
+    quality_distribution = enricher.get_quality_distribution()
+
     # Generate statistics
     stats = {
         "run_id": run_id,
@@ -571,6 +815,7 @@ def enrich_from_normalized(
         "docs_llm": enricher.docs_llm,
         "suggested_edges_total": enricher.suggested_edges_count,
         "quality_flags_counts": enricher.quality_flags_counts,
+        "quality_distribution": quality_distribution,
         "duration_seconds": round(duration, 2),
         "llm_enabled": llm_enabled,
         "completed_at": datetime.now(timezone.utc).isoformat(),
@@ -578,6 +823,17 @@ def enrich_from_normalized(
 
     if emit_event:
         emit_event("enrich.end", **stats)
+
+    # Log quality distribution stats
+    log.info(
+        "enrich.quality_distribution",
+        run_id=run_id,
+        p50=quality_distribution["p50"],
+        p90=quality_distribution["p90"],
+        below_threshold_pct=quality_distribution["belowThresholdPct"],
+        min_quality=quality_distribution["minQuality"],
+        max_below_threshold_pct=quality_distribution["maxBelowThresholdPct"],
+    )
 
     log.info("enrich.complete", **stats)
     return stats

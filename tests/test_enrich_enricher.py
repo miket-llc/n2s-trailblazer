@@ -37,6 +37,15 @@ class TestDocumentEnricher:
         assert enricher.max_docs == 100
         assert enricher.budget == "1000"
 
+    def test_init_with_quality_parameters(self):
+        """Test enricher initialization with quality parameters."""
+        enricher = DocumentEnricher(
+            min_quality=0.70, max_below_threshold_pct=0.15
+        )
+        assert enricher.min_quality == 0.70
+        assert enricher.max_below_threshold_pct == 0.15
+        assert enricher.quality_scores == []
+
 
 class TestRuleBasedEnrichment:
     """Test rule-based enrichment features."""
@@ -655,3 +664,245 @@ class TestEnrichFromNormalized:
             ) as f:
                 lines = f.readlines()
             assert len(lines) == 2
+
+
+class TestNewSchemaFields:
+    """Test the new enricher schema fields."""
+
+    def test_enriched_document_has_new_fields(self):
+        """Test that enriched documents contain all new schema fields."""
+        enricher = DocumentEnricher()
+        doc = {
+            "id": "test-doc",
+            "title": "Test Document",
+            "text_md": "# Introduction\n\nThis is a test document with some content.\n\n## Section 1\n\nMore content here.",
+            "source_system": "confluence",
+            "attachments": [],
+        }
+
+        enriched = enricher.enrich_document(doc)
+
+        # Check that all new fields are present
+        assert "fingerprint" in enriched
+        assert "section_map" in enriched
+        assert "chunk_hints" in enriched
+        assert "quality" in enriched
+        assert "quality_score" in enriched
+
+        # Check fingerprint structure
+        fingerprint = enriched["fingerprint"]
+        assert isinstance(fingerprint, dict)
+        assert "doc" in fingerprint
+        assert "version" in fingerprint
+        assert fingerprint["version"] == "v1"
+
+        # Check section_map structure
+        section_map = enriched["section_map"]
+        assert isinstance(section_map, list)
+        if section_map:  # Should have sections for our test doc
+            section = section_map[0]
+            assert "heading" in section
+            assert "level" in section
+            assert "startChar" in section
+            assert "endChar" in section
+            assert "tokenStart" in section
+            assert "tokenEnd" in section
+
+        # Check chunk_hints structure
+        chunk_hints = enriched["chunk_hints"]
+        assert isinstance(chunk_hints, dict)
+        assert "maxTokens" in chunk_hints
+        assert "minTokens" in chunk_hints
+        assert "preferHeadings" in chunk_hints
+        assert "softBoundaries" in chunk_hints
+        assert chunk_hints["maxTokens"] == 800
+        assert chunk_hints["minTokens"] == 120
+        assert chunk_hints["preferHeadings"] is True
+
+        # Check quality metrics structure
+        quality = enriched["quality"]
+        assert isinstance(quality, dict)
+        assert "word_count" in quality
+        assert "char_count" in quality
+        assert "heading_count" in quality
+
+        # Check quality score
+        quality_score = enriched["quality_score"]
+        assert isinstance(quality_score, float)
+        assert 0.0 <= quality_score <= 1.0
+
+    def test_quality_score_stable_for_same_input(self):
+        """Test that quality scoring is stable for the same input."""
+        enricher = DocumentEnricher()
+        doc = {
+            "id": "test-doc",
+            "title": "Test Document",
+            "text_md": "# Introduction\n\nThis is a well-structured document with multiple sections.\n\n## Features\n\n- Good structure\n- Reasonable length\n- Clear headings",
+            "source_system": "confluence",
+            "attachments": [],
+        }
+
+        # Enrich the same document multiple times
+        enriched1 = enricher.enrich_document(doc)
+        enriched2 = enricher.enrich_document(doc)
+
+        # Quality scores should be identical
+        assert enriched1["quality_score"] == enriched2["quality_score"]
+
+        # Quality metrics should be identical
+        assert enriched1["quality"] == enriched2["quality"]
+
+    def test_fingerprint_unchanged_for_whitespace_changes(self):
+        """Test that fingerprint is unchanged for whitespace-only changes."""
+        enricher = DocumentEnricher()
+
+        doc1 = {
+            "id": "test-doc",
+            "title": "Test Document",
+            "text_md": "# Introduction\n\nThis is a test document.",
+            "source_system": "confluence",
+        }
+
+        doc2 = {
+            "id": "test-doc",
+            "title": "Test Document",
+            "text_md": "# Introduction\n\n\nThis is a test document.\n",  # Extra whitespace
+            "source_system": "confluence",
+        }
+
+        enriched1 = enricher.enrich_document(doc1)
+        enriched2 = enricher.enrich_document(doc2)
+
+        # Content fingerprints should be the same (whitespace normalized)
+        assert (
+            enriched1["fingerprint"]["doc"] == enriched2["fingerprint"]["doc"]
+        )
+
+    def test_quality_distribution_calculation(self):
+        """Test quality distribution statistics calculation."""
+        enricher = DocumentEnricher(
+            min_quality=0.60, max_below_threshold_pct=0.20
+        )
+
+        # Create documents with different quality levels
+        docs = [
+            {
+                "id": "good-doc",
+                "title": "Good",
+                "text_md": "# Title\n\nWell structured content with good length and headings.\n\n## Section\n\nMore content here.",
+                "source_system": "confluence",
+                "attachments": [],
+            },
+            {
+                "id": "bad-doc",
+                "title": "Bad",
+                "text_md": "Short",
+                "source_system": "confluence",
+                "attachments": [],
+            },
+            {
+                "id": "medium-doc",
+                "title": "Medium",
+                "text_md": "Some content but not great structure.",
+                "source_system": "confluence",
+                "attachments": [],
+            },
+            {
+                "id": "empty-doc",
+                "title": "Empty",
+                "text_md": "",
+                "source_system": "confluence",
+                "attachments": [],
+            },
+        ]
+
+        # Enrich all documents
+        for doc in docs:
+            enricher.enrich_document(doc)
+
+        # Get quality distribution
+        distribution = enricher.get_quality_distribution()
+
+        assert isinstance(distribution, dict)
+        assert "p50" in distribution
+        assert "p90" in distribution
+        assert "belowThresholdPct" in distribution
+        assert "minQuality" in distribution
+        assert "maxBelowThresholdPct" in distribution
+
+        # Should have processed 4 documents
+        assert len(enricher.quality_scores) == 4
+
+        # At least one document should be below threshold (the empty one)
+        assert distribution["belowThresholdPct"] > 0.0
+
+    def test_section_map_extraction(self):
+        """Test section map extraction from markdown."""
+        enricher = DocumentEnricher()
+        text_md = """# Main Title
+
+Some introduction text.
+
+## Section 1
+
+Content for section 1.
+
+### Subsection 1.1
+
+More detailed content.
+
+## Section 2
+
+Final section content.
+"""
+
+        section_map = enricher._extract_section_map(text_md)
+
+        assert len(section_map) == 4  # Should find 4 headings
+
+        # Check first heading
+        first_section = section_map[0]
+        assert first_section["heading"] == "Main Title"
+        assert first_section["level"] == 1
+        assert first_section["startChar"] == 0
+
+        # Check second heading
+        second_section = section_map[1]
+        assert second_section["heading"] == "Section 1"
+        assert second_section["level"] == 2
+
+        # Check subsection
+        third_section = section_map[2]
+        assert third_section["heading"] == "Subsection 1.1"
+        assert third_section["level"] == 3
+
+    def test_chunk_hints_generation(self):
+        """Test chunk hints generation."""
+        enricher = DocumentEnricher()
+        doc = {"id": "test"}
+        text_md = """# Title
+
+Introduction paragraph.
+
+## Section 1
+
+- List item 1
+- List item 2
+
+Some more content.
+
+## Section 2
+
+Final content.
+"""
+
+        chunk_hints = enricher._generate_chunk_hints(doc, text_md)
+
+        assert chunk_hints["maxTokens"] == 800
+        assert chunk_hints["minTokens"] == 120
+        assert chunk_hints["preferHeadings"] is True
+
+        # Should have found soft boundaries (headings and list items)
+        soft_boundaries = chunk_hints["softBoundaries"]
+        assert isinstance(soft_boundaries, list)
+        assert len(soft_boundaries) > 0  # Should find at least some boundaries

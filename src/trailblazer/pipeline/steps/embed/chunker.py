@@ -597,3 +597,303 @@ def chunk_normalized_record(record: Dict) -> List[Chunk]:
     text_with_media = inject_media_placeholders(text_md, attachments)
 
     return chunk_document(doc_id, text_with_media, title)
+
+
+def chunk_document_with_hints(
+    doc_id: str,
+    text_md: str,
+    title: str = "",
+    max_tokens: int = 800,
+    min_tokens: int = 120,
+    prefer_headings: bool = True,
+    soft_boundaries: Optional[List[int]] = None,
+    section_map: Optional[List[Dict]] = None,
+    model: str = "text-embedding-3-small",
+) -> List[Chunk]:
+    """
+    Chunk a document using enrichment hints for heading-aware, token-bounded splits.
+
+    Args:
+        doc_id: Document identifier
+        text_md: Markdown text content
+        title: Document title (prepended to first chunk)
+        max_tokens: Maximum tokens allowed (hard limit)
+        min_tokens: Minimum tokens preferred for chunks
+        prefer_headings: Whether to prefer heading-aligned splits
+        soft_boundaries: Character positions that are good split points
+        section_map: List of heading sections with positions
+        model: Model name for token counting
+
+    Returns:
+        List of Chunk objects with heading-aware splitting
+    """
+    if soft_boundaries is None:
+        soft_boundaries = []
+    if section_map is None:
+        section_map = []
+
+    # Normalize and prepare text
+    full_text = normalize_text(text_md)
+    if title and title.strip():
+        if full_text.strip():
+            full_text = f"# {title.strip()}\n\n{full_text}"
+        else:
+            full_text = f"# {title.strip()}"
+
+    if not full_text.strip():
+        return []
+
+    if prefer_headings and section_map:
+        # Use section-aware chunking
+        chunks = _chunk_by_sections(
+            doc_id, full_text, section_map, max_tokens, min_tokens, model
+        )
+    else:
+        # Fall back to soft boundary chunking
+        chunks = _chunk_by_soft_boundaries(
+            doc_id, full_text, soft_boundaries, max_tokens, min_tokens, model
+        )
+
+    return chunks
+
+
+def _chunk_by_sections(
+    doc_id: str,
+    text: str,
+    section_map: List[Dict],
+    max_tokens: int,
+    min_tokens: int,
+    model: str,
+) -> List[Chunk]:
+    """Chunk by sections, respecting heading boundaries."""
+    chunks: List[Chunk] = []
+    current_chunk = ""
+    ord_num = 0
+
+    # Sort sections by start position
+    sorted_sections = sorted(section_map, key=lambda s: s.get("startChar", 0))
+
+    if not sorted_sections:
+        # No sections found, fall back to paragraph splitting
+        return _chunk_by_paragraphs(
+            doc_id, text, max_tokens, min_tokens, model
+        )
+
+    # Process text section by section
+    last_pos = 0
+
+    for section in sorted_sections:
+        start_char = section.get("startChar", 0)
+
+        # Add any text before this section to current chunk
+        if start_char > last_pos:
+            before_section = text[last_pos:start_char].strip()
+            if before_section:
+                current_chunk += before_section + "\n"
+
+        # Check if adding this section would exceed max tokens
+        section_text = text[
+            start_char : section.get("endChar", len(text))
+        ].strip()
+        combined_text = current_chunk + section_text
+        combined_tokens = count_tokens(combined_text, model)
+
+        if combined_tokens > max_tokens and current_chunk.strip():
+            # Emit current chunk and start new one with this section
+            if count_tokens(current_chunk, model) >= min_tokens or not chunks:
+                chunk = _create_safe_chunk(
+                    doc_id, current_chunk.strip(), ord_num, max_tokens, model
+                )
+                chunks.append(chunk)
+                ord_num += 1
+
+            current_chunk = section_text + "\n"
+        else:
+            # Add section to current chunk
+            current_chunk += section_text + "\n"
+
+        last_pos = section.get("endChar", start_char + len(section_text))
+
+    # Add any remaining text
+    if last_pos < len(text):
+        remaining = text[last_pos:].strip()
+        if remaining:
+            current_chunk += remaining
+
+    # Emit final chunk
+    if current_chunk.strip():
+        chunk = _create_safe_chunk(
+            doc_id, current_chunk.strip(), ord_num, max_tokens, model
+        )
+        chunks.append(chunk)
+
+    return chunks
+
+
+def _chunk_by_soft_boundaries(
+    doc_id: str,
+    text: str,
+    soft_boundaries: List[int],
+    max_tokens: int,
+    min_tokens: int,
+    model: str,
+) -> List[Chunk]:
+    """Chunk using soft boundaries as preferred split points."""
+    if not soft_boundaries:
+        return _chunk_by_paragraphs(
+            doc_id, text, max_tokens, min_tokens, model
+        )
+
+    chunks: List[Chunk] = []
+    current_chunk = ""
+    ord_num = 0
+    last_pos = 0
+
+    # Sort boundaries
+    sorted_boundaries = sorted(set(soft_boundaries))
+
+    for boundary in sorted_boundaries:
+        if boundary > len(text):
+            continue
+
+        # Get text up to this boundary
+        segment = text[last_pos:boundary].strip()
+        if not segment:
+            continue
+
+        # Check if adding this segment would exceed max tokens
+        combined_text = (
+            current_chunk + "\n" + segment if current_chunk else segment
+        )
+        combined_tokens = count_tokens(combined_text, model)
+
+        if combined_tokens > max_tokens and current_chunk.strip():
+            # Emit current chunk and start new one
+            if count_tokens(current_chunk, model) >= min_tokens or not chunks:
+                chunk = _create_safe_chunk(
+                    doc_id, current_chunk.strip(), ord_num, max_tokens, model
+                )
+                chunks.append(chunk)
+                ord_num += 1
+
+            current_chunk = segment
+        else:
+            # Add segment to current chunk
+            current_chunk = combined_text
+
+        last_pos = boundary
+
+    # Add any remaining text
+    if last_pos < len(text):
+        remaining = text[last_pos:].strip()
+        if remaining:
+            combined_text = (
+                current_chunk + "\n" + remaining
+                if current_chunk
+                else remaining
+            )
+            current_chunk = combined_text
+
+    # Emit final chunk
+    if current_chunk.strip():
+        chunk = _create_safe_chunk(
+            doc_id, current_chunk.strip(), ord_num, max_tokens, model
+        )
+        chunks.append(chunk)
+
+    return chunks
+
+
+def _chunk_by_paragraphs(
+    doc_id: str, text: str, max_tokens: int, min_tokens: int, model: str
+) -> List[Chunk]:
+    """Fallback chunking by paragraphs and headings."""
+    sections = split_on_paragraphs_and_headings(text)
+    chunks: List[Chunk] = []
+    current_chunk = ""
+    ord_num = 0
+
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+
+        # Check if adding this section would exceed token budget
+        current_tokens = (
+            count_tokens(current_chunk, model) if current_chunk else 0
+        )
+        combined_tokens = (
+            count_tokens(current_chunk + "\n" + section, model)
+            if current_chunk
+            else count_tokens(section, model)
+        )
+
+        if combined_tokens > max_tokens and current_chunk.strip():
+            # Emit current chunk and start new one
+            if current_tokens >= min_tokens or not chunks:
+                chunk = _create_safe_chunk(
+                    doc_id, current_chunk.strip(), ord_num, max_tokens, model
+                )
+                chunks.append(chunk)
+                ord_num += 1
+
+            current_chunk = section
+        else:
+            # Add section to current chunk
+            current_chunk = (
+                current_chunk + "\n" + section if current_chunk else section
+            )
+
+    # Emit final chunk
+    if current_chunk.strip():
+        chunk = _create_safe_chunk(
+            doc_id, current_chunk.strip(), ord_num, max_tokens, model
+        )
+        chunks.append(chunk)
+
+    return chunks
+
+
+def chunk_enriched_record(record: Dict) -> List[Chunk]:
+    """
+    Chunk an enriched record from the enrich phase.
+
+    This version respects chunk_hints and section_map for heading-aligned splits.
+
+    Args:
+        record: Enriched record with id, title, text_md fields plus enrichment data
+
+    Returns:
+        List of Chunk objects with heading-aware splitting
+    """
+    doc_id = record.get("id", "")
+    title = record.get("title", "")
+    text_md = record.get("text_md", "")
+    attachments = record.get("attachments", [])
+
+    # Get enrichment data
+    chunk_hints = record.get("chunk_hints", {})
+    section_map = record.get("section_map", [])
+
+    if not doc_id:
+        raise ValueError("Record missing required 'id' field")
+
+    # Extract chunk parameters from hints
+    max_tokens = chunk_hints.get("maxTokens", 800)
+    min_tokens = chunk_hints.get("minTokens", 120)
+    prefer_headings = chunk_hints.get("preferHeadings", True)
+    soft_boundaries = chunk_hints.get("softBoundaries", [])
+
+    # Inject media placeholders to make media chunk-addressable
+    text_with_media = inject_media_placeholders(text_md, attachments)
+
+    return chunk_document_with_hints(
+        doc_id=doc_id,
+        text_md=text_with_media,
+        title=title,
+        max_tokens=max_tokens,
+        min_tokens=min_tokens,
+        prefer_headings=prefer_headings,
+        soft_boundaries=soft_boundaries,
+        section_map=section_map,
+    )

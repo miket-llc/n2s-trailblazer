@@ -1958,6 +1958,14 @@ def enrich(
     budget: Optional[str] = typer.Option(
         None, "--budget", help="Budget limit for LLM usage (soft limit)"
     ),
+    min_quality: float = typer.Option(
+        0.60, "--min-quality", help="Minimum quality score threshold (0.0-1.0)"
+    ),
+    max_below_threshold_pct: float = typer.Option(
+        0.20,
+        "--max-below-threshold-pct",
+        help="Maximum percentage of docs below quality threshold",
+    ),
     progress: bool = typer.Option(
         True, "--progress/--no-progress", help="Show progress output"
     ),
@@ -1970,8 +1978,13 @@ def enrich(
 
     This command processes normalized documents and adds:
     • Rule-based fields (collections, path_tags, readability, quality flags)
+    • New schema fields (fingerprint, section_map, chunk_hints, quality metrics, quality_score)
     • LLM-optional fields (summaries, keywords, taxonomy labels, suggested edges)
     • Enrichment fingerprints for selective re-embedding
+
+    Quality gating: Documents with quality_score below --min-quality are flagged.
+    If more than --max-below-threshold-pct of documents are below threshold,
+    downstream preflight checks will fail to prevent poor quality embeddings.
 
     The enrichment phase is DB-free and runs before embedding to prepare
     documents with additional metadata that improves search and retrieval.
@@ -2052,6 +2065,8 @@ def enrich(
             llm_enabled=llm,
             max_docs=max_docs,
             budget=budget,
+            min_quality=min_quality,
+            max_below_threshold_pct=max_below_threshold_pct,
             progress_callback=progress_callback if progress else None,
             emit_event=emit_event,
         )
@@ -2153,6 +2168,135 @@ Run `trailblazer embed load --run-id {run_id}` to embed the enriched documents i
 """.format(run_id=stats["run_id"])
 
     output_path.write_text(content, encoding="utf-8")
+
+
+@app.command()
+def chunk(
+    run_id: str = typer.Argument(
+        ...,
+        help="Run ID to chunk (must have enrich or normalize phase completed)",
+    ),
+    max_tokens: int = typer.Option(
+        800, "--max-tokens", help="Maximum tokens per chunk"
+    ),
+    min_tokens: int = typer.Option(
+        120, "--min-tokens", help="Minimum tokens per chunk"
+    ),
+    progress: bool = typer.Option(
+        True, "--progress/--no-progress", help="Show progress output"
+    ),
+) -> None:
+    """
+    Chunk enriched or normalized documents into token-bounded pieces.
+
+    This command processes documents and creates chunks suitable for embedding:
+    • Respects chunk_hints from enrichment for heading-aligned splits
+    • Uses soft boundaries and section maps for better chunk quality
+    • Enforces token limits with overflow handling
+    • Records per-chunk token counts for assurance
+
+    The chunker prefers enriched input (enriched.jsonl) over normalized input
+    (normalized.ndjson) when available. Enriched input enables heading-aware
+    chunking with better quality.
+
+    Example:
+        trailblazer chunk RUN_ID_HERE                     # Use defaults (800/120 tokens)
+        trailblazer chunk RUN_ID_HERE --max-tokens 1000  # Custom token limits
+    """
+    import time
+
+    from ..core.artifacts import phase_dir
+    from ..pipeline.runner import _execute_phase
+
+    # Validate run exists
+    run_dir = phase_dir(run_id, "").parent
+    if not run_dir.exists():
+        typer.echo(f"❌ Run {run_id} not found", err=True)
+        raise typer.Exit(1)
+
+    # Check for input files
+    enrich_dir = phase_dir(run_id, "enrich")
+    normalize_dir = phase_dir(run_id, "normalize")
+
+    enriched_file = enrich_dir / "enriched.jsonl"
+    normalized_file = normalize_dir / "normalized.ndjson"
+
+    if enriched_file.exists():
+        input_type = "enriched"
+        typer.echo(f"📄 Using enriched input: {enriched_file}", err=True)
+    elif normalized_file.exists():
+        input_type = "normalized"
+        typer.echo(f"📄 Using normalized input: {normalized_file}", err=True)
+    else:
+        typer.echo(
+            f"❌ No input files found. Run 'trailblazer enrich {run_id}' or 'trailblazer normalize {run_id}' first",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    # Create chunk directory
+    chunk_dir = phase_dir(run_id, "chunk")
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+
+    typer.echo(f"🔄 Chunking documents for run: {run_id}", err=True)
+    typer.echo(f"   Input type: {input_type}", err=True)
+    typer.echo(f"   Max tokens: {max_tokens}", err=True)
+    typer.echo(f"   Min tokens: {min_tokens}", err=True)
+
+    if progress:
+        typer.echo("", err=True)
+
+    try:
+        # Run chunking via pipeline runner
+        start_time = time.time()
+        _execute_phase("chunk", str(chunk_dir))
+        duration = time.time() - start_time
+
+        # Read results
+        chunks_file = chunk_dir / "chunks.ndjson"
+        assurance_file = chunk_dir / "chunk_assurance.json"
+
+        if chunks_file.exists():
+            with open(chunks_file) as f:
+                chunk_count = sum(1 for line in f if line.strip())
+        else:
+            chunk_count = 0
+
+        if assurance_file.exists():
+            import json
+
+            with open(assurance_file) as f:
+                assurance_data = json.load(f)
+                doc_count = assurance_data.get("docCount", 0)
+                token_stats = assurance_data.get("tokenStats", {})
+        else:
+            doc_count = 0
+            token_stats = {}
+
+        typer.echo(f"✅ Chunking complete in {duration:.1f}s", err=True)
+        typer.echo(f"   Documents: {doc_count}", err=True)
+        typer.echo(f"   Chunks: {chunk_count}", err=True)
+
+        if token_stats:
+            typer.echo(
+                f"   Token range: {token_stats.get('min', 0)}-{token_stats.get('max', 0)} "
+                f"(median: {token_stats.get('median', 0)})",
+                err=True,
+            )
+
+        typer.echo(f"\n📁 Artifacts written to: {chunk_dir}", err=True)
+        typer.echo(
+            f"   • chunks.ndjson - {chunk_count} chunks ready for embedding",
+            err=True,
+        )
+        typer.echo(
+            "   • chunk_assurance.json - Quality metrics and statistics",
+            err=True,
+        )
+
+    except Exception as e:
+        typer.echo(f"❌ Chunking failed: {e}", err=True)
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -3544,6 +3688,69 @@ def embed_preflight_cmd(
         err=True,
     )
 
+    # Check quality distribution from chunk assurance
+    chunk_assurance_file = run_dir / "chunk" / "chunk_assurance.json"
+    quality_distribution = None
+    quality_check_passed = True
+    quality_failure_reason = None
+
+    if chunk_assurance_file.exists():
+        try:
+            with open(chunk_assurance_file) as f:
+                assurance_data = json.load(f)
+                quality_distribution = assurance_data.get(
+                    "qualityDistribution"
+                )
+
+            if quality_distribution:
+                below_threshold_pct = quality_distribution.get(
+                    "belowThresholdPct", 0.0
+                )
+                max_below_threshold_pct = quality_distribution.get(
+                    "maxBelowThresholdPct", 0.20
+                )
+                min_quality = quality_distribution.get("minQuality", 0.60)
+
+                typer.echo(
+                    f"✓ Quality distribution: P50={quality_distribution.get('p50', 0.0)}, "
+                    f"P90={quality_distribution.get('p90', 0.0)}, "
+                    f"Below threshold: {below_threshold_pct:.1%}",
+                    err=True,
+                )
+
+                if below_threshold_pct > max_below_threshold_pct:
+                    quality_check_passed = False
+                    quality_failure_reason = (
+                        f"Quality gate failure: {below_threshold_pct:.1%} of documents "
+                        f"have quality_score < {min_quality} (max allowed: {max_below_threshold_pct:.1%})"
+                    )
+                    typer.echo(f"❌ {quality_failure_reason}", err=True)
+                else:
+                    typer.echo(
+                        f"✓ Quality gate passed: {below_threshold_pct:.1%} below threshold (max: {max_below_threshold_pct:.1%})",
+                        err=True,
+                    )
+            else:
+                typer.echo(
+                    "⚠️  No quality distribution found (enrichment may not have been run)",
+                    err=True,
+                )
+        except Exception as e:
+            typer.echo(
+                f"⚠️  Failed to read quality distribution: {e}", err=True
+            )
+    else:
+        typer.echo("⚠️  No chunk assurance file found", err=True)
+
+    # Fail preflight if quality check failed
+    if not quality_check_passed:
+        typer.echo(
+            "\n💡 To fix: Run 'trailblazer enrich <RID> --min-quality <lower_threshold>' "
+            "or improve document quality before embedding",
+            err=True,
+        )
+        raise typer.Exit(1)
+
     # Create preflight directory and write results
     preflight_dir = run_dir / "preflight"
     preflight_dir.mkdir(exist_ok=True)
@@ -3557,6 +3764,11 @@ def embed_preflight_cmd(
             "chunks": len(chunks),
         },
         "tokenStats": token_stats,
+        "qualityDistribution": quality_distribution,
+        "qualityCheck": {
+            "passed": quality_check_passed,
+            "reason": quality_failure_reason,
+        },
         "provider": resolved_provider,
         "model": resolved_model,
         "dimensions": resolved_dim,
@@ -3564,6 +3776,7 @@ def embed_preflight_cmd(
             f"Validated {enriched_lines} enriched documents",
             f"Validated {len(chunks)} chunks with token range {token_stats['min']}-{token_stats['max']}",
             f"Tokenizer: tiktoken v{tokenizer_version}",
+            f"Quality gate: {'PASSED' if quality_check_passed else 'FAILED'}",
         ],
     }
 
