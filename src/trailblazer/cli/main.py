@@ -5257,9 +5257,9 @@ def embed_preflight_cmd(
         "--model",
         help="Model name (e.g., text-embedding-3-small)",
     ),
-    dim: Optional[int] = typer.Option(
+    dimension: Optional[int] = typer.Option(
         None,
-        "--dim",
+        "--dimension",
         help="Embedding dimension (e.g., 512, 1024, 1536)",
     ),
 ) -> None:
@@ -5279,11 +5279,12 @@ def embed_preflight_cmd(
     from datetime import datetime, timezone
     from ..core.paths import runs
     from ..core.config import SETTINGS
+    from ..obs.events import stage_run, emit_info
 
     # Resolve provider/model/dim from CLI args, env, or defaults
     resolved_provider = provider or SETTINGS.EMBED_PROVIDER or "openai"
     resolved_model = model or SETTINGS.EMBED_MODEL or "text-embedding-3-small"
-    resolved_dim = dim or SETTINGS.EMBED_DIMENSIONS or 1536
+    resolved_dim = dimension or SETTINGS.EMBED_DIMENSIONS or 1536
 
     typer.echo(f"🔍 Preflight check for run: {run}", err=True)
     typer.echo(
@@ -5291,35 +5292,88 @@ def embed_preflight_cmd(
         err=True,
     )
 
-    # Validate run directory exists
-    run_dir = runs() / run
-    if not run_dir.exists():
-        typer.echo(f"❌ Run directory not found: {run_dir}", err=True)
-        raise typer.Exit(1)
+    # Use stage_run context manager for consistent event emission
+    with stage_run(
+        "preflight",
+        run,
+        "embed",
+        provider=resolved_provider,
+        model=resolved_model,
+        dimension=resolved_dim,
+    ) as ctx:
+        emit_info(
+            "preflight",
+            run,
+            "embed",
+            message="Starting preflight validation",
+            provider=resolved_provider,
+            model=resolved_model,
+            dimension=resolved_dim,
+        )
 
-    # Check enriched.jsonl
-    enriched_file = run_dir / "enrich" / "enriched.jsonl"
-    if not enriched_file.exists():
-        typer.echo(f"❌ Enriched file not found: {enriched_file}", err=True)
-        typer.echo("Run 'trailblazer enrich <RID>' first", err=True)
-        raise typer.Exit(1)
+        # Validate run directory exists
+        run_dir = runs() / run
+        if not run_dir.exists():
+            emit_info(
+                "preflight",
+                run,
+                "embed",
+                message="Preflight validation failed",
+                status="BLOCKED",
+                reason="RUN_NOT_FOUND",
+            )
+            typer.echo(f"❌ Run directory not found: {run_dir}", err=True)
+            raise typer.Exit(1)
 
-    # Count lines in enriched file
-    with open(enriched_file) as f:
-        enriched_lines = sum(1 for line in f if line.strip())
+        # Check enriched.jsonl
+        enriched_file = run_dir / "enrich" / "enriched.jsonl"
+        if not enriched_file.exists():
+            emit_info(
+                "preflight",
+                run,
+                "embed",
+                message="Preflight validation failed",
+                status="BLOCKED",
+                reason="MISSING_ENRICHED",
+            )
+            typer.echo(
+                f"❌ Enriched file not found: {enriched_file}", err=True
+            )
+            typer.echo("Run 'trailblazer enrich <RID>' first", err=True)
+            raise typer.Exit(1)
 
-    if enriched_lines == 0:
-        typer.echo(f"❌ Enriched file is empty: {enriched_file}", err=True)
-        raise typer.Exit(1)
+        # Count lines in enriched file
+        with open(enriched_file) as f:
+            enriched_lines = sum(1 for line in f if line.strip())
 
-    typer.echo(f"✓ Enriched file: {enriched_lines} documents", err=True)
+        if enriched_lines == 0:
+            emit_info(
+                "preflight",
+                run,
+                "embed",
+                message="Preflight validation failed",
+                status="BLOCKED",
+                reason="EMPTY_ENRICHED",
+            )
+            typer.echo(f"❌ Enriched file is empty: {enriched_file}", err=True)
+            raise typer.Exit(1)
 
-    # Check chunks.ndjson
-    chunks_file = run_dir / "chunk" / "chunks.ndjson"
-    if not chunks_file.exists():
-        typer.echo(f"❌ Chunks file not found: {chunks_file}", err=True)
-        typer.echo("Run chunking phase first", err=True)
-        raise typer.Exit(1)
+        typer.echo(f"✓ Enriched file: {enriched_lines} documents", err=True)
+
+        # Check chunks.ndjson
+        chunks_file = run_dir / "chunk" / "chunks.ndjson"
+        if not chunks_file.exists():
+            emit_info(
+                "preflight",
+                run,
+                "embed",
+                message="Preflight validation failed",
+                status="BLOCKED",
+                reason="MISSING_CHUNKS",
+            )
+            typer.echo(f"❌ Chunks file not found: {chunks_file}", err=True)
+            typer.echo("Run chunking phase first", err=True)
+            raise typer.Exit(1)
 
     # Load and analyze chunks
     chunks = []
@@ -5510,11 +5564,25 @@ def embed_preflight_cmd(
     with open(preflight_file, "w") as f:
         json.dump(preflight_data, f, indent=2)
 
-    typer.echo(f"✅ Preflight complete: {preflight_file}", err=True)
-    typer.echo(
-        f"Run ready for embedding with {resolved_provider}/{resolved_model} at dimension {resolved_dim}",
-        err=True,
-    )
+        # Update context and emit success event
+        ctx.update(
+            enriched_docs=enriched_lines, chunks=len(chunks), status="READY"
+        )
+        emit_info(
+            "preflight",
+            run,
+            "embed",
+            message="Preflight validation completed",
+            status="READY",
+            enriched_docs=enriched_lines,
+            chunks=len(chunks),
+        )
+
+        typer.echo(f"✅ Preflight complete: {preflight_file}", err=True)
+        typer.echo(
+            f"Run ready for embedding with {resolved_provider}/{resolved_model} at dimension {resolved_dim}",
+            err=True,
+        )
 
 
 @embed_app.command("plan-preflight")
@@ -5581,6 +5649,7 @@ def embed_plan_preflight_cmd(
     from pathlib import Path
     from ..core.paths import runs
     from ..core.config import SETTINGS
+    from ..obs.events import stage_run, emit_info
 
     # Resolve provider/model/dimension from CLI args, env, or defaults
     resolved_provider = provider or SETTINGS.EMBED_PROVIDER or "openai"
@@ -5645,13 +5714,24 @@ def embed_plan_preflight_cmd(
 
     typer.echo(f"📁 Output directory: {output_dir}", err=True)
 
-    # Initialize collections for results
-    runs_data: List[Dict[str, Any]] = []
-    ready_runs: List[str] = []
-    blocked_runs: List[str] = []
-    log_entries: List[str] = []
+    # Use stage_run context manager for consistent event emission
+    with stage_run(
+        "plan_preflight",
+        timestamp,
+        "embed",
+        total_runs=len(run_entries),
+        provider=resolved_provider,
+        model=resolved_model,
+        dimension=resolved_dimension,
+    ) as ctx:
+        # Initialize collections for results
+        runs_data: List[Dict[str, Any]] = []
+        ready_runs: List[str] = []
+        blocked_runs: List[str] = []
+        log_entries: List[str] = []
 
-    # Setup structured logging function
+        # Setup structured logging function
+
     def log_progress(message: str):
         """Log progress to both stderr and log file with structured format."""
         timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -5678,7 +5758,7 @@ def embed_plan_preflight_cmd(
                 resolved_provider,
                 "--model",
                 resolved_model,
-                "--dim",
+                "--dimension",
                 str(resolved_dimension),
             ]
 
@@ -5811,6 +5891,20 @@ def embed_plan_preflight_cmd(
                     total_tokens = preflight_data.get("tokenStats", {}).get(
                         "total", 0
                     )
+
+                    # Emit READY status event
+                    emit_info(
+                        "plan_preflight",
+                        timestamp,
+                        "embed",
+                        message="Run preflight validation completed",
+                        target_run_id=run_id,
+                        status="READY",
+                        docs=doc_count,
+                        chunks=chunk_count,
+                        tokens=total_tokens,
+                    )
+
                     log_progress(
                         f"PREFLIGHT [READY] {run_id} (docs={doc_count}, chunks={chunk_count}, tokens={total_tokens}) [{idx}/{total_runs}]"
                     )
@@ -5823,6 +5917,18 @@ def embed_plan_preflight_cmd(
                         }
                     )
                     blocked_runs.append(run_id)
+
+                    # Emit BLOCKED status event
+                    emit_info(
+                        "plan_preflight",
+                        timestamp,
+                        "embed",
+                        message="Run preflight validation failed",
+                        target_run_id=run_id,
+                        status="BLOCKED",
+                        reason="PREFLIGHT_PARSE_ERROR",
+                    )
+
                     log_progress(
                         f"PREFLIGHT [BLOCKED] {run_id} (reason=PREFLIGHT_PARSE_ERROR) [{idx}/{total_runs}]"
                     )
@@ -5831,6 +5937,18 @@ def embed_plan_preflight_cmd(
                     {"status": "BLOCKED", "reason": "PREFLIGHT_FILE_MISSING"}
                 )
                 blocked_runs.append(run_id)
+
+                # Emit BLOCKED status event
+                emit_info(
+                    "plan_preflight",
+                    timestamp,
+                    "embed",
+                    message="Run preflight validation failed",
+                    target_run_id=run_id,
+                    status="BLOCKED",
+                    reason="PREFLIGHT_FILE_MISSING",
+                )
+
                 log_progress(
                     f"PREFLIGHT [BLOCKED] {run_id} (reason=PREFLIGHT_FILE_MISSING) [{idx}/{total_runs}]"
                 )
@@ -5865,6 +5983,18 @@ def embed_plan_preflight_cmd(
 
             run_data.update({"status": "BLOCKED", "reason": reason})
             blocked_runs.append(run_id)
+
+            # Emit BLOCKED status event
+            emit_info(
+                "plan_preflight",
+                timestamp,
+                "embed",
+                message="Run preflight validation failed",
+                target_run_id=run_id,
+                status="BLOCKED",
+                reason=reason,
+            )
+
             log_progress(
                 f"PREFLIGHT [BLOCKED] {run_id} (reason={reason}) [{idx}/{total_runs}]"
             )
@@ -6092,14 +6222,30 @@ def embed_plan_preflight_cmd(
         for entry in log_entries:
             f.write(f"{entry}\n")
 
-    # Final summary
-    typer.echo("\n📊 Plan Preflight Complete", err=True)
-    typer.echo(f"✅ Ready: {len(ready_runs)} runs", err=True)
-    typer.echo(f"❌ Blocked: {len(blocked_runs)} runs", err=True)
-    typer.echo(f"📁 Reports written to: {output_dir}", err=True)
+        # Update context and emit completion event
+        ctx.update(
+            ready_runs=len(ready_runs),
+            blocked_runs=len(blocked_runs),
+            total_runs=len(run_entries),
+        )
+        emit_info(
+            "plan_preflight",
+            timestamp,
+            "embed",
+            message="Plan preflight completed",
+            ready_runs=len(ready_runs),
+            blocked_runs=len(blocked_runs),
+            total_runs=len(run_entries),
+        )
 
-    # Always exit 0 - this is a reporting tool
-    typer.echo("✅ Plan preflight completed successfully", err=True)
+        # Final summary
+        typer.echo("\n📊 Plan Preflight Complete", err=True)
+        typer.echo(f"✅ Ready: {len(ready_runs)} runs", err=True)
+        typer.echo(f"❌ Blocked: {len(blocked_runs)} runs", err=True)
+        typer.echo(f"📁 Reports written to: {output_dir}", err=True)
+
+        # Always exit 0 - this is a reporting tool
+        typer.echo("✅ Plan preflight completed successfully", err=True)
 
 
 @embed_app.command("status")

@@ -43,7 +43,7 @@ This is the first paragraph with some content that should be long enough to crea
 
 This is another section with content. We want to make sure this creates multiple chunks so we can test the event emission properly.
 
-## Section 2  
+## Section 2
 
 And here's a third section with even more content to ensure we get multiple chunks and can verify that events are emitted for each chunk created during the chunking process.
 
