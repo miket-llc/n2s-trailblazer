@@ -2,6 +2,7 @@
 
 import os
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, TextIO
@@ -90,6 +91,9 @@ class EventEmitter:
         # Primary event log and stderr log
         self.events_path = self.run_log_dir / "events.ndjson"
         self.stderr_path = self.run_log_dir / "stderr.log"
+
+        # Create stderr.log file if it doesn't exist
+        self.stderr_path.touch(exist_ok=True)
 
         # Symlinks for convenience
         self._create_symlinks()
@@ -447,3 +451,138 @@ class EventEmitter:
                 **kwargs,
             },
         )
+
+
+# Global event emitter instance for thin adapter functions
+_global_emitter: Optional[EventEmitter] = None
+
+
+def set_global_emitter(emitter: EventEmitter) -> None:
+    """Set the global event emitter for thin adapter functions."""
+    global _global_emitter
+    _global_emitter = emitter
+
+
+def get_global_emitter() -> Optional[EventEmitter]:
+    """Get the global event emitter instance."""
+    return _global_emitter
+
+
+def emit_info(stage: str, run_id: str, op: str, **fields) -> None:
+    """Thin adapter: emit info-level event using global emitter."""
+    emitter = _global_emitter
+    if not emitter:
+        # Create temporary emitter if none exists
+        emitter = EventEmitter(run_id=run_id, phase=stage, component=op)
+        with emitter:
+            emitter._emit(EventAction.TICK, level=EventLevel.INFO, **fields)
+    else:
+        # Use existing emitter context
+        if emitter._file:
+            emitter._emit(EventAction.TICK, level=EventLevel.INFO, **fields)
+
+
+def emit_warn(stage: str, run_id: str, op: str, **fields) -> None:
+    """Thin adapter: emit warning-level event using global emitter."""
+    emitter = _global_emitter
+    if not emitter:
+        # Create temporary emitter if none exists
+        emitter = EventEmitter(run_id=run_id, phase=stage, component=op)
+        with emitter:
+            emitter._emit(
+                EventAction.WARNING, level=EventLevel.WARNING, **fields
+            )
+    else:
+        # Use existing emitter context
+        if emitter._file:
+            emitter._emit(
+                EventAction.WARNING, level=EventLevel.WARNING, **fields
+            )
+
+
+def emit_error(stage: str, run_id: str, op: str, **fields) -> None:
+    """Thin adapter: emit error-level event using global emitter."""
+    emitter = _global_emitter
+    if not emitter:
+        # Create temporary emitter if none exists
+        emitter = EventEmitter(run_id=run_id, phase=stage, component=op)
+        with emitter:
+            emitter._emit(EventAction.ERROR, level=EventLevel.ERROR, **fields)
+    else:
+        # Use existing emitter context
+        if emitter._file:
+            emitter._emit(EventAction.ERROR, level=EventLevel.ERROR, **fields)
+
+
+@contextmanager
+def stage_run(stage: str, run_id: str, op: str, **start_fields):
+    """Context manager that emits START/END events with duration tracking.
+
+    Args:
+        stage: Pipeline stage name (e.g., 'ingest', 'normalize', 'chunk')
+        run_id: Unique run identifier
+        op: Operation name (e.g., 'confluence', 'dita', 'embedder')
+        **start_fields: Additional fields for the START event
+
+    Usage:
+        with stage_run('ingest', run_id, 'confluence', space_key='DEV') as ctx:
+            # do work
+            ctx.update(pages_processed=42)  # Add fields to END event
+    """
+    start_time = time.time()
+
+    # Create or use existing emitter
+    emitter = _global_emitter
+    temp_emitter = None
+    if not emitter:
+        temp_emitter = EventEmitter(run_id=run_id, phase=stage, component=op)
+        emitter = temp_emitter
+
+    class StageContext:
+        def __init__(self):
+            self.end_fields = {}
+
+        def update(self, **fields):
+            """Add fields that will be included in the END event."""
+            self.end_fields.update(fields)
+
+    ctx = StageContext()
+
+    # Emit START event
+    if temp_emitter:
+        with temp_emitter:
+            temp_emitter._emit(
+                EventAction.START, level=EventLevel.INFO, **start_fields
+            )
+    else:
+        if emitter._file:
+            emitter._emit(
+                EventAction.START, level=EventLevel.INFO, **start_fields
+            )
+
+    try:
+        yield ctx
+    finally:
+        # Calculate duration
+        end_time = time.time()
+        duration_ms = int((end_time - start_time) * 1000)
+
+        # Emit END event with duration
+        end_fields = {**ctx.end_fields, "status": "complete"}
+
+        if temp_emitter:
+            with temp_emitter:
+                temp_emitter._emit(
+                    EventAction.COMPLETE,
+                    level=EventLevel.INFO,
+                    duration_ms=duration_ms,
+                    **end_fields,
+                )
+        else:
+            if emitter._file:
+                emitter._emit(
+                    EventAction.COMPLETE,
+                    level=EventLevel.INFO,
+                    duration_ms=duration_ms,
+                    **end_fields,
+                )

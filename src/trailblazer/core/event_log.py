@@ -1,10 +1,19 @@
 """Structured NDJSON event logging for observability and traceability."""
 
 import json
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, Union
 from ..core.logging import log
+from ..obs.events import EventAction, EventLevel, get_global_emitter
+
+# Deprecation warning for this module
+warnings.warn(
+    "trailblazer.core.event_log is deprecated. Use trailblazer.obs.events.EventEmitter instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class EventLogger:
@@ -44,7 +53,73 @@ class EventLogger:
         self.close()
 
     def _write_event(self, event_type: str, **kwargs):
-        """Write a structured event to the NDJSON log."""
+        """Write a structured event to the NDJSON log.
+
+        DEPRECATED: This method now delegates to EventEmitter for consistency.
+        Use EventEmitter directly for new code.
+        """
+        # Try to delegate to global EventEmitter if available
+        emitter = get_global_emitter()
+        if emitter and emitter._file:
+            # Map event_type to EventAction and determine level
+            action_mapping = {
+                "space.begin": EventAction.START,
+                "space.end": EventAction.COMPLETE,
+                "page.fetch": EventAction.TICK,
+                "page.write": EventAction.TICK,
+                "attachment.fetch": EventAction.TICK,
+                "attachment.write": EventAction.TICK,
+                "heartbeat": EventAction.HEARTBEAT,
+                "metrics.snapshot": EventAction.TICK,
+                "warning": EventAction.WARNING,
+                "error": EventAction.ERROR,
+                "delta.skip": EventAction.TICK,
+                "delta.fetch": EventAction.TICK,
+            }
+
+            level_mapping = {
+                "warning": EventLevel.WARNING,
+                "error": EventLevel.ERROR,
+            }
+
+            action = action_mapping.get(event_type, EventAction.TICK)
+            level = level_mapping.get(event_type, EventLevel.INFO)
+
+            # Convert legacy fields to EventEmitter format
+            emitter_kwargs = {}
+
+            # Map common fields
+            field_mapping = {
+                "space_key": "space_key",
+                "space_id": "space_id",
+                "page_id": "page_id",
+                "attachment_id": "node_id",  # Map to node_id
+                "bytes": "bytes",
+                "phase": "phase",
+                "processed": "processed",
+                "sourcefile": "sourcefile",
+            }
+
+            for old_key, new_key in field_mapping.items():
+                if old_key in kwargs:
+                    emitter_kwargs[new_key] = kwargs[old_key]
+
+            # Put remaining fields in metadata
+            metadata_fields = {
+                k: v
+                for k, v in kwargs.items()
+                if k not in field_mapping
+                and k not in ["timestamp", "event_type", "run_id"]
+            }
+            if metadata_fields:
+                emitter_kwargs["metadata"] = metadata_fields
+
+            # Emit via EventEmitter
+            emitter._emit(action, level=level, **emitter_kwargs)
+            self.metrics["events_written"] += 1
+            return
+
+        # Fallback to original implementation if no EventEmitter available
         timestamp = (
             datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         )

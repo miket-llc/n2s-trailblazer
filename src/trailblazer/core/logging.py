@@ -53,4 +53,81 @@ def setup_logging(format_type: LogFormat = "auto") -> None:
     )
 
 
-log = structlog.get_logger()
+class LoggerWithEventHook:
+    """Wrapper around structlog logger that can optionally emit events."""
+
+    def __init__(self, logger):
+        self._logger = logger
+        self._event_hook_enabled = os.environ.get("TB_EMIT_EVENTS") == "1"
+
+    def __getattr__(self, name):
+        """Delegate all other attributes to the underlying logger."""
+        return getattr(self._logger, name)
+
+    def _emit_if_enabled(self, level: str, *args, **kwargs):
+        """Emit event if hook is enabled and we can determine context."""
+        if not self._event_hook_enabled:
+            return
+
+        # Try to import emit functions (avoid circular import)
+        try:
+            from ..obs.events import emit_info, emit_warn, emit_error
+
+            # Extract run_id and stage from kwargs or context
+            # This is a best-effort attempt - in practice, the calling code
+            # should provide these fields
+            run_id = kwargs.get(
+                "run_id", os.environ.get("TB_RUN_ID", "unknown")
+            )
+            stage = kwargs.get("stage", "logging")
+            op = kwargs.get("op", "log")
+
+            # Create fields for event emission
+            event_fields = {
+                k: v
+                for k, v in kwargs.items()
+                if k not in ["run_id", "stage", "op"]
+            }
+
+            # Add log message to fields
+            if args:
+                event_fields["message"] = str(args[0])
+
+            # Emit appropriate event
+            if level == "info":
+                emit_info(stage, run_id, op, **event_fields)
+            elif level == "warning":
+                emit_warn(stage, run_id, op, **event_fields)
+            elif level == "error":
+                emit_error(stage, run_id, op, **event_fields)
+        except Exception:
+            # Silently fail to avoid breaking logging
+            pass
+
+    def info(self, *args, **kwargs):
+        """Log info message and optionally emit event."""
+        self._emit_if_enabled("info", *args, **kwargs)
+        return self._logger.info(*args, **kwargs)
+
+    def warning(self, *args, **kwargs):
+        """Log warning message and optionally emit event."""
+        self._emit_if_enabled("warning", *args, **kwargs)
+        return self._logger.warning(*args, **kwargs)
+
+    def warn(self, *args, **kwargs):
+        """Alias for warning."""
+        return self.warning(*args, **kwargs)
+
+    def error(self, *args, **kwargs):
+        """Log error message and optionally emit event."""
+        self._emit_if_enabled("error", *args, **kwargs)
+        return self._logger.error(*args, **kwargs)
+
+    def debug(self, *args, **kwargs):
+        """Log debug message (no event emission)."""
+        return self._logger.debug(*args, **kwargs)
+
+
+# Create logger with event hook
+_base_logger = structlog.get_logger()
+log = LoggerWithEventHook(_base_logger)
