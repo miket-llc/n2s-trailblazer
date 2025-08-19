@@ -2,7 +2,7 @@
 Test overlap consistency for chunking v2.2.
 """
 
-from trailblazer.chunking.engine import chunk_document
+from trailblazer.pipeline.steps.chunk.engine import chunk_document
 
 
 def test_overlap_honored_on_paragraph_splits():
@@ -26,10 +26,10 @@ It continues the pattern of having substantial text for overlap verification.
         title="Test Document",
         url="https://example.com/test",
         source_system="test",
-        hard_max_tokens=200,  # Force splitting
-        min_tokens=50,
-        overlap_tokens=30,
-        soft_min_tokens=100,
+        hard_max_tokens=50,  # Force splitting
+        min_tokens=30,
+        overlap_tokens=15,
+        soft_min_tokens=40,
         hard_min_tokens=40,
         orphan_heading_merge=False,  # Disable to test pure paragraph splitting
         small_tail_merge=False,

@@ -1,6 +1,7 @@
 """Tests for chunking engine contracts and guarantees."""
 
-from trailblazer.chunking.engine import chunk_document, count_tokens
+from trailblazer.pipeline.steps.chunk.engine import chunk_document
+from trailblazer.pipeline.steps.chunk.boundaries import count_tokens
 
 
 class TestEngineContract:

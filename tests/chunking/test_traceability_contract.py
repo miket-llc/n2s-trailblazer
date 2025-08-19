@@ -2,8 +2,8 @@
 Test traceability contract enforcement for chunking v2.2.
 """
 
-from trailblazer.chunking.engine import chunk_document
-from trailblazer.chunking.verify import verify_chunks
+from trailblazer.pipeline.steps.chunk.engine import chunk_document
+from trailblazer.pipeline.steps.chunk.verify import verify_chunks
 import tempfile
 import json
 from pathlib import Path

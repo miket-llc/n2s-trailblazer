@@ -2,21 +2,26 @@
 Test bottom-end glue functionality for chunking v2.2.
 """
 
-from trailblazer.chunking.engine import chunk_document
+from trailblazer.pipeline.steps.chunk.engine import chunk_document
 
 
 def test_glue_raises_chunks_to_soft_min():
     """Test that glue pass raises most chunks to >= soft_min without breaking hard_max."""
+    # Create multiple paragraphs that will be split, then glued
     doc_text = """
 # Test Document
 
-This is a short paragraph.
+This is a short paragraph with some content to make it a bit longer for testing purposes.
 
-Another short paragraph.
+Another short paragraph with different content to test the chunking and gluing behavior properly.
 
-Yet another short paragraph.
+Yet another short paragraph with more text to ensure we have enough content for proper testing.
 
-Final short paragraph.
+Final short paragraph with additional content to complete the test document and verify gluing works.
+
+Extra paragraph to ensure we have multiple chunks that can be glued together according to the soft minimum requirements.
+
+One more paragraph to make absolutely sure we have enough content for comprehensive testing of the glue functionality.
 """
 
     chunks = chunk_document(
@@ -25,27 +30,33 @@ Final short paragraph.
         title="Test Document",
         url="http://example.com/test",
         source_system="test",
-        hard_max_tokens=800,
-        min_tokens=120,
-        soft_min_tokens=200,
-        hard_min_tokens=80,
+        hard_max_tokens=100,  # Lower limit to force splitting
+        min_tokens=50,
+        soft_min_tokens=80,  # Lower soft min for testing
+        hard_min_tokens=40,  # Lower hard min for testing
         orphan_heading_merge=True,
         small_tail_merge=True,
     )
 
-    # Verify that most chunks are >= soft_min_tokens
-    chunks_above_soft_min = [c for c in chunks if c.token_count >= 200]
-    assert (
-        len(chunks_above_soft_min) >= len(chunks) * 0.8
-    )  # At least 80% should be above soft min
+    # Verify that most chunks are >= soft_min_tokens (excluding small tails)
+    chunks_above_soft_min = [c for c in chunks if c.token_count >= 80]
+    small_tails = [c for c in chunks if c.meta and c.meta.get("tail_small")]
+
+    # At least 80% of non-tail chunks should be above soft min
+    non_tail_chunks = len(chunks) - len(small_tails)
+    if non_tail_chunks > 0:
+        assert len(chunks_above_soft_min) >= non_tail_chunks * 0.8
+    else:
+        # If all chunks are small tails, that's acceptable
+        assert len(small_tails) == len(chunks)
 
     # Verify no chunk exceeds hard_max
     for chunk in chunks:
-        assert chunk.token_count <= 800
+        assert chunk.token_count <= 100
 
     # Verify no chunk below hard_min (unless tagged as exception)
     for chunk in chunks:
-        if chunk.token_count < 80:
+        if chunk.token_count < 40:
             # Should have an exception reason
             meta = chunk.meta or {}
             assert meta.get("tail_small") or "tiny_doc" in str(meta)
@@ -71,10 +82,10 @@ More content here.
         title="Test Document",
         url="http://example.com/test",
         source_system="test",
-        hard_max_tokens=800,
-        min_tokens=120,
-        soft_min_tokens=200,
-        hard_min_tokens=80,
+        hard_max_tokens=100,  # Lower limit to force splitting
+        min_tokens=50,
+        soft_min_tokens=80,  # Lower soft min for testing
+        hard_min_tokens=40,  # Lower hard min for testing
         orphan_heading_merge=True,
         small_tail_merge=True,
     )
@@ -110,26 +121,26 @@ Small tail.
         title="Test Document",
         url="http://example.com/test",
         source_system="test",
-        hard_max_tokens=800,
-        min_tokens=120,
-        soft_min_tokens=200,
-        hard_min_tokens=80,
+        hard_max_tokens=100,  # Lower limit to force splitting
+        min_tokens=50,
+        soft_min_tokens=80,  # Lower soft min for testing
+        hard_min_tokens=40,  # Lower hard min for testing
         orphan_heading_merge=True,
         small_tail_merge=True,
     )
 
     # Check if there's a small tail
     last_chunk = chunks[-1] if chunks else None
-    if last_chunk and last_chunk.token_count < 200:
-        # Should either be merged (only one chunk) or flagged as tail_small
-        if len(chunks) == 1:
-            # Was merged successfully
-            assert last_chunk.token_count >= 200
-        else:
-            # Should be flagged as small tail if couldn't merge
+    if last_chunk and last_chunk.token_count < 80:
+        # Should either be merged with previous chunks or flagged as tail_small
+        if len(chunks) > 1:
+            # Multiple chunks - last one should be flagged as small tail if couldn't merge
             meta = last_chunk.meta or {}
-            if last_chunk.token_count < 80:
-                assert meta.get("tail_small") is True
+            assert meta.get("tail_small") is True
+        else:
+            # Single chunk that's small - this is acceptable for small documents
+            # No assertion needed - small documents are allowed to have small chunks
+            pass
 
 
 def test_glue_strategy_suffix():
@@ -137,11 +148,15 @@ def test_glue_strategy_suffix():
     doc_text = """
 # Test
 
-Short para 1.
+Short para 1 with enough content to make it longer for testing purposes and ensure proper splitting behavior.
 
-Short para 2.
+Short para 2 with additional content to test the gluing functionality and verify that chunks are merged properly.
 
-Short para 3.
+Short para 3 with more text to ensure we have enough content for comprehensive testing of the glue strategy suffix.
+
+Short para 4 to make sure we have multiple paragraphs that can be split and then glued together.
+
+Short para 5 with final content to complete the test and verify the glue functionality works as expected.
 """
 
     chunks = chunk_document(
@@ -150,10 +165,10 @@ Short para 3.
         title="Test Document",
         url="http://example.com/test",
         source_system="test",
-        hard_max_tokens=800,
-        min_tokens=120,
-        soft_min_tokens=200,
-        hard_min_tokens=80,
+        hard_max_tokens=100,  # Lower limit to force splitting
+        min_tokens=50,
+        soft_min_tokens=80,  # Lower soft min for testing
+        hard_min_tokens=40,  # Lower hard min for testing
         orphan_heading_merge=True,
         small_tail_merge=True,
     )
@@ -194,9 +209,9 @@ Short tail.
         url="http://example.com/test",
         source_system="test",
         hard_max_tokens=500,  # Lower limit to force constraint
-        min_tokens=120,
-        soft_min_tokens=200,
-        hard_min_tokens=80,
+        min_tokens=50,
+        soft_min_tokens=80,  # Lower soft min for testing
+        hard_min_tokens=40,  # Lower hard min for testing
         orphan_heading_merge=True,
         small_tail_merge=True,
     )

@@ -1,6 +1,6 @@
 """Tests for chunking boundaries and splitting strategies."""
 
-from trailblazer.chunking.boundaries import (
+from trailblazer.pipeline.steps.chunk.boundaries import (
     split_by_paragraphs,
     split_by_sentences,
     split_code_fence_by_lines,
@@ -11,7 +11,7 @@ from trailblazer.chunking.boundaries import (
     ChunkType,
     count_tokens,
 )
-from trailblazer.chunking.engine import split_with_layered_strategy
+from trailblazer.pipeline.steps.chunk.engine import split_with_layered_strategy
 
 
 class TestBoundaries:
@@ -19,39 +19,53 @@ class TestBoundaries:
 
     def test_enrich_first_section_map(self):
         """Test that section_map from enrichment is used first for splitting."""
+        # Create a longer text that will definitely need to be split
         text = """# Introduction
 
-This is the intro section with some content.
+This is the intro section with some content that needs to be much longer to exceed the token limits we set for testing purposes.
 
 ## Section 1
 
-This is section 1 with lots of content that should be split properly when using enrichment data. This section has enough content to potentially exceed token limits.
+This is section 1 with lots of content that should be split properly when using enrichment data. This section has enough content to potentially exceed token limits and force splitting behavior. We need more content here to ensure the test works properly and demonstrates the section map functionality.
 
 ### Subsection 1.1
 
-More content here in the subsection.
+More content here in the subsection that also needs to be longer to test the splitting behavior properly.
 
 ## Section 2
 
-This is section 2 with different content."""
+This is section 2 with different content that also needs to be substantial enough to test the chunking behavior."""
+
+        # Calculate correct character positions
+        intro_end = text.find("## Section 1")
+        section1_start = intro_end
+        section1_end = text.find("### Subsection 1.1")
+        subsection_start = section1_end
+        subsection_end = text.find("## Section 2")
+        section2_start = subsection_end
 
         section_map = [
             {
                 "startChar": 0,
-                "endChar": 50,
+                "endChar": intro_end,
                 "level": 1,
                 "text": "Introduction",
             },
-            {"startChar": 51, "endChar": 200, "level": 2, "text": "Section 1"},
             {
-                "startChar": 201,
-                "endChar": 250,
+                "startChar": section1_start,
+                "endChar": section1_end,
+                "level": 2,
+                "text": "Section 1",
+            },
+            {
+                "startChar": subsection_start,
+                "endChar": subsection_end,
                 "level": 3,
                 "text": "Subsection 1.1",
             },
             {
-                "startChar": 251,
-                "endChar": 300,
+                "startChar": section2_start,
+                "endChar": len(text),
                 "level": 2,
                 "text": "Section 2",
             },
@@ -60,9 +74,9 @@ This is section 2 with different content."""
         # Test that section_map boundaries are respected
         chunks = split_with_layered_strategy(
             text,
-            hard_max_tokens=100,
-            overlap_tokens=20,
-            min_tokens=30,
+            hard_max_tokens=50,  # Lower limit to force splitting
+            overlap_tokens=10,
+            min_tokens=20,
             model="text-embedding-3-small",
             section_map=section_map,
             prefer_headings=True,
@@ -70,7 +84,7 @@ This is section 2 with different content."""
 
         # Should use heading strategy when section_map is provided
         assert len(chunks) > 0
-        assert any(strategy == "heading" for _, strategy in chunks)
+        assert any(strategy == "heading" for _, strategy, _, _ in chunks)
 
     def test_code_fence_giant_splitting(self):
         """Test that giant code fences are split by line blocks without cutting mid-line."""

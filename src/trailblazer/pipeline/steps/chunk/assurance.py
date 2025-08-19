@@ -5,9 +5,10 @@ Chunk assurance and quality reporting.
 import json
 import statistics
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
 from .boundaries import count_tokens
+from .engine import calculate_coverage, Chunk
 
 
 def build_chunk_assurance(
@@ -151,6 +152,19 @@ def build_chunk_assurance(
     below_hard_min = []
     hard_min_exceptions = {"tiny_doc": 0, "fence_forced": 0, "table_forced": 0}
 
+    # Coverage tracking
+    docs_with_gaps = 0
+    coverage_percentages = []
+    gaps_examples: List[Dict] = []
+
+    # Group chunks by document for coverage analysis
+    chunks_by_doc: Dict[str, List] = {}
+    for chunk in chunks:
+        doc_id = chunk.get("doc_id", "")
+        if doc_id not in chunks_by_doc:
+            chunks_by_doc[doc_id] = []
+        chunks_by_doc[doc_id].append(chunk)
+
     for chunk in chunks:
         # Re-tokenize to verify token count
         actual_tokens = count_tokens(chunk.get("text_md", ""), tokenizer)
@@ -200,8 +214,58 @@ def build_chunk_assurance(
             elif "table" in strategy:
                 hard_min_exceptions["table_forced"] += 1
 
+    # Calculate coverage for each document
+    for doc_id, doc_chunks in chunks_by_doc.items():
+        if not doc_chunks:
+            continue
+
+        # Convert chunks to Chunk objects for coverage calculation
+        chunk_objects = []
+        for chunk_data in doc_chunks:
+            # Create a minimal Chunk object for coverage calculation
+            chunk_obj = Chunk(
+                chunk_id=chunk_data.get("chunk_id", ""),
+                text_md=chunk_data.get("text_md", ""),
+                char_count=chunk_data.get("char_count", 0),
+                token_count=chunk_data.get("token_count", 0),
+                ord=chunk_data.get("ord", 0),
+                char_start=chunk_data.get("char_start", 0),
+                char_end=chunk_data.get("char_end", 0),
+            )
+            chunk_objects.append(chunk_obj)
+
+        # Find the original document length by looking for enriched data
+        # This is a simplified approach - in practice we'd need the original document
+        max_char_end = max(
+            (chunk.get("char_end", 0) for chunk in doc_chunks), default=0
+        )
+        if max_char_end == 0:
+            # Fallback: estimate from chunk char counts
+            max_char_end = sum(
+                chunk.get("char_count", 0) for chunk in doc_chunks
+            )
+
+        if max_char_end > 0:
+            coverage_pct, gaps = calculate_coverage(
+                chunk_objects, max_char_end
+            )
+            coverage_percentages.append(coverage_pct)
+
+            if coverage_pct < 99.5:
+                docs_with_gaps += 1
+                if len(gaps_examples) < 10:  # Limit examples
+                    gaps_examples.append(
+                        {
+                            "doc_id": doc_id,
+                            "coverage_pct": coverage_pct,
+                            "gaps": gaps[:5],  # Limit to first 5 gaps
+                            "gaps_count": len(gaps),
+                        }
+                    )
+
     # Calculate statistics
     token_stats = {
+        "count": len(token_counts),
         "min": min(token_counts) if token_counts else 0,
         "median": int(statistics.median(token_counts)) if token_counts else 0,
         "p95": int(statistics.quantiles(token_counts, n=20)[18])
@@ -220,9 +284,20 @@ def build_chunk_assurance(
         "max": max(char_counts) if char_counts else 0,
     }
 
+    # Calculate average coverage
+    avg_coverage_pct = (
+        statistics.mean(coverage_percentages)
+        if coverage_percentages
+        else 100.0
+    )
+
     # Determine status
     status = (
-        "PASS" if len(breaches) == 0 and missing_traceability == 0 else "FAIL"
+        "PASS"
+        if len(breaches) == 0
+        and missing_traceability == 0
+        and docs_with_gaps == 0
+        else "FAIL"
     )
 
     return {
@@ -230,14 +305,14 @@ def build_chunk_assurance(
             "maxTokens": cfg.get("max_tokens", 800),
             "hardMaxTokens": hard_max_tokens,
             "overlapTokens": cfg.get("overlap_tokens", 60),
+            "breaches": {
+                "count": len(breaches),
+                "examples": breaches[:10],  # Limit examples
+            },
         },
         "tokenStats": token_stats,
         "charStats": char_stats,
         "splitStrategies": split_strategies,
-        "breaches": {
-            "count": len(breaches),
-            "examples": breaches[:10],  # Limit examples
-        },
         "traceability": {"missingCount": missing_traceability},
         "bottoms": {
             "softMinTokens": soft_min_tokens,
@@ -252,9 +327,9 @@ def build_chunk_assurance(
             },
         },
         "coverage": {
-            "docsWithGaps": 0,  # TODO: Implement coverage calculation
-            "avgCoveragePct": 100.0,  # TODO: Implement coverage calculation
-            "gapsExamples": [],  # TODO: Implement coverage calculation
+            "docsWithGaps": docs_with_gaps,
+            "avgCoveragePct": avg_coverage_pct,
+            "gapsExamples": gaps_examples,
         },
         "status": status,
     }

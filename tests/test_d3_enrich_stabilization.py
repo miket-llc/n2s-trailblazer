@@ -7,8 +7,43 @@ from unittest.mock import patch
 
 
 from trailblazer.pipeline.steps.enrich.enricher import enrich_from_normalized
-from trailblazer.pipeline.steps.embed.chunker import chunk_enriched_record
+from trailblazer.pipeline.steps.chunk.engine import (
+    chunk_document,
+    inject_media_placeholders,
+)
 from trailblazer.cli.main import embed_preflight_cmd
+
+
+def chunk_enriched_record(record):
+    """Helper function to chunk an enriched record."""
+    doc_id = record.get("id", "")
+    title = record.get("title", "")
+    text_md = record.get("text_md", "")
+    attachments = record.get("attachments", [])
+    chunk_hints = record.get("chunk_hints", {})
+    section_map = record.get("section_map", [])
+
+    if not doc_id:
+        raise ValueError("Record missing required 'id' field")
+
+    text_with_media = inject_media_placeholders(text_md, attachments)
+    return chunk_document(
+        doc_id=doc_id,
+        text_md=text_with_media,
+        title=title,
+        source_system=record.get("source_system", ""),
+        labels=record.get("labels", []),
+        space=record.get("space"),
+        media_refs=attachments,
+        hard_max_tokens=chunk_hints.get("maxTokens", 800),
+        min_tokens=chunk_hints.get("minTokens", 120),
+        overlap_tokens=chunk_hints.get("overlapTokens", 60),
+        soft_min_tokens=chunk_hints.get("softMinTokens", 200),
+        hard_min_tokens=chunk_hints.get("hardMinTokens", 80),
+        prefer_headings=chunk_hints.get("preferHeadings", True),
+        soft_boundaries=chunk_hints.get("softBoundaries", []),
+        section_map=section_map,
+    )
 
 
 class TestEnrichChunkPreflightFlow:

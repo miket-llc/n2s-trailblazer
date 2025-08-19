@@ -1,9 +1,31 @@
 import pytest
-from trailblazer.pipeline.steps.embed.chunker import (
+from trailblazer.pipeline.steps.chunk.engine import (
     chunk_document,
-    chunk_normalized_record,
-    normalize_text,
+    inject_media_placeholders,
 )
+from trailblazer.pipeline.steps.chunk.boundaries import normalize_text
+
+
+def chunk_normalized_record(record):
+    """Helper function to chunk a normalized record."""
+    doc_id = record.get("id", "")
+    title = record.get("title", "")
+    text_md = record.get("text_md", "")
+    attachments = record.get("attachments", [])
+
+    if not doc_id:
+        raise ValueError("Record missing required 'id' field")
+
+    text_with_media = inject_media_placeholders(text_md, attachments)
+    return chunk_document(
+        doc_id=doc_id,
+        text_md=text_with_media,
+        title=title,
+        source_system=record.get("source_system", ""),
+        labels=record.get("labels", []),
+        space=record.get("space"),
+        media_refs=attachments,
+    )
 
 
 def test_chunker_determinism():

@@ -1,4 +1,4 @@
-from typing import List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, TYPE_CHECKING
 from .dag import DEFAULT_PHASES, validate_phases
 from ..core.artifacts import new_run_id, phase_dir
 from ..core.logging import log
@@ -147,8 +147,11 @@ def _execute_phase(
         normalize_from_ingest(outdir=out)
     elif phase == "chunk":
         # Chunk phase: process enriched or normalized docs into chunks using new chunking package
-        from ..chunking.engine import chunk_document, inject_media_placeholders
-        from ..chunking.assurance import build_chunk_assurance
+        from .steps.chunk.engine import (
+            chunk_document,
+            inject_media_placeholders,
+        )
+        from .steps.chunk.assurance import build_chunk_assurance
         import json
         import hashlib
         from datetime import datetime, timezone
@@ -360,7 +363,7 @@ def _execute_phase(
 
         # Add split strategy distribution
         if split_strategies:
-            strategy_counts = {}
+            strategy_counts: Dict[str, int] = {}
             for strategy in split_strategies:
                 strategy_counts[strategy] = (
                     strategy_counts.get(strategy, 0) + 1

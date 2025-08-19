@@ -9,7 +9,8 @@ import pytest
 from typer.testing import CliRunner
 
 from trailblazer.cli.main import app
-from trailblazer.chunking.engine import chunk_document, count_tokens
+from trailblazer.pipeline.steps.chunk.engine import chunk_document
+from trailblazer.pipeline.steps.chunk.boundaries import count_tokens
 
 
 class TestChunkAuditIntegration:

@@ -5,8 +5,8 @@ Test coverage verification functionality for chunking v2.2.
 import tempfile
 import json
 from pathlib import Path
-from trailblazer.chunking.engine import chunk_document
-from trailblazer.chunking.verify import verify_chunks
+from trailblazer.pipeline.steps.chunk.engine import chunk_document
+from trailblazer.pipeline.steps.chunk.verify import verify_chunks
 
 
 def test_coverage_calculation():

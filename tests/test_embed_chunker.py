@@ -1,13 +1,41 @@
 """Tests for the embedding chunker with media awareness."""
 
 import pytest
-from trailblazer.pipeline.steps.embed.chunker import (
+from trailblazer.pipeline.steps.chunk.engine import (
     chunk_document,
-    chunk_normalized_record,
     inject_media_placeholders,
-    normalize_text,
-    split_on_paragraphs_and_headings,
 )
+from trailblazer.pipeline.steps.chunk.boundaries import normalize_text
+
+
+def chunk_normalized_record(record):
+    """Helper function to chunk a normalized record."""
+    doc_id = record.get("id", "")
+    title = record.get("title", "")
+    text_md = record.get("text_md", "")
+    attachments = record.get("attachments", [])
+
+    if not doc_id:
+        raise ValueError("Record missing required 'id' field")
+
+    text_with_media = inject_media_placeholders(text_md, attachments)
+    return chunk_document(
+        doc_id=doc_id,
+        text_md=text_with_media,
+        title=title,
+        source_system=record.get("source_system", ""),
+        labels=record.get("labels", []),
+        space=record.get("space"),
+        media_refs=attachments,
+    )
+
+
+def split_on_paragraphs_and_headings(text):
+    """Helper function for legacy test compatibility."""
+    from trailblazer.pipeline.steps.chunk.boundaries import split_by_paragraphs
+
+    paragraphs = split_by_paragraphs(text)
+    return [para_text for para_text, _ in paragraphs]
 
 
 def test_normalize_text():

@@ -13,7 +13,7 @@ except ImportError:
     tiktoken = None  # type: ignore
 
 try:
-    from ..obs.events import emit_event  # type: ignore
+    from ...obs.events import emit_event  # type: ignore
 except ImportError:
     # Fallback for testing - create a no-op function
     def emit_event(*args, **kwargs):  # type: ignore
@@ -70,7 +70,7 @@ def split_with_layered_strategy(
     model: str,
     section_map: Optional[List[Dict]] = None,
     prefer_headings: bool = True,
-) -> List[Tuple[str, str]]:
+) -> List[Tuple[str, str, int, int]]:
     """
     Split text using layered strategy with hard token cap guarantee.
 
@@ -92,10 +92,10 @@ def split_with_layered_strategy(
         prefer_headings: Whether to prefer heading-aligned splits
 
     Returns:
-        List of (chunk_text, split_strategy) tuples
+        List of (chunk_text, split_strategy, char_start, char_end) tuples
     """
     if count_tokens(text, model) <= hard_max_tokens:
-        return [(text, "no-split")]
+        return [(text, "no-split", 0, len(text))]
 
     # Detect content type first
     content_type, _ = detect_content_type(text)
@@ -120,7 +120,9 @@ def split_with_layered_strategy(
 
                 # If section fits within cap, use it
                 if count_tokens(section_text, model) <= hard_max_tokens:
-                    chunks.append((section_text, "heading"))
+                    chunks.append(
+                        (section_text, "heading", start_char, end_char)
+                    )
                 else:
                     # Section too large, recursively split it
                     sub_chunks = split_with_layered_strategy(
@@ -132,7 +134,21 @@ def split_with_layered_strategy(
                         section_map=None,
                         prefer_headings=False,
                     )
-                    chunks.extend(sub_chunks)
+                    # Adjust char positions for sub-chunks
+                    for (
+                        sub_text,
+                        sub_strategy,
+                        sub_start,
+                        sub_end,
+                    ) in sub_chunks:
+                        chunks.append(
+                            (
+                                sub_text,
+                                sub_strategy,
+                                start_char + sub_start,
+                                start_char + sub_end,
+                            )
+                        )
 
                 last_pos = end_char
 
@@ -141,7 +157,9 @@ def split_with_layered_strategy(
                 remaining = text[last_pos:].strip()
                 if remaining:
                     if count_tokens(remaining, model) <= hard_max_tokens:
-                        chunks.append((remaining, "heading"))
+                        chunks.append(
+                            (remaining, "heading", last_pos, len(text))
+                        )
                     else:
                         sub_chunks = split_with_layered_strategy(
                             remaining,
@@ -152,7 +170,21 @@ def split_with_layered_strategy(
                             section_map=None,
                             prefer_headings=False,
                         )
-                        chunks.extend(sub_chunks)
+                        # Adjust char positions for sub-chunks
+                        for (
+                            sub_text,
+                            sub_strategy,
+                            sub_start,
+                            sub_end,
+                        ) in sub_chunks:
+                            chunks.append(
+                                (
+                                    sub_text,
+                                    sub_strategy,
+                                    last_pos + sub_start,
+                                    last_pos + sub_end,
+                                )
+                            )
 
             if chunks:
                 return chunks
@@ -166,9 +198,19 @@ def split_with_layered_strategy(
             heading_chunks = split_by_headings(text)
             if len(heading_chunks) > 1:  # Only if we actually split
                 result_chunks = []
+                current_pos = 0
+
                 for chunk_text, strategy in heading_chunks:
+                    # Find the position of this chunk in the original text
+                    chunk_start = text.find(chunk_text, current_pos)
+                    if chunk_start == -1:
+                        chunk_start = current_pos
+                    chunk_end = chunk_start + len(chunk_text)
+
                     if count_tokens(chunk_text, model) <= hard_max_tokens:
-                        result_chunks.append((chunk_text, strategy))
+                        result_chunks.append(
+                            (chunk_text, strategy, chunk_start, chunk_end)
+                        )
                     else:
                         # Recursively split oversized heading chunks
                         sub_chunks = split_with_layered_strategy(
@@ -180,7 +222,24 @@ def split_with_layered_strategy(
                             section_map=None,
                             prefer_headings=False,
                         )
-                        result_chunks.extend(sub_chunks)
+                        # Adjust char positions for sub-chunks
+                        for (
+                            sub_text,
+                            sub_strategy,
+                            sub_start,
+                            sub_end,
+                        ) in sub_chunks:
+                            result_chunks.append(
+                                (
+                                    sub_text,
+                                    sub_strategy,
+                                    chunk_start + sub_start,
+                                    chunk_start + sub_end,
+                                )
+                            )
+
+                    current_pos = chunk_end
+
                 return result_chunks
         except Exception:
             pass  # Fall through to next strategy
@@ -190,18 +249,44 @@ def split_with_layered_strategy(
         r"^```\w*\n.*\n```$", text, re.DOTALL
     ):
         try:
-            return split_code_fence_by_lines(
+            code_chunks = split_code_fence_by_lines(
                 text, hard_max_tokens, overlap_tokens, model
             )
+            # Add char positions for code chunks
+            result_chunks = []
+            current_pos = 0
+            for chunk_text, strategy in code_chunks:
+                chunk_start = text.find(chunk_text, current_pos)
+                if chunk_start == -1:
+                    chunk_start = current_pos
+                chunk_end = chunk_start + len(chunk_text)
+                result_chunks.append(
+                    (chunk_text, strategy, chunk_start, chunk_end)
+                )
+                current_pos = chunk_end
+            return result_chunks
         except Exception:
             pass  # Fall through to next strategy
 
     # Strategy 4: Special handling for tables
     if content_type == ChunkType.TABLE:
         try:
-            return split_table_by_rows(
+            table_chunks = split_table_by_rows(
                 text, hard_max_tokens, overlap_tokens, model
             )
+            # Add char positions for table chunks
+            result_chunks = []
+            current_pos = 0
+            for chunk_text, strategy in table_chunks:
+                chunk_start = text.find(chunk_text, current_pos)
+                if chunk_start == -1:
+                    chunk_start = current_pos
+                chunk_end = chunk_start + len(chunk_text)
+                result_chunks.append(
+                    (chunk_text, strategy, chunk_start, chunk_end)
+                )
+                current_pos = chunk_end
+            return result_chunks
         except Exception:
             pass  # Fall through to next strategy
 
@@ -212,6 +297,7 @@ def split_with_layered_strategy(
             result_chunks = []
             current_paragraphs: List[str] = []
             current_text = ""
+            text_start_pos = 0
 
             for para_text, strategy in paragraph_chunks:
                 test_text = (
@@ -223,8 +309,16 @@ def split_with_layered_strategy(
                     count_tokens(test_text, model) > hard_max_tokens
                     and current_text
                 ):
-                    # Emit current chunk
-                    result_chunks.append((current_text, "paragraph"))
+                    # Emit current chunk with position
+                    chunk_end_pos = text_start_pos + len(current_text)
+                    result_chunks.append(
+                        (
+                            current_text,
+                            "paragraph",
+                            text_start_pos,
+                            chunk_end_pos,
+                        )
+                    )
 
                     # Start new chunk with overlap
                     if overlap_tokens > 0 and len(current_paragraphs) > 1:
@@ -241,16 +335,31 @@ def split_with_layered_strategy(
                             + para_text
                         )
                         current_paragraphs = overlap_paragraphs + [para_text]
+                        # Update start position for overlapped chunk
+                        overlap_text = "\n\n".join(overlap_paragraphs)
+                        text_start_pos = max(
+                            0, chunk_end_pos - len(overlap_text) - 2
+                        )
                     else:
                         current_text = para_text
                         current_paragraphs = [para_text]
+                        text_start_pos = text.find(para_text, text_start_pos)
+                        if text_start_pos == -1:
+                            text_start_pos = chunk_end_pos
                 else:
+                    if not current_text:
+                        text_start_pos = text.find(para_text, 0)
+                        if text_start_pos == -1:
+                            text_start_pos = 0
                     current_text = test_text
                     current_paragraphs.append(para_text)
 
             # Add final chunk
             if current_text:
-                result_chunks.append((current_text, "paragraph"))
+                chunk_end_pos = text_start_pos + len(current_text)
+                result_chunks.append(
+                    (current_text, "paragraph", text_start_pos, chunk_end_pos)
+                )
 
             return result_chunks
     except Exception:
@@ -263,6 +372,7 @@ def split_with_layered_strategy(
             result_chunks = []
             current_sentences: List[str] = []
             current_text = ""
+            text_start_pos = 0
 
             for sentence_text, strategy in sentence_chunks:
                 test_text = (
@@ -275,7 +385,15 @@ def split_with_layered_strategy(
                     and current_text
                 ):
                     # Emit current chunk
-                    result_chunks.append((current_text, "sentence"))
+                    chunk_end_pos = text_start_pos + len(current_text)
+                    result_chunks.append(
+                        (
+                            current_text,
+                            "sentence",
+                            text_start_pos,
+                            chunk_end_pos,
+                        )
+                    )
 
                     # Start new chunk with overlap
                     if overlap_tokens > 0 and len(current_sentences) > 1:
@@ -288,23 +406,52 @@ def split_with_layered_strategy(
                             " ".join(overlap_sentences) + " " + sentence_text
                         )
                         current_sentences = overlap_sentences + [sentence_text]
+                        # Update start position for overlapped chunk
+                        overlap_text = " ".join(overlap_sentences)
+                        text_start_pos = max(
+                            0, chunk_end_pos - len(overlap_text) - 1
+                        )
                     else:
                         current_text = sentence_text
                         current_sentences = [sentence_text]
+                        text_start_pos = text.find(
+                            sentence_text, text_start_pos
+                        )
+                        if text_start_pos == -1:
+                            text_start_pos = chunk_end_pos
                 else:
+                    if not current_text:
+                        text_start_pos = text.find(sentence_text, 0)
+                        if text_start_pos == -1:
+                            text_start_pos = 0
                     current_text = test_text
                     current_sentences.append(sentence_text)
 
             # Add final chunk
             if current_text:
-                result_chunks.append((current_text, "sentence"))
+                chunk_end_pos = text_start_pos + len(current_text)
+                result_chunks.append(
+                    (current_text, "sentence", text_start_pos, chunk_end_pos)
+                )
 
             return result_chunks
     except Exception:
         pass  # Fall through to final strategy
 
     # Strategy 7: Final fallback - token window
-    return split_by_token_window(text, hard_max_tokens, overlap_tokens, model)
+    token_chunks = split_by_token_window(
+        text, hard_max_tokens, overlap_tokens, model
+    )
+    result_chunks = []
+    current_pos = 0
+    for chunk_text, strategy in token_chunks:
+        chunk_start = text.find(chunk_text, current_pos)
+        if chunk_start == -1:
+            chunk_start = current_pos
+        chunk_end = chunk_start + len(chunk_text)
+        result_chunks.append((chunk_text, strategy, chunk_start, chunk_end))
+        current_pos = chunk_end
+    return result_chunks
 
 
 def create_table_digest(text: str, max_rows: int = 5) -> str:
@@ -488,6 +635,13 @@ def _create_safe_chunk(
             else chunk_type,
             token_savings=chunk_meta.get("token_savings", 0),
         )
+
+    # Update char_end if text was truncated
+    if char_end > char_start:
+        actual_char_count = len(chunk_text)
+        original_char_count = char_end - char_start
+        if actual_char_count < original_char_count:
+            char_end = char_start + actual_char_count
 
     chunk = Chunk(
         chunk_id=chunk_id,
@@ -722,6 +876,68 @@ def inject_media_placeholders(text_md: str, attachments: List[Dict]) -> str:
     return text_md
 
 
+def calculate_coverage(
+    chunks: List[Chunk], original_text_length: int
+) -> Tuple[float, List[Tuple[int, int]]]:
+    """
+    Calculate text coverage from chunks and identify gaps.
+
+    Args:
+        chunks: List of chunks with char_start/char_end
+        original_text_length: Length of the original document text
+
+    Returns:
+        Tuple of (coverage_percentage, list_of_gaps)
+        where gaps are (start, end) tuples of uncovered ranges
+    """
+    if not chunks or original_text_length == 0:
+        return 0.0, [(0, original_text_length)]
+
+    # Create a list of covered ranges
+    covered_ranges = []
+    for chunk in chunks:
+        if chunk.char_start < chunk.char_end:
+            covered_ranges.append((chunk.char_start, chunk.char_end))
+
+    if not covered_ranges:
+        return 0.0, [(0, original_text_length)]
+
+    # Sort ranges by start position
+    covered_ranges.sort(key=lambda x: x[0])
+
+    # Merge overlapping ranges
+    merged_ranges = []
+    current_start, current_end = covered_ranges[0]
+
+    for start, end in covered_ranges[1:]:
+        if start <= current_end:  # Overlapping or adjacent
+            current_end = max(current_end, end)
+        else:
+            merged_ranges.append((current_start, current_end))
+            current_start, current_end = start, end
+
+    merged_ranges.append((current_start, current_end))
+
+    # Calculate covered characters
+    covered_chars = sum(end - start for start, end in merged_ranges)
+    coverage_pct = (covered_chars / original_text_length) * 100
+
+    # Find gaps
+    gaps = []
+    last_end = 0
+
+    for start, end in merged_ranges:
+        if start > last_end:
+            gaps.append((last_end, start))
+        last_end = end
+
+    # Check if there's a gap at the end
+    if last_end < original_text_length:
+        gaps.append((last_end, original_text_length))
+
+    return coverage_pct, gaps
+
+
 def chunk_document(
     doc_id: str,
     text_md: str,
@@ -781,6 +997,8 @@ def chunk_document(
 
     # Normalize and prepare text
     full_text = normalize_text(text_md)
+    original_text_length = len(full_text)
+
     if title and title.strip():
         if full_text.strip():
             full_text = f"# {title.strip()}\n\n{full_text}"
@@ -790,7 +1008,7 @@ def chunk_document(
     if not full_text.strip():
         return []
 
-    # Use layered splitting strategy
+    # Use layered splitting strategy with char positions
     chunk_tuples = split_with_layered_strategy(
         full_text,
         hard_max_tokens,
@@ -803,7 +1021,12 @@ def chunk_document(
 
     # Convert to Chunk objects
     chunks = []
-    for ord_num, (chunk_text, split_strategy) in enumerate(chunk_tuples):
+    for ord_num, (
+        chunk_text,
+        split_strategy,
+        char_start,
+        char_end,
+    ) in enumerate(chunk_tuples):
         if not chunk_text.strip():
             continue
 
@@ -826,6 +1049,8 @@ def chunk_document(
 
             chunk_text = chunk_text[:low] + "\n[TRUNCATED - EXCEEDED HARD CAP]"
             split_strategy = "force-truncate"
+            # Update char_end for truncated text
+            char_end = char_start + len(chunk_text)
 
             emit_event(
                 "chunk.force_truncate",
@@ -841,6 +1066,8 @@ def chunk_document(
             max_tokens=hard_max_tokens,
             model=model,
             split_strategy=split_strategy,
+            char_start=char_start,
+            char_end=char_end,
             title=title,
             url=url,
             source_system=source_system,
@@ -860,6 +1087,17 @@ def chunk_document(
             orphan_heading_merge,
             small_tail_merge,
             model,
+        )
+
+    # Verify coverage (should be >= 99.5%)
+    coverage_pct, gaps = calculate_coverage(chunks, original_text_length)
+    if coverage_pct < 99.5 and gaps:
+        emit_event(
+            "chunk.coverage_warning",
+            doc_id=doc_id,
+            coverage_pct=coverage_pct,
+            gaps_count=len(gaps),
+            gaps=gaps[:5],  # Limit to first 5 gaps for logging
         )
 
     return chunks

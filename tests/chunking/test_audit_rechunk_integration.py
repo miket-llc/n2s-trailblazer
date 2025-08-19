@@ -174,7 +174,7 @@ class TestAuditRechunkIntegration:
         )
 
         # All chunks should be within token limit
-        from trailblazer.chunking.boundaries import count_tokens
+        from trailblazer.pipeline.steps.chunk.boundaries import count_tokens
 
         for chunk in chunks:
             actual_tokens = count_tokens(chunk["text_md"])

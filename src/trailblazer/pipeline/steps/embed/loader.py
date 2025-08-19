@@ -26,8 +26,34 @@ from ....db.engine import (  # type: ignore[import-untyped]
     upsert_chunk_embedding,
     upsert_document,
 )
-from .chunker import chunk_normalized_record
+
+# Embed step reads pre-chunked data from chunks.ndjson files
 from .provider import get_embedding_provider
+
+# TODO: This is temporary - embed should read pre-chunked data, not do chunking
+from ..chunk.engine import chunk_document, inject_media_placeholders
+
+
+def chunk_normalized_record(record):
+    """Temporary helper function - embed step should read pre-chunked data instead."""
+    doc_id = record.get("id", "")
+    title = record.get("title", "")
+    text_md = record.get("text_md", "")
+    attachments = record.get("attachments", [])
+
+    if not doc_id:
+        raise ValueError("Record missing required 'id' field")
+
+    text_with_media = inject_media_placeholders(text_md, attachments)
+    return chunk_document(
+        doc_id=doc_id,
+        text_md=text_with_media,
+        title=title,
+        source_system=record.get("source_system", ""),
+        labels=record.get("labels", []),
+        space=record.get("space"),
+        media_refs=attachments,
+    )
 
 
 def _default_normalized_path(run_id: str) -> Path:

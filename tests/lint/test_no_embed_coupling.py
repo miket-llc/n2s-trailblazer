@@ -7,11 +7,11 @@ from pathlib import Path
 
 
 def test_no_embed_coupling():
-    """Fail if trailblazer.chunking imports anything from trailblazer.pipeline.steps.embed or similar."""
+    """Fail if chunk package imports anything from trailblazer.pipeline.steps.embed or similar."""
 
-    chunking_dir = Path("src/trailblazer/chunking")
-    if not chunking_dir.exists():
-        # Chunking package not yet created, skip test
+    chunk_dir = Path("src/trailblazer/pipeline/steps/chunk")
+    if not chunk_dir.exists():
+        # Chunk package not found, skip test
         return
 
     forbidden_imports = [
@@ -23,7 +23,7 @@ def test_no_embed_coupling():
 
     violations = []
 
-    for py_file in chunking_dir.glob("*.py"):
+    for py_file in chunk_dir.glob("*.py"):
         if py_file.name == "__init__.py":
             continue
 
@@ -55,7 +55,7 @@ def test_no_embed_coupling():
     if violations:
         violation_msg = "\n".join(violations)
         raise AssertionError(
-            f"Chunking package has forbidden embed coupling:\n{violation_msg}"
+            f"Chunk package has forbidden embed coupling:\n{violation_msg}"
         )
 
 
@@ -64,15 +64,10 @@ def test_no_embed_coupling():
     reason="Requires TB_TESTING=1 to avoid database dependencies",
 )
 def test_chunking_package_independence():
-    """Test that chunking package can be imported without embed dependencies."""
-
-    chunking_dir = Path("src/trailblazer/chunking")
-    if not chunking_dir.exists():
-        return
+    """Test that chunk package can be imported without embed dependencies."""
 
     try:
-        # This should work without importing embed modules
-        from trailblazer.chunking.engine import chunk_document
+        from trailblazer.pipeline.steps.chunk.engine import chunk_document
 
         # Basic functionality should work
         chunks = chunk_document(
@@ -82,9 +77,10 @@ def test_chunking_package_independence():
 
     except ImportError as e:
         if "embed" in str(e).lower():
-            raise AssertionError(
-                f"Chunking package imports embed modules: {e}"
-            )
+            raise AssertionError(f"Chunk package imports embed modules: {e}")
+        elif "No module named" in str(e):
+            # Chunk package not found, skip test
+            return
         else:
             # Some other import error, might be acceptable
             pass

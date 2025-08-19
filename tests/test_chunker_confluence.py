@@ -5,7 +5,32 @@ import json
 import sys
 
 sys.path.insert(0, "src")
-from trailblazer.pipeline.steps.embed.chunker import chunk_normalized_record  # noqa: E402
+from trailblazer.pipeline.steps.chunk.engine import (
+    chunk_document,
+    inject_media_placeholders,
+)  # noqa: E402
+
+
+def chunk_normalized_record(record):
+    """Helper function to chunk a normalized record."""
+    doc_id = record.get("id", "")
+    title = record.get("title", "")
+    text_md = record.get("text_md", "")
+    attachments = record.get("attachments", [])
+
+    if not doc_id:
+        raise ValueError("Record missing required 'id' field")
+
+    text_with_media = inject_media_placeholders(text_md, attachments)
+    return chunk_document(
+        doc_id=doc_id,
+        text_md=text_with_media,
+        title=title,
+        source_system=record.get("source_system", ""),
+        labels=record.get("labels", []),
+        space=record.get("space"),
+        media_refs=attachments,
+    )
 
 
 def main():

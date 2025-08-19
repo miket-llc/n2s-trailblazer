@@ -2804,7 +2804,7 @@ def chunk_audit(
     import statistics
     from datetime import datetime, timezone
     from pathlib import Path
-    from ..pipeline.steps.embed.chunker import count_tokens
+    from ..pipeline.steps.chunk.boundaries import count_tokens
 
     # Create timestamped output directory
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -2876,6 +2876,7 @@ def chunk_audit(
         json.dump(oversize_chunks, f, indent=2)
 
     # Create histogram
+    hist_data: Dict
     if all_token_counts:
         hist_data = {
             "total_chunks": len(all_token_counts),
@@ -3009,9 +3010,11 @@ def chunk_rechunk(
     import json
     from datetime import datetime, timezone
     from pathlib import Path
-    from ..pipeline.steps.embed.chunker import (
-        chunk_enriched_record,
-        chunk_normalized_record,
+
+    # Import chunking functions from the canonical chunk engine
+    from ..pipeline.steps.chunk.engine import (
+        chunk_document,
+        inject_media_placeholders,
     )
 
     targets_path = Path(targets_file)
@@ -3089,11 +3092,57 @@ def chunk_rechunk(
                 )
                 continue
 
-            # Re-chunk using the chunker
+            # Re-chunk using the canonical chunk engine
+            doc_id = record.get("id", "")
+            title = record.get("title", "")
+            text_md = record.get("text_md", "")
+            attachments = record.get("attachments", [])
+
+            if not doc_id:
+                typer.echo("⚠️ Skipping record with missing id", err=True)
+                continue
+
+            # Inject media placeholders
+            text_with_media = inject_media_placeholders(text_md, attachments)
+
             if input_type == "enriched":
-                new_chunks = chunk_enriched_record(record)
+                # Use enrichment data for better chunking
+                chunk_hints = record.get("chunk_hints", {})
+                section_map = record.get("section_map", [])
+
+                new_chunks = chunk_document(
+                    doc_id=doc_id,
+                    text_md=text_with_media,
+                    title=title,
+                    source_system=record.get("source_system", ""),
+                    labels=record.get("labels", []),
+                    space=record.get("space"),
+                    media_refs=attachments,
+                    hard_max_tokens=chunk_hints.get("maxTokens", max_tokens),
+                    min_tokens=chunk_hints.get("minTokens", min_tokens),
+                    overlap_tokens=chunk_hints.get(
+                        "overlapTokens", overlap_tokens
+                    ),
+                    soft_min_tokens=chunk_hints.get("softMinTokens", 200),
+                    hard_min_tokens=chunk_hints.get("hardMinTokens", 80),
+                    prefer_headings=chunk_hints.get("preferHeadings", True),
+                    soft_boundaries=chunk_hints.get("softBoundaries", []),
+                    section_map=section_map,
+                )
             else:
-                new_chunks = chunk_normalized_record(record)
+                # Normalized data - use default parameters
+                new_chunks = chunk_document(
+                    doc_id=doc_id,
+                    text_md=text_with_media,
+                    title=title,
+                    source_system=record.get("source_system", ""),
+                    labels=record.get("labels", []),
+                    space=record.get("space"),
+                    media_refs=attachments,
+                    hard_max_tokens=max_tokens,
+                    min_tokens=min_tokens,
+                    overlap_tokens=overlap_tokens,
+                )
 
             # Verify no chunks exceed the limit
             oversized = [
@@ -3265,7 +3314,7 @@ def chunk_verify(
         trailblazer chunk rechunk --targets-file var/chunk_audit/<TS>/rechunk_targets.txt --max-tokens 800 --min-tokens 120 --overlap-tokens 60
         trailblazer chunk verify --runs-glob 'var/runs/*' --max-tokens 800 --soft-min 200 --hard-min 80
     """
-    from ..chunking.verify import verify_chunks
+    from ..pipeline.steps.chunk.verify import verify_chunks
 
     typer.echo("🔍 Verifying chunks across runs", err=True)
     typer.echo(f"   Runs pattern: {runs_glob}", err=True)
