@@ -355,8 +355,13 @@ def load_chunks_to_db(
         progress_renderer.console.print(f"📦 Batch size: {batch_size}")
         progress_renderer.console.print("")
 
-    # Start event logging with proper EventEmitter
+    # Start event logging with proper EventEmitter and set global shim context
     with event_emitter:
+        try:
+            from ....obs.events import EventEmitter as _EE
+            _EE.set_event_context(run_id=run_id or "unknown", stage="embed", component="loader")
+        except Exception:
+            pass
         event_emitter.embed_start(
             provider=embedder.provider_name,
             model=getattr(embedder, "model", "unknown"),
@@ -787,6 +792,29 @@ def load_chunks_to_db(
             progress_renderer.console.print(
                 f"⚠️  Errors: [red]{len(errors)}[/red]"
             )
+
+    # Write per-stage progress file atomically
+    try:
+        from ....core.paths import progress as progress_dir
+        progress_path = progress_dir() / "embed.json"
+        progress_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = progress_path.with_suffix(".json.tmp")
+        progress_payload = {
+            "rid": run_id or "unknown",
+            "started_at": start_time.isoformat(),
+            "updated_at": _now_iso(),
+            "totals": {
+                "docs": docs_embedded,
+                "chunks": chunks_embedded,
+                "tokens": metrics.get("estimated_tokens") or 0,
+            },
+            "status": "OK",
+        }
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(progress_payload, f, indent=2)
+        tmp_path.replace(progress_path)
+    except Exception:
+        pass
 
     return metrics
 

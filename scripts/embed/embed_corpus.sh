@@ -8,7 +8,7 @@ set -e
 # Default values
 PROVIDER=${EMBED_PROVIDER:-"openai"}
 MODEL=${OPENAI_EMBED_MODEL:-"text-embedding-3-small"}
-DIMENSIONS=${EMBED_DIMENSIONS:-1536}
+DIMENSIONS=${TRAILBLAZER_EMBED_DIMENSION:-${EMBED_DIMENSIONS:-1536}}
 BATCH_SIZE=${EMBED_BATCH_SIZE:-1000}
 LARGE_RUN_THRESHOLD=${EMBED_LARGE_RUN_THRESHOLD:-2000}
 
@@ -57,7 +57,7 @@ while [[ $# -gt 0 ]]; do
             echo "Environment variables:"
             echo "  EMBED_PROVIDER          Embedding provider (default: openai)"
             echo "  OPENAI_EMBED_MODEL      Model name (default: text-embedding-3-small)"
-            echo "  EMBED_DIMENSIONS        Dimensions (default: 1536)"
+            echo "  TRAILBLAZER_EMBED_DIMENSION  Dimension (default: 1536)"
             echo "  EMBED_BATCH_SIZE        Batch size (default: 1000)"
             echo "  EMBED_LARGE_RUN_THRESHOLD  Large run threshold (default: 2000)"
             exit 0
