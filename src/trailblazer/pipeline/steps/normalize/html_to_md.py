@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 from markdownify import markdownify as md  # type: ignore
 
 from ....core.logging import log
+from ....obs.events import emit_info, emit_warn
 
 
 # ---------- DITA XML -> Markdown ----------
@@ -400,6 +401,15 @@ def normalize_from_ingest(
     if not inp.exists():
         raise FileNotFoundError(f"Ingest NDJSON not found: {inp}")
 
+    # Emit start event
+    emit_info(
+        "normalize",
+        run_id,
+        "run",
+        message="Starting normalization",
+        input_file=str(inp),
+    )
+
     nd_out = out_dir / "normalized.ndjson"
     metrics_path = out_dir / "metrics.json"
     manifest_path = out_dir / "manifest.json"
@@ -553,6 +563,18 @@ def normalize_from_ingest(
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     log.info("normalize.done", **metrics)
 
+    # Emit completion event with counts
+    emit_info(
+        "normalize",
+        run_id,
+        "run",
+        message="Normalization completed",
+        docs=total,
+        empty_bodies=empty,
+        attachments=atts_count,
+        avg_chars=(chars // total) if total else 0,
+    )
+
     # Register in processed_runs backlog
     try:
         from ...backlog import upsert_normalized_run
@@ -566,6 +588,12 @@ def normalize_from_ingest(
 
         upsert_normalized_run(run_id, source, total)
     except Exception as e:
-        log.warning("normalize.backlog_failed", error=str(e))
+        emit_warn(
+            "normalize",
+            run_id,
+            "run",
+            message="Failed to update backlog",
+            error=str(e),
+        )
 
     return metrics
