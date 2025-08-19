@@ -1307,9 +1307,16 @@ def ingest_confluence(
 
     # Print console warning if space_key resolution failed
     if total_unknown_count > 0:
-        print(
-            f"⚠️  Warning: Failed to resolve space_key for {total_unknown_count} pages. Check summary.json for details."
-        )
+        try:
+            from ...obs.events import emit_event
+            emit_event(
+                "ingest.warn",
+                reason="unknown_space_key",
+                counts={"docs": total_unknown_count, "chunks": 0, "tokens": 0},
+                status="WARN",
+            )
+        except Exception:
+            pass
 
     # Update state files with auto-since
     if auto_since and last_highwater and (space_keys or space_ids):

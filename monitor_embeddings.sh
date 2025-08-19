@@ -1,3 +1,9 @@
+#!/usr/bin/env bash
+
+# Compatibility wrapper to the canonical monitor script location
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$DIR/scripts/monitoring/monitor_embedding.sh" "$@"
+
 #!/bin/bash
 # Embedding progress monitor script
 export TRAILBLAZER_DB_URL="postgresql://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer"

@@ -123,6 +123,99 @@ class EventEmitter:
             except (OSError, FileExistsError):
                 pass
 
+    # Compatibility shim and global context for legacy emitters
+    _global_context: Dict[str, Any] = {}
+
+    @classmethod
+    def set_event_context(
+        cls, run_id: str, stage: str, component: str = "runner"
+    ) -> None:
+        """Set global event context for modules that import emit_event directly.
+
+        This enables modules like chunk engine to call a free function
+        emit_event(event_type, **kwargs) without explicitly holding an
+        EventEmitter. The shim writes to var/logs/<rid>/events.ndjson using
+        the canonical schema.
+        """
+        cls._global_context = {
+            "run_id": run_id,
+            "stage": stage,
+            "component": component,
+        }
+
+    @classmethod
+    def clear_event_context(cls) -> None:
+        """Clear global event context."""
+        cls._global_context = {}
+
+
+# Free function expected by chunk engine and other legacy call sites
+def emit_event(event_type: str, **kwargs) -> None:
+    """Emit a standardized event line using a global context.
+
+    Expected event_type format: "stage.operation" (e.g., "chunk.emit").
+    Falls back to context stage if not provided.
+    """
+    try:
+        ctx = EventEmitter._global_context
+        run_id = ctx.get("run_id") or kwargs.get("run_id") or "unknown"
+        stage = (
+            (event_type.split(".")[0] if "." in event_type else None)
+            or ctx.get("stage")
+            or "runner"
+        )
+        op = event_type.split(".")[1] if "." in event_type else event_type
+
+        # Map level/status heuristically from kwargs
+        level = kwargs.get("level", "INFO").upper()
+        status = kwargs.get("status")
+        if not status:
+            if any(k in op for k in ["error", "fail"]):
+                status = "FAIL"
+                level = "ERROR"
+            elif any(k in op for k in ["start", "begin"]):
+                status = "START"
+            elif any(k in op for k in ["complete", "done", "end"]):
+                status = "END"
+            else:
+                status = "OK"
+
+        # Build counts
+        counts = kwargs.get("counts") or {
+            "docs": int(kwargs.get("docs", 0) or 0),
+            "chunks": int(kwargs.get("chunks", 0) or 0),
+            "tokens": int(kwargs.get("tokens", 0) or 0),
+        }
+
+        event = {
+            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "level": level,
+            "stage": stage,
+            "rid": run_id,
+            "op": op,
+            "status": status,
+            "duration_ms": kwargs.get("duration_ms"),
+            "counts": counts,
+            "doc_id": kwargs.get("doc_id"),
+            "chunk_id": kwargs.get("chunk_id"),
+            "provider": kwargs.get("provider"),
+            "model": kwargs.get("model"),
+            "dimension": kwargs.get("dimension") or kwargs.get(
+                "embedding_dims"
+            ),
+            "reason": kwargs.get("reason"),
+        }
+
+        # Write to primary stream path
+        log_dir = Path("var/logs") / run_id
+        log_dir.mkdir(parents=True, exist_ok=True)
+        events_path = log_dir / "events.ndjson"
+        with open(events_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({k: v for k, v in event.items() if v is not None}) + "\n")
+    except Exception:
+        # Never break main flow on observability errors
+        pass
+
     def _rotate_if_needed(self):
         """Check if events.ndjson needs rotation and rotate if needed."""
         try:
