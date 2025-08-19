@@ -425,7 +425,7 @@ EOF
         fi
     else
         # Use regular embed mode
-        if trailblazer embed load --run-id "${run_id}" --provider "${RESOLVED_PROVIDER}" --model "${RESOLVED_MODEL}" --dimensions "${RESOLVED_DIMENSION}" --batch "${RESOLVED_BATCH_SIZE}"; then
+        if trailblazer embed load --run-id "${run_id}" --provider "${RESOLVED_PROVIDER}" --model "${RESOLVED_MODEL}" --dimension "${RESOLVED_DIMENSION}" --batch "${RESOLVED_BATCH_SIZE}"; then
             local end_time=$(date +%s)
             local duration=$((end_time - start_time))
             echo "[Worker ${worker_id}] ✅ Run ${run_id} completed in ${duration}s" | tee -a "${worker_log}"

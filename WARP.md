@@ -54,7 +54,7 @@ trailblazer normalize-all                     # Normalize to unified format
 trailblazer status                            # Check workspace status
 
 # Embedding and retrieval (requires database)
-trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimension 1536
 trailblazer ask "How do I configure SSO?"     # Query the knowledge base
 ```
 

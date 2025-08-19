@@ -11,7 +11,7 @@ The embedding pipeline has been streamlined and consolidated into the main CLI:
 trailblazer embed corpus
 
 # With options
-trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimension 1536
 ```
 
 ## Scripts

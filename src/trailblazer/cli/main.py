@@ -1031,12 +1031,12 @@ def embed_load_cmd(
     run_id: Optional[str] = typer.Option(
         None,
         "--run-id",
-        help="Run ID to load (uses runs/<RUN_ID>/normalize/normalized.ndjson)",
+        help="Run ID to load (uses runs/<RUN_ID>/chunk/chunks.ndjson)",
     ),
-    input_file: Optional[str] = typer.Option(
+    chunks_file: Optional[str] = typer.Option(
         None,
-        "--input",
-        help="Input NDJSON file to load (overrides --run-id)",
+        "--chunks-file",
+        help="Chunks NDJSON file to load (overrides --run-id)",
     ),
     provider: str = typer.Option(
         "dummy",
@@ -1048,9 +1048,9 @@ def embed_load_cmd(
         "--model",
         help="Model name (e.g., text-embedding-3-small, BAAI/bge-small-en-v1.5)",
     ),
-    dimensions: Optional[int] = typer.Option(
+    dimension: Optional[int] = typer.Option(
         None,
-        "--dimensions",
+        "--dimension",
         help="Embedding dimension (e.g., 512, 1024, 1536)",
     ),
     batch_size: int = typer.Option(
@@ -1078,19 +1078,31 @@ def embed_load_cmd(
         help="Estimate token count and cost without calling API",
     ),
 ) -> None:
-    """Load normalized documents to database with embeddings."""
+    """Load pre-chunked data to database with embeddings."""
     # Run database preflight check first
     _run_db_preflight_check()
 
+    # Validate embed contract: no chunking allowed
+    from ..pipeline.steps.embed.loader import (
+        _validate_no_chunk_imports,
+        _validate_materialized_chunks,
+    )
+
+    _validate_no_chunk_imports()
+    if run_id:
+        _validate_materialized_chunks(run_id)
+
     # Check dimension compatibility unless we're doing a full re-embed
     if not reembed_all:
-        _check_dimension_compatibility(provider, dimensions)
+        _check_dimension_compatibility(provider, dimension)
 
     from ..db.engine import get_db_url
-    from ..pipeline.steps.embed.loader import load_normalized_to_db
+    from ..pipeline.steps.embed.loader import load_chunks_to_db
 
-    if not run_id and not input_file:
-        raise typer.BadParameter("Either --run-id or --input must be provided")
+    if not run_id and not chunks_file:
+        raise typer.BadParameter(
+            "Either --run-id or --chunks-file must be provided"
+        )
 
     db_url = get_db_url()
     # Mask credentials for display
@@ -1104,12 +1116,12 @@ def embed_load_cmd(
     typer.echo(f"Provider: {provider}")
 
     try:
-        metrics = load_normalized_to_db(
+        metrics = load_chunks_to_db(
             run_id=run_id,
-            input_file=input_file,
+            chunks_file=chunks_file,
             provider_name=provider,
             model=model,
-            dimensions=dimensions,
+            dimensions=dimension,
             batch_size=batch_size,
             max_docs=max_docs,
             max_chunks=max_chunks,
@@ -2001,7 +2013,8 @@ def enrich(
     from datetime import datetime, timezone
 
     from ..core.artifacts import phase_dir
-    from ..core.progress import ProgressRenderer
+    from ..core.progress import get_progress
+    from ..obs.events import EventEmitter
     from ..pipeline.steps.enrich import enrich_from_normalized
 
     # Validate run exists and has normalized data
@@ -2024,18 +2037,43 @@ def enrich(
     enrich_dir = phase_dir(run_id, "enrich")
     enrich_dir.mkdir(parents=True, exist_ok=True)
 
-    # Setup progress renderer
-    progress_renderer = ProgressRenderer(no_color=no_color)
+    # Use standardized progress renderer and event emitter
+    progress_renderer = get_progress()
+    event_emitter = EventEmitter(
+        run_id=run_id,
+        phase="enrich",
+        component="enricher",
+    )
 
-    # NDJSON event emitter - outputs to stdout
+    # Compatibility wrapper for enricher callback
     def emit_event(event_type: str, **kwargs):
-        event = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "event": event_type,
-            "run_id": run_id,
-            **kwargs,
-        }
-        print(json.dumps(event))
+        """Compatibility wrapper for enricher callback."""
+        if "enrich.begin" in event_type:
+            event_emitter.enrich_start(metadata=kwargs)
+        elif "enrich.doc" in event_type:
+            event_emitter.enrich_tick(
+                processed=kwargs.get("docs_processed", 0)
+            )
+        elif "enrich.end" in event_type or "enrich.complete" in event_type:
+            event_emitter.enrich_complete(
+                total_processed=kwargs.get("docs_total", 0),
+                duration_ms=int(kwargs.get("duration_seconds", 0) * 1000),
+            )
+        elif "enrich.error" in event_type:
+            event_emitter.error(kwargs.get("error", "Unknown error"))
+        else:
+            # Fallback for backward compatibility
+            print(
+                json.dumps(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "event": event_type,
+                        "run_id": run_id,
+                        **kwargs,
+                    }
+                ),
+                flush=True,
+            )
 
     # Progress callback for human-readable updates to stderr
     def progress_callback(
@@ -2047,17 +2085,25 @@ def enrich(
                 err=True,
             )
 
-    # Show banner
-    if progress:
-        progress_renderer.start_banner(
-            run_id=run_id, spaces=1
-        )  # Single "phase" for enrichment
-        typer.echo(f"📁 Input: {normalized_file}", err=True)
-        typer.echo(f"📂 Output: {enrich_dir}", err=True)
-        typer.echo(f"🧠 LLM enabled: {llm}", err=True)
+    # Show banner using standardized progress renderer
+    if progress and progress_renderer.enabled:
+        progress_renderer.console.print(
+            "🔄 [bold cyan]Document Enrichment[/bold cyan]"
+        )
+        progress_renderer.console.print(
+            f"📁 Input: [cyan]{normalized_file.name}[/cyan]"
+        )
+        progress_renderer.console.print(
+            f"📂 Output: [cyan]{enrich_dir.name}[/cyan]"
+        )
+        progress_renderer.console.print(
+            f"🧠 LLM enabled: [green]{llm}[/green]"
+        )
         if max_docs:
-            typer.echo(f"📊 Max docs: {max_docs:,}", err=True)
-        typer.echo("", err=True)
+            progress_renderer.console.print(
+                f"📊 Max docs: [yellow]{max_docs:,}[/yellow]"
+            )
+        progress_renderer.console.print("")
 
     try:
         # Run enrichment
@@ -2084,26 +2130,34 @@ def enrich(
         # Generate markdown report
         _generate_enrichment_assurance_md(stats, assurance_md)
 
-        # Show completion summary
-        if progress:
-            typer.echo("", err=True)
-            typer.echo("✅ ENRICH COMPLETE", err=True)
-            typer.echo(
-                f"📊 Documents processed: {stats['docs_total']:,}", err=True
+        # Show completion summary using standardized progress renderer
+        if progress and progress_renderer.enabled:
+            progress_renderer.console.print("")
+            progress_renderer.console.print(
+                "📊 [bold green]Enrichment Complete[/bold green]"
+            )
+            progress_renderer.console.print(
+                f"📄 Documents processed: [cyan]{stats['docs_total']:,}[/cyan]"
             )
             if llm:
-                typer.echo(f"🧠 LLM enriched: {stats['docs_llm']:,}", err=True)
-                typer.echo(
-                    f"🔗 Suggested edges: {stats['suggested_edges_total']:,}",
-                    err=True,
+                progress_renderer.console.print(
+                    f"🧠 LLM enriched: [cyan]{stats['docs_llm']:,}[/cyan]"
                 )
-            typer.echo(
-                f"⚠️  Quality flags: {sum(stats['quality_flags_counts'].values()):,}",
-                err=True,
+                progress_renderer.console.print(
+                    f"🔗 Suggested edges: [cyan]{stats['suggested_edges_total']:,}[/cyan]"
+                )
+            progress_renderer.console.print(
+                f"⚠️  Quality flags: [yellow]{sum(stats['quality_flags_counts'].values()):,}[/yellow]"
             )
-            typer.echo(f"⏱️  Duration: {duration:.1f}s", err=True)
-            typer.echo(f"📄 Assurance: {assurance_json}", err=True)
-            typer.echo(f"📄 Assurance: {assurance_md}", err=True)
+            progress_renderer.console.print(
+                f"⏱️  Duration: [blue]{duration:.1f}s[/blue]"
+            )
+            progress_renderer.console.print(
+                f"📄 Assurance: [cyan]{assurance_json}[/cyan]"
+            )
+            progress_renderer.console.print(
+                f"📄 Assurance: [cyan]{assurance_md}[/cyan]"
+            )
 
         emit_event("enrich.complete", duration_seconds=duration)
 
@@ -2664,6 +2718,7 @@ def chunk(
     import time
 
     from ..core.artifacts import phase_dir
+    from ..core.progress import get_progress
     from ..pipeline.runner import _execute_phase
 
     # Validate run exists
@@ -2681,10 +2736,10 @@ def chunk(
 
     if enriched_file.exists():
         input_type = "enriched"
-        typer.echo(f"📄 Using enriched input: {enriched_file}", err=True)
+        input_file = enriched_file
     elif normalized_file.exists():
         input_type = "normalized"
-        typer.echo(f"📄 Using normalized input: {normalized_file}", err=True)
+        input_file = normalized_file
     else:
         typer.echo(
             f"❌ No input files found. Run 'trailblazer enrich {run_id}' or 'trailblazer normalize {run_id}' first",
@@ -2696,18 +2751,42 @@ def chunk(
     chunk_dir = phase_dir(run_id, "chunk")
     chunk_dir.mkdir(parents=True, exist_ok=True)
 
-    typer.echo(f"🔄 Chunking documents for run: {run_id}", err=True)
-    typer.echo(f"   Input type: {input_type}", err=True)
-    typer.echo(f"   Max tokens: {max_tokens}", err=True)
-    typer.echo(f"   Min tokens: {min_tokens}", err=True)
-    typer.echo(f"   Overlap tokens: {overlap_tokens}", err=True)
-    typer.echo(f"   Soft min tokens: {soft_min_tokens}", err=True)
-    typer.echo(f"   Hard min tokens: {hard_min_tokens}", err=True)
-    typer.echo(f"   Orphan heading merge: {orphan_heading_merge}", err=True)
-    typer.echo(f"   Small tail merge: {small_tail_merge}", err=True)
+    # Use standardized progress renderer
+    progress_renderer = get_progress()
 
-    if progress:
-        typer.echo("", err=True)
+    # Show banner using standardized progress renderer
+    if progress and progress_renderer.enabled:
+        progress_renderer.console.print(
+            "🔄 [bold cyan]Document Chunking[/bold cyan]"
+        )
+        progress_renderer.console.print(
+            f"📁 Input: [cyan]{input_file.name}[/cyan] ({input_type})"
+        )
+        progress_renderer.console.print(
+            f"📂 Output: [cyan]{chunk_dir.name}[/cyan]"
+        )
+        progress_renderer.console.print(
+            f"🔢 Max tokens: [yellow]{max_tokens}[/yellow]"
+        )
+        progress_renderer.console.print(
+            f"🔢 Min tokens: [yellow]{min_tokens}[/yellow]"
+        )
+        progress_renderer.console.print(
+            f"🔗 Overlap tokens: [yellow]{overlap_tokens}[/yellow]"
+        )
+        progress_renderer.console.print(
+            f"📏 Soft min tokens: [yellow]{soft_min_tokens}[/yellow]"
+        )
+        progress_renderer.console.print(
+            f"📏 Hard min tokens: [yellow]{hard_min_tokens}[/yellow]"
+        )
+        progress_renderer.console.print(
+            f"🔀 Orphan heading merge: [green]{orphan_heading_merge}[/green]"
+        )
+        progress_renderer.console.print(
+            f"🔀 Small tail merge: [green]{small_tail_merge}[/green]"
+        )
+        progress_renderer.console.print("")
 
     try:
         # Run chunking via pipeline runner
@@ -2746,26 +2825,33 @@ def chunk(
             doc_count = 0
             token_stats = {}
 
-        typer.echo(f"✅ Chunking complete in {duration:.1f}s", err=True)
-        typer.echo(f"   Documents: {doc_count}", err=True)
-        typer.echo(f"   Chunks: {chunk_count}", err=True)
-
-        if token_stats:
-            typer.echo(
-                f"   Token range: {token_stats.get('min', 0)}-{token_stats.get('max', 0)} "
-                f"(median: {token_stats.get('median', 0)})",
-                err=True,
+        # Show completion summary using standardized progress renderer
+        if progress and progress_renderer.enabled:
+            progress_renderer.console.print(
+                f"✅ [bold green]Chunking complete[/bold green] in [blue]{duration:.1f}s[/blue]"
+            )
+            progress_renderer.console.print(
+                f"📄 Documents: [cyan]{doc_count}[/cyan]"
+            )
+            progress_renderer.console.print(
+                f"🧩 Chunks: [cyan]{chunk_count}[/cyan]"
             )
 
-        typer.echo(f"\n📁 Artifacts written to: {chunk_dir}", err=True)
-        typer.echo(
-            f"   • chunks.ndjson - {chunk_count} chunks ready for embedding",
-            err=True,
-        )
-        typer.echo(
-            "   • chunk_assurance.json - Quality metrics and statistics",
-            err=True,
-        )
+            if token_stats:
+                progress_renderer.console.print(
+                    f"🔢 Token range: [yellow]{token_stats.get('min', 0)}-{token_stats.get('max', 0)}[/yellow] "
+                    f"(median: [yellow]{token_stats.get('median', 0)}[/yellow])"
+                )
+
+            progress_renderer.console.print(
+                f"\n📁 Artifacts written to: [cyan]{chunk_dir}[/cyan]"
+            )
+            progress_renderer.console.print(
+                f"   • chunks.ndjson - [cyan]{chunk_count}[/cyan] chunks ready for embedding"
+            )
+            progress_renderer.console.print(
+                "   • chunk_assurance.json - Quality metrics and statistics"
+            )
 
     except Exception as e:
         typer.echo(f"❌ Chunking failed: {e}", err=True)
@@ -4264,7 +4350,7 @@ def ops_dispatch_cmd(
             """
             run_id="$0"; docs="${1:-0}";
             echo "[DISPATCH] $run_id ($docs docs)"
-            PYTHONPATH=src python3 -m trailblazer.cli.main embed load --run-id "$run_id" --provider "${EMBED_PROVIDER:-openai}" --model "${EMBED_MODEL:-text-embedding-3-small}" --dimensions "${EMBED_DIMENSIONS:-1536}" --batch "${BATCH_SIZE:-128}"
+            PYTHONPATH=src python3 -m trailblazer.cli.main embed load --run-id "$run_id" --provider "${EMBED_PROVIDER:-openai}" --model "${EMBED_MODEL:-text-embedding-3-small}" --dimension "${EMBED_DIMENSIONS:-1536}" --batch "${BATCH_SIZE:-128}"
             """,
         ]
 
@@ -4739,9 +4825,9 @@ def embed_corpus_cmd(
         "--model",
         help="Model name (e.g., text-embedding-3-small, BAAI/bge-small-en-v1.5)",
     ),
-    dimensions: int = typer.Option(
+    dimension: int = typer.Option(
         1536,
-        "--dimensions",
+        "--dimension",
         help="Embedding dimension (e.g., 512, 1024, 1536)",
     ),
     batch_size: int = typer.Option(
@@ -4802,10 +4888,10 @@ def embed_corpus_cmd(
 
     # Check dimension compatibility unless we're doing a full re-embed
     if not reembed_all:
-        _check_dimension_compatibility(provider, dimensions)
+        _check_dimension_compatibility(provider, dimension)
 
     from ..core.paths import runs, logs, progress as progress_dir
-    from ..pipeline.steps.embed.loader import load_normalized_to_db
+    from ..pipeline.steps.embed.loader import load_chunks_to_db
     import json
     import time
     from datetime import datetime, timezone
@@ -4832,7 +4918,7 @@ def embed_corpus_cmd(
 
     log_message("🚀 Starting corpus embedding", "INFO")
     log_message(
-        f"Provider: {provider}, Model: {model}, Dimension: {dimensions}",
+        f"Provider: {provider}, Model: {model}, Dimension: {dimension}",
         "INFO",
     )
     log_message(
@@ -4956,11 +5042,11 @@ def embed_corpus_cmd(
                 batch_start_time = time.time()
 
                 try:
-                    metrics = load_normalized_to_db(
+                    metrics = load_chunks_to_db(
                         run_id=run_id,
                         provider_name=provider,
                         model=model,
-                        dimensions=dimensions,
+                        dimensions=dimension,
                         batch_size=batch_size,
                         max_chunks=batch_size,
                         changed_only=changed_only,
@@ -5021,11 +5107,11 @@ def embed_corpus_cmd(
             run_start_time = time.time()
 
             try:
-                metrics = load_normalized_to_db(
+                metrics = load_chunks_to_db(
                     run_id=run_id,
                     provider_name=provider,
                     model=model,
-                    dimensions=dimensions,
+                    dimensions=dimension,
                     batch_size=batch_size,
                     changed_only=changed_only,
                     reembed_all=reembed_all,
@@ -6362,7 +6448,7 @@ def embed_reembed_if_changed_cmd(
             resolved_provider,
             "--model",
             resolved_model,
-            "--dimensions",
+            "--dimension",
             str(resolved_dimension),
             "--batch",
             str(batch_size),

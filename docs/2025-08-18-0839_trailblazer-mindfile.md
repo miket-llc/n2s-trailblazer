@@ -18,7 +18,7 @@ ______________________________________________________________________
 1. **Normalize** → canonical doc records (`normalized.ndjson`)
 1. **Enrich** → rule-based (+ optional LLM) signals and **fingerprints** (`enriched.jsonl`)
 1. **Chunk** (materialize) → writes `var/runs/<RID>/chunk/chunks.ndjson` + `chunk_assurance.json`
-1. **Embed** → gated by `trailblazer embed preflight`; writes `embed_assurance.json`
+1. **Embed** → gated by `trailblazer embed preflight`; reads materialized chunks; writes to Postgres + `embed_assurance.json`
 1. **Retrieve & Pack** → dense (pgvector), deterministic tie-breakers, budget-aware packer
 1. **Ask** → artifacts (hits/context/summary) with traceability
 

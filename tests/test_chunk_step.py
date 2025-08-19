@@ -1,4 +1,4 @@
-"""Tests for the embedding chunker with media awareness."""
+"""Tests for the chunk step with media awareness."""
 
 import pytest
 from trailblazer.pipeline.steps.chunk.engine import (

@@ -74,7 +74,7 @@ done
 CMD="trailblazer embed corpus"
 CMD="$CMD --provider $PROVIDER"
 CMD="$CMD --model $MODEL"
-CMD="$CMD --dimensions $DIMENSIONS"
+CMD="$CMD --dimension $DIMENSIONS"
 CMD="$CMD --batch $BATCH_SIZE"
 CMD="$CMD --large-run-threshold $LARGE_RUN_THRESHOLD"
 

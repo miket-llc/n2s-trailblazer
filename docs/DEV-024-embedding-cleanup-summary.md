@@ -26,7 +26,7 @@ Successfully completed the cleanup and streamlining of the embedding pipeline an
 trailblazer embed corpus
 
 # With options
-trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimension 1536
 
 # Resume from specific run
 trailblazer embed corpus --resume-from RUN_ID
@@ -129,7 +129,7 @@ trailblazer embed corpus
 trailblazer embed corpus \
   --provider openai \
   --model text-embedding-3-small \
-  --dimensions 1536 \
+  --dimension 1536 \
   --batch 1000 \
   --large-run-threshold 2000
 ```

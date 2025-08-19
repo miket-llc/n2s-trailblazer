@@ -84,7 +84,7 @@ trailblazer status
 make db.up && trailblazer db init && trailblazer db doctor
 
 # 6. Load embeddings (requires PostgreSQL + pgvector)
-trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimension 1536
 
 # 7. Query your knowledge base
 trailblazer ask "How do I configure SSO?" --provider openai
@@ -174,7 +174,7 @@ trailblazer db check
 trailblazer db init
 
 # Load normalized documents with embeddings (idempotent)
-trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimension 1536
 
 # Query the embedded knowledge base
 trailblazer ask "How do I configure SSO?"
@@ -204,13 +204,13 @@ When you run enrichment multiple times and only want to re-embed documents whose
 
 ```bash
 # First embedding run - embeds all documents
-trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimension 1536
 
 # Re-run enrichment with changes
 trailblazer enrich <RUN_ID> --llm
 
 # Second embedding run - only embeds documents with changed enrichment fingerprints
-trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536 --changed-only
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimension 1536 --changed-only
 ```
 
 **How it works:**
@@ -252,7 +252,7 @@ For embedding the entire corpus with comprehensive observability and batching su
 trailblazer embed corpus
 
 # Customize provider and model
-trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimension 1536
 
 # Resume from specific run
 trailblazer embed corpus --resume-from 2025-08-15_080633_c4f3
@@ -696,10 +696,10 @@ Chunk normalized documents and generate embeddings for retrieval:
 make db.up && trailblazer db init && trailblazer db doctor
 
 # Load documents with embeddings (requires PostgreSQL + pgvector)
-trailblazer embed corpus --provider openai --model text-embedding-3-small --dimensions 1536
+trailblazer embed corpus --provider openai --model text-embedding-3-small --dimension 1536
 
 # Or load from custom file
-trailblazer embed load --input normalized.ndjson --provider openai --model text-embedding-3-small --dimensions 1536
+trailblazer embed load --chunks-file chunks.ndjson --provider openai --model text-embedding-3-small --dimension 1536
 ```
 
 **Environment variables for embeddings:**
