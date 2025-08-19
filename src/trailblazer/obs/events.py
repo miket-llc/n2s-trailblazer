@@ -2,6 +2,7 @@
 
 import os
 import time
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, TextIO
@@ -123,6 +124,36 @@ class EventEmitter:
             except (OSError, FileExistsError):
                 pass
 
+    def _rotate_if_needed(self):
+        """Check if events.ndjson needs rotation and rotate if needed."""
+        try:
+            from ..core.config import SETTINGS
+
+            max_size_bytes = SETTINGS.LOGS_ROTATION_MB * 1024 * 1024
+
+            if (
+                self.events_path.exists()
+                and self.events_path.stat().st_size > max_size_bytes
+            ):
+                # Find next rotation number
+                rotation_num = 1
+                while (
+                    self.run_log_dir / f"events.ndjson.{rotation_num}"
+                ).exists():
+                    rotation_num += 1
+
+                # Rotate current file
+                rotated_path = (
+                    self.run_log_dir / f"events.ndjson.{rotation_num}"
+                )
+                self.events_path.rename(rotated_path)
+
+                # Create new events.ndjson
+                self.events_path.touch()
+
+        except Exception:
+            pass  # Silently continue if rotation fails
+
     # Compatibility shim and global context for legacy emitters
     _global_context: Dict[str, Any] = {}
 
@@ -216,36 +247,6 @@ def emit_event(event_type: str, **kwargs) -> None:
         # Never break main flow on observability errors
         pass
 
-    def _rotate_if_needed(self):
-        """Check if events.ndjson needs rotation and rotate if needed."""
-        try:
-            from ..core.config import SETTINGS
-
-            max_size_bytes = SETTINGS.LOGS_ROTATION_MB * 1024 * 1024
-
-            if (
-                self.events_path.exists()
-                and self.events_path.stat().st_size > max_size_bytes
-            ):
-                # Find next rotation number
-                rotation_num = 1
-                while (
-                    self.run_log_dir / f"events.ndjson.{rotation_num}"
-                ).exists():
-                    rotation_num += 1
-
-                # Rotate current file
-                rotated_path = (
-                    self.run_log_dir / f"events.ndjson.{rotation_num}"
-                )
-                self.events_path.rename(rotated_path)
-
-                # Create new events.ndjson
-                self.events_path.touch()
-
-        except Exception:
-            pass  # Silently continue if rotation fails
-
     def __enter__(self):
         # Check for rotation before opening
         self._rotate_if_needed()
@@ -263,42 +264,53 @@ def emit_event(event_type: str, **kwargs) -> None:
         duration_ms: Optional[int] = None,
         **kwargs,
     ) -> None:
-        """Emit a structured event."""
+        """Emit a structured event using the canonical schema."""
         if not self._file:
             return
 
-        # Separate direct fields from metadata
-        direct_fields = {
-            k: v
-            for k, v in kwargs.items()
-            if k in ObservabilityEvent.model_fields and k != "metadata"
+        # Map action to canonical status
+        status_map = {
+            EventAction.START: "START",
+            EventAction.COMPLETE: "END",
+            EventAction.ERROR: "FAIL",
+            EventAction.WARNING: "OK",
+            EventAction.TICK: "OK",
+            EventAction.HEARTBEAT: "OK",
+        }
+        status = status_map.get(action, "OK")
+
+        # Build counts if provided
+        counts = kwargs.get("counts") or {
+            "docs": int(kwargs.get("docs", 0) or 0),
+            "chunks": int(kwargs.get("chunks", 0) or 0),
+            "tokens": int(kwargs.get("tokens", 0) or 0),
         }
 
-        # Handle metadata - combine explicit metadata with other kwargs
-        explicit_metadata = kwargs.get("metadata", {})
-        extra_metadata = {
-            k: v
-            for k, v in kwargs.items()
-            if k not in ObservabilityEvent.model_fields
-        }
-        combined_metadata = {**explicit_metadata, **extra_metadata}
+        # Operation name: prefer explicit op, else derive from component/action
+        op = kwargs.get("op") or f"{self.component}.{action.value}"
 
-        event = ObservabilityEvent(
-            ts=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            run_id=self.run_id,
-            phase=self.phase,
-            component=self.component,
-            pid=self.pid,
-            worker_id=self.worker_id,
-            level=level,
-            action=action,
-            duration_ms=duration_ms,
-            **direct_fields,
-            metadata=combined_metadata,
-        )
+        canonical_event = {
+            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "level": str(level).split(".")[-1].upper(),
+            "stage": self.phase,
+            "rid": self.run_id,
+            "op": op,
+            "status": status,
+            "duration_ms": duration_ms,
+            "counts": counts,
+            "doc_id": kwargs.get("doc_id"),
+            "chunk_id": kwargs.get("chunk_id"),
+            "provider": kwargs.get("provider"),
+            "model": kwargs.get("model"),
+            "dimension": kwargs.get("dimension") or kwargs.get("embedding_dims"),
+            "reason": kwargs.get("reason"),
+        }
 
         try:
-            self._file.write(event.model_dump_json(exclude_none=True) + "\n")
+            self._file.write(
+                json.dumps({k: v for k, v in canonical_event.items() if v is not None})
+                + "\n"
+            )
             self._file.flush()
         except Exception:
             pass  # Silently fail to avoid breaking the main process
