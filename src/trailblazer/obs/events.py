@@ -514,6 +514,48 @@ def emit_error(stage: str, run_id: str, op: str, **fields) -> None:
             emitter._emit(EventAction.ERROR, level=EventLevel.ERROR, **fields)
 
 
+def emit_event(event_type: str, **kwargs) -> None:
+    """Generic event emission function for backward compatibility.
+
+    This function provides a generic interface for emitting events that
+    can be used by components that don't know the specific stage/run_id context.
+
+    Args:
+        event_type: Type of event (e.g., 'chunk.begin', 'chunk.doc', 'chunk.end')
+        **kwargs: Event data
+    """
+    emitter = get_global_emitter()
+    if emitter and emitter._file:
+        # Map event types to appropriate EventEmitter methods
+        if event_type.startswith("chunk."):
+            if event_type == "chunk.begin":
+                # Use chunk_start with appropriate parameters
+                input_file = kwargs.get("input_file")
+                emitter.chunk_start(input_file=input_file)
+            elif event_type == "chunk.doc":
+                # Use generic _emit for chunk.doc events with chunk-specific data
+                emitter._emit(EventAction.TICK, **kwargs)
+            elif event_type == "chunk.end":
+                # Use chunk_complete with appropriate parameters
+                total_chunks = kwargs.get("total_chunks", 0)
+                duration_ms = kwargs.get("duration_ms", 0)
+                emitter.chunk_complete(
+                    total_chunks=total_chunks, duration_ms=duration_ms
+                )
+            elif event_type in [
+                "chunk.force_truncate",
+                "chunk.coverage_warning",
+            ]:
+                message = kwargs.get("message", event_type)
+                emitter.warning(message, **kwargs)
+            else:
+                # Generic chunk event
+                emitter._emit(EventAction.TICK, **kwargs)
+        else:
+            # Generic event
+            emitter._emit(EventAction.TICK, **kwargs)
+
+
 @contextmanager
 def stage_run(stage: str, run_id: str, op: str, **start_fields):
     """Context manager that emits START/END events with duration tracking.

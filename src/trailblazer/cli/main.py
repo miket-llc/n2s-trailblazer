@@ -2720,6 +2720,7 @@ def chunk(
     from ..core.artifacts import phase_dir
     from ..core.progress import get_progress
     from ..pipeline.runner import _execute_phase
+    from ..obs.events import EventEmitter
 
     # Validate run exists
     run_dir = phase_dir(run_id, "").parent
@@ -2789,19 +2790,59 @@ def chunk(
         progress_renderer.console.print("")
 
     try:
-        # Run chunking via pipeline runner
-        start_time = time.time()
-        _execute_phase(
-            "chunk",
-            str(chunk_dir),
-            max_tokens=max_tokens,
-            min_tokens=min_tokens,
-            overlap_tokens=overlap_tokens,
-            soft_min_tokens=soft_min_tokens,
-            hard_min_tokens=hard_min_tokens,
-            orphan_heading_merge=orphan_heading_merge,
-            small_tail_merge=small_tail_merge,
+        # Create EventEmitter for chunk events
+        emitter = EventEmitter(
+            run_id=run_id, phase="chunk", component="chunker"
         )
+
+        # Create wrapper emit function for the engine
+        def emit_wrapper(event_type: str, **kwargs):
+            """Wrapper emit function to bridge CLI EventEmitter to chunk engine."""
+            if event_type == "chunk.begin":
+                input_file = kwargs.get("input_file")
+                emitter.chunk_start(input_file=input_file)
+            elif event_type == "chunk.doc":
+                # Use generic _emit for chunk.doc events with chunk-specific data
+                from ..obs.events import EventAction
+
+                emitter._emit(EventAction.TICK, **kwargs)
+            elif event_type == "chunk.end":
+                total_chunks = kwargs.get("total_chunks", 0)
+                duration_ms = kwargs.get("duration_ms", 0)
+                emitter.chunk_complete(
+                    total_chunks=total_chunks, duration_ms=duration_ms
+                )
+            elif event_type == "chunk.force_truncate":
+                emitter.warning(
+                    f"Chunk force truncated: {kwargs.get('chunk_id', 'unknown')}",
+                    **kwargs,
+                )
+            elif event_type == "chunk.coverage_warning":
+                emitter.warning(
+                    f"Coverage warning for doc {kwargs.get('doc_id', 'unknown')}",
+                    **kwargs,
+                )
+            else:
+                # Generic event
+                from ..obs.events import EventAction
+
+                emitter._emit(EventAction.TICK, **kwargs)
+
+        # Run chunking via pipeline runner with EventEmitter
+        start_time = time.time()
+        with emitter:
+            _execute_phase(
+                "chunk",
+                str(chunk_dir),
+                max_tokens=max_tokens,
+                min_tokens=min_tokens,
+                overlap_tokens=overlap_tokens,
+                soft_min_tokens=soft_min_tokens,
+                hard_min_tokens=hard_min_tokens,
+                orphan_heading_merge=orphan_heading_merge,
+                small_tail_merge=small_tail_merge,
+                emit=emit_wrapper,
+            )
         duration = time.time() - start_time
 
         # Read results

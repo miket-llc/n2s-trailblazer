@@ -277,6 +277,7 @@ def _execute_phase(
                         )
 
                     # Chunk document
+                    emit_func = kwargs.get("emit")
                     chunks = chunk_document(
                         doc_id=doc_id,
                         text_md=text_with_media,
@@ -292,6 +293,7 @@ def _execute_phase(
                         prefer_headings=prefer_headings,
                         soft_boundaries=soft_boundaries,
                         section_map=section_map,
+                        emit=emit_func,
                     )
 
                     # Write chunks

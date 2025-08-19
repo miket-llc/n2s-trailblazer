@@ -5,7 +5,7 @@ Main chunking engine with layered splitting strategy and hard token caps.
 from __future__ import annotations
 
 import re
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple, Callable
 
 try:
     import tiktoken  # type: ignore
@@ -13,11 +13,12 @@ except ImportError:
     tiktoken = None  # type: ignore
 
 try:
-    from ...obs.events import emit_event  # type: ignore
+    from ....obs.events import emit_event  # type: ignore
 except ImportError:
-    # Fallback for testing - create a no-op function
-    def emit_event(*args, **kwargs):  # type: ignore
-        pass
+    # No silent fallback - tests should set TB_TESTING=1 and import obs
+    raise ImportError(
+        "obs.events module required - tests should set TB_TESTING=1 and import obs"
+    )
 
 
 from .boundaries import (
@@ -958,6 +959,7 @@ def chunk_document(
     soft_boundaries: Optional[List[int]] = None,
     section_map: Optional[List[Dict]] = None,
     model: str = "text-embedding-3-small",
+    emit: Optional[Callable[..., None]] = None,
 ) -> List[Chunk]:
     """
     Chunk a document using layered splitting with guaranteed hard token cap and full traceability.
@@ -994,6 +996,18 @@ def chunk_document(
         soft_boundaries = []
     if section_map is None:
         section_map = []
+
+    # Use provided emit function or fall back to module-level emit_event
+    def _emit(event_type: str, **kwargs):
+        if emit:
+            emit(event_type, **kwargs)
+        else:
+            emit_event(event_type, **kwargs)
+
+    # Emit chunk.begin event
+    _emit(
+        "chunk.begin", doc_id=doc_id, title=title, source_system=source_system
+    )
 
     # Normalize and prepare text
     full_text = normalize_text(text_md)
@@ -1052,7 +1066,7 @@ def chunk_document(
             # Update char_end for truncated text
             char_end = char_start + len(chunk_text)
 
-            emit_event(
+            _emit(
                 "chunk.force_truncate",
                 chunk_id=f"{doc_id}:{ord_num:04d}",
                 original_tokens=token_count,
@@ -1077,6 +1091,15 @@ def chunk_document(
         )
         chunks.append(chunk)
 
+        # Emit chunk.doc event for each chunk created
+        _emit(
+            "chunk.doc",
+            chunk_id=chunk.chunk_id,
+            token_count=chunk.token_count,
+            chunk_type=chunk.chunk_type,
+            split_strategy=chunk.split_strategy,
+        )
+
     # Apply glue pass for v2.2 bottom-end controls
     if soft_min_tokens > 0:
         chunks = apply_glue_pass(
@@ -1092,12 +1115,20 @@ def chunk_document(
     # Verify coverage (should be >= 99.5%)
     coverage_pct, gaps = calculate_coverage(chunks, original_text_length)
     if coverage_pct < 99.5 and gaps:
-        emit_event(
+        _emit(
             "chunk.coverage_warning",
             doc_id=doc_id,
             coverage_pct=coverage_pct,
             gaps_count=len(gaps),
             gaps=gaps[:5],  # Limit to first 5 gaps for logging
         )
+
+    # Emit chunk.end event
+    _emit(
+        "chunk.end",
+        doc_id=doc_id,
+        total_chunks=len(chunks),
+        coverage_pct=coverage_pct,
+    )
 
     return chunks
