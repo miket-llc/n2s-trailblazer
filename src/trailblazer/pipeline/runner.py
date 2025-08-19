@@ -67,7 +67,7 @@ def run_from_backlog(
             f"Backlog processing only supports chunk/embed, got: {phase}"
         )
 
-    # Show backlog summary
+    # Show backlog summary (structured log, no raw print)
     summary = get_backlog_summary(phase)
     total = summary["total"]
     sample_runs = summary["sample_run_ids"]
@@ -78,16 +78,15 @@ def run_from_backlog(
         )
         return f"No runs available for {phase}"
 
-    # Print banner to stderr
-    import sys
-
     earliest = summary.get("earliest", "unknown")
     latest = summary.get("latest", "unknown")
-    print(
-        f"🔄 {phase.title()} Backlog: {total} runs available", file=sys.stderr
+    log.info(
+        f"{phase}.backlog.summary",
+        total=total,
+        earliest=earliest,
+        latest=latest,
+        sample_runs=sample_runs[:5],
     )
-    print(f"   Date range: {earliest} to {latest}", file=sys.stderr)
-    print(f"   Sample runs: {', '.join(sample_runs[:5])}", file=sys.stderr)
 
     if dry_run:
         return f"Would process {total} runs for {phase}"
@@ -422,6 +421,31 @@ def _execute_phase(
             assurance_file=str(assurance_file),
         )
 
+        # Write per-stage progress file atomically
+        try:
+            from ..core.paths import progress as progress_dir
+            from datetime import datetime, timezone
+
+            progress_path = progress_dir() / "chunk.json"
+            progress_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = progress_path.with_suffix(".json.tmp")
+            progress_payload = {
+                "rid": run_id,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "totals": {
+                    "docs": total_docs,
+                    "chunks": total_chunks,
+                    "tokens": sum(token_counts),
+                },
+                "status": "OK",
+            }
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(progress_payload, f, indent=2)
+            tmp_path.replace(progress_path)
+        except Exception:
+            pass
+
         # Mark chunking complete in backlog
         try:
             from .backlog import mark_chunking_complete
@@ -431,7 +455,7 @@ def _execute_phase(
             log.warning("chunk.backlog_failed", error=str(e))
 
     elif phase == "embed":
-        from .steps.embed.loader import load_normalized_to_db
+        from .steps.embed.loader import load_chunks_to_db
         import json
         from datetime import datetime, timezone
         from pathlib import Path
@@ -490,11 +514,11 @@ def _execute_phase(
         dimensions = settings.EMBED_DIMENSIONS if settings else None
         batch_size = settings.EMBED_BATCH_SIZE if settings else 128
 
-        load_normalized_to_db(
+        load_chunks_to_db(
             run_id=run_id,
             provider_name=provider_name,
             model=model,
-            dimensions=dimensions,
+            dimension=dimensions,
             batch_size=batch_size,
         )
     elif phase == "retrieve":

@@ -225,7 +225,7 @@ def load_chunks_to_db(
     chunks_file: Optional[str] = None,
     provider_name: str = "dummy",
     model: Optional[str] = None,
-    dimensions: Optional[int] = None,
+    dimension: Optional[int] = None,
     batch_size: int = 128,
     max_docs: Optional[int] = None,
     max_chunks: Optional[int] = None,
@@ -290,14 +290,14 @@ def load_chunks_to_db(
     else:
         changed_docs = _determine_changed_docs(run_id, changed_only)
 
-    # Get embedding provider with custom model/dimensions if specified
-    if model or dimensions:
+    # Get embedding provider with custom model/dimension if specified
+    if model or (dimension is not None):
         # For OpenAI, we can override model and dimensions
         if provider_name == "openai":
             from .provider import OpenAIEmbedder
 
             embedder: EmbeddingProvider = OpenAIEmbedder(
-                model=model or "text-embedding-3-small", dim=dimensions or 1536
+                model=model or "text-embedding-3-small", dim=dimension or 1536
             )
         # For sentencetransformers, we can override model
         elif provider_name == "sentencetransformers":
@@ -308,7 +308,7 @@ def load_chunks_to_db(
         elif provider_name == "dummy":
             from .provider import DummyEmbedder
 
-            embedder = DummyEmbedder(dim=dimensions or 384)
+            embedder = DummyEmbedder(dim=dimension or 384)
         else:
             # Fall back to default provider
             embedder = get_embedding_provider(provider_name)
