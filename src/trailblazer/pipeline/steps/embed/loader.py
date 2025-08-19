@@ -122,7 +122,7 @@ def _compute_content_hash(record: Dict[str, Any]) -> str:
 
 def _load_fingerprints(fingerprints_path: Path) -> Dict[str, str]:
     """Load fingerprints from JSONL file."""
-    fingerprints = {}
+    fingerprints: Dict[str, str] = {}
 
     if not fingerprints_path.exists():
         return fingerprints
