@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from ....core.logging import log
 from ....core.progress import get_progress
-from ....obs.events import EventEmitter
+from ....obs.events import EventEmitter, stage_run, emit_info, emit_error
 from .provider import EmbeddingProvider
 from ....db.engine import (  # type: ignore[import-untyped]
     get_session_factory,
@@ -268,7 +268,27 @@ def load_chunks_to_db(
     if not chunks_path.exists():
         raise FileNotFoundError(f"Chunks file not found: {chunks_path}")
 
-    # For document metadata, try to load enriched.jsonl
+    # Use stage_run context manager for consistent event emission
+    with stage_run(
+        "embed",
+        run_id,
+        "upsert",
+        provider=provider_name,
+        model=model,
+        dimensions=dimensions,
+        chunks_file=str(chunks_path),
+    ) as ctx:
+        emit_info(
+            "embed",
+            run_id,
+            "upsert",
+            message="Starting embed process",
+            provider=provider_name,
+            model=model,
+            chunks_file=str(chunks_path),
+        )
+
+        # For document metadata, try to load enriched.jsonl
     enriched_path = None
     if run_id and run_id != "unknown":
         enriched_path = _default_enriched_path(run_id)
@@ -788,7 +808,43 @@ def load_chunks_to_db(
                 f"⚠️  Errors: [red]{len(errors)}[/red]"
             )
 
-    return metrics
+        # Update context and emit completion event
+        errors_list = metrics.get("errors", [])
+        ctx.update(
+            docs_embedded=metrics["docs_embedded"],
+            docs_skipped=metrics["docs_skipped"],
+            chunks_embedded=metrics["chunks_embedded"],
+            chunks_skipped=metrics["chunks_skipped"],
+            errors=len(errors_list) if isinstance(errors_list, list) else 0,
+            status="OK" if not errors_list else "FAIL",
+        )
+        if errors_list:
+            emit_error(
+                "embed",
+                run_id,
+                "upsert",
+                message="Embed completed with errors",
+                docs_embedded=metrics["docs_embedded"],
+                chunks_embedded=metrics["chunks_embedded"],
+                errors=len(errors_list)
+                if isinstance(errors_list, list)
+                else 0,
+            )
+        else:
+            emit_info(
+                "embed",
+                run_id,
+                "upsert",
+                message="Embed completed successfully",
+                docs_embedded=metrics["docs_embedded"],
+                chunks_embedded=metrics["chunks_embedded"],
+                total_tokens=metrics.get("total_tokens", 0),
+            )
+
+        return metrics
+
+    # Fallback return (should never reach here due to stage_run context)
+    return {}
 
 
 def _process_embedding_batch(

@@ -102,6 +102,28 @@ def _run_db_preflight_check() -> None:
         raise typer.Exit(1)
 
 
+def _validate_no_legacy_chunk_flags() -> None:
+    """Validate that no legacy --chunk-* flags are used in embed commands."""
+    import sys
+
+    legacy_flags = [
+        "--chunk-size",
+        "--chunk-overlap",
+        "--chunk-strategy",
+        "--max-chunk-size",
+        "--min-chunk-size",
+        "--chunk-method",
+    ]
+
+    for flag in legacy_flags:
+        if flag in sys.argv:
+            typer.echo(
+                f"❌ Legacy chunk flag {flag} not supported; use 'trailblazer chunk run <RID>' first",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+
 @app.callback()
 def _init() -> None:
     setup_logging()
@@ -1081,6 +1103,9 @@ def embed_load_cmd(
     """Load pre-chunked data to database with embeddings."""
     # Run database preflight check first
     _run_db_preflight_check()
+
+    # Validate no legacy chunk flags
+    _validate_no_legacy_chunk_flags()
 
     # Validate embed contract: no chunking allowed
     from ..pipeline.steps.embed.loader import (
