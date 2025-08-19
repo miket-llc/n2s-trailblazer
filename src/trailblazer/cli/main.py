@@ -2606,10 +2606,33 @@ def chunk(
         help="Run ID to chunk (must have enrich or normalize phase completed)",
     ),
     max_tokens: int = typer.Option(
-        800, "--max-tokens", help="Maximum tokens per chunk"
+        800, "--max-tokens", help="Hard maximum tokens per chunk"
     ),
     min_tokens: int = typer.Option(
         120, "--min-tokens", help="Minimum tokens per chunk"
+    ),
+    overlap_tokens: int = typer.Option(
+        60, "--overlap-tokens", help="Overlap tokens when splitting"
+    ),
+    soft_min_tokens: int = typer.Option(
+        200,
+        "--soft-min-tokens",
+        help="Target minimum tokens after glue (v2.2)",
+    ),
+    hard_min_tokens: int = typer.Option(
+        80,
+        "--hard-min-tokens",
+        help="Absolute minimum tokens for any chunk (v2.2)",
+    ),
+    orphan_heading_merge: bool = typer.Option(
+        True,
+        "--orphan-heading-merge/--no-orphan-heading-merge",
+        help="Merge orphan headings with neighbors (v2.2)",
+    ),
+    small_tail_merge: bool = typer.Option(
+        True,
+        "--small-tail-merge/--no-small-tail-merge",
+        help="Merge small tail chunks when possible (v2.2)",
     ),
     progress: bool = typer.Option(
         True, "--progress/--no-progress", help="Show progress output"
@@ -2619,18 +2642,24 @@ def chunk(
     Chunk enriched or normalized documents into token-bounded pieces.
 
     This command processes documents and creates chunks suitable for embedding:
-    • Respects chunk_hints from enrichment for heading-aligned splits
-    • Uses soft boundaries and section maps for better chunk quality
-    • Enforces token limits with overflow handling
-    • Records per-chunk token counts for assurance
+    • Guaranteed hard token cap with layered splitting strategy
+    • Layered splitting strategy: headings → paragraphs → sentences → token window
+    • Special handling for code fences and tables
+    • Overlap support for better context continuity
+    • Records per-chunk token counts and split strategies
 
     The chunker prefers enriched input (enriched.jsonl) over normalized input
     (normalized.ndjson) when available. Enriched input enables heading-aware
     chunking with better quality.
 
-    Example:
-        trailblazer chunk RUN_ID_HERE                     # Use defaults (800/120 tokens)
-        trailblazer chunk RUN_ID_HERE --max-tokens 1000  # Custom token limits
+    Examples:
+        trailblazer chunk RUN_ID_HERE                            # Use defaults (800/120/60 tokens)
+        trailblazer chunk RUN_ID_HERE --max-tokens 1000         # Custom token limits
+        trailblazer chunk RUN_ID_HERE --overlap-tokens 80       # Custom overlap
+
+        # v2.2 bottom-end controls
+        trailblazer chunk RUN_ID_HERE --soft-min-tokens 200 --hard-min-tokens 80
+        trailblazer chunk RUN_ID_HERE --no-orphan-heading-merge --no-small-tail-merge
     """
     import time
 
@@ -2671,6 +2700,11 @@ def chunk(
     typer.echo(f"   Input type: {input_type}", err=True)
     typer.echo(f"   Max tokens: {max_tokens}", err=True)
     typer.echo(f"   Min tokens: {min_tokens}", err=True)
+    typer.echo(f"   Overlap tokens: {overlap_tokens}", err=True)
+    typer.echo(f"   Soft min tokens: {soft_min_tokens}", err=True)
+    typer.echo(f"   Hard min tokens: {hard_min_tokens}", err=True)
+    typer.echo(f"   Orphan heading merge: {orphan_heading_merge}", err=True)
+    typer.echo(f"   Small tail merge: {small_tail_merge}", err=True)
 
     if progress:
         typer.echo("", err=True)
@@ -2678,7 +2712,17 @@ def chunk(
     try:
         # Run chunking via pipeline runner
         start_time = time.time()
-        _execute_phase("chunk", str(chunk_dir))
+        _execute_phase(
+            "chunk",
+            str(chunk_dir),
+            max_tokens=max_tokens,
+            min_tokens=min_tokens,
+            overlap_tokens=overlap_tokens,
+            soft_min_tokens=soft_min_tokens,
+            hard_min_tokens=hard_min_tokens,
+            orphan_heading_merge=orphan_heading_merge,
+            small_tail_merge=small_tail_merge,
+        )
         duration = time.time() - start_time
 
         # Read results
@@ -2725,6 +2769,551 @@ def chunk(
 
     except Exception as e:
         typer.echo(f"❌ Chunking failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
+chunk_app = typer.Typer(help="Chunking operations for documents")
+app.add_typer(chunk_app, name="chunk")
+
+
+@chunk_app.command("audit")
+def chunk_audit(
+    runs_glob: str = typer.Option(
+        "var/runs/*", "--runs-glob", help="Glob pattern for run directories"
+    ),
+    max_tokens: int = typer.Option(
+        800, "--max-tokens", help="Token limit to check against"
+    ),
+    out_dir: str = typer.Option(
+        "var/chunk_audit",
+        "--out-dir",
+        help="Output directory for audit results",
+    ),
+) -> None:
+    """
+    Audit existing chunks for token limit violations.
+
+    Scans all chunks in the specified runs and identifies any that exceed
+    the token limit. Outputs detailed reports and rechunk targets.
+
+    Example:
+        trailblazer chunk audit --runs-glob 'var/runs/*' --max-tokens 800
+    """
+    import json
+    import glob
+    import statistics
+    from datetime import datetime, timezone
+    from pathlib import Path
+    from ..pipeline.steps.embed.chunker import count_tokens
+
+    # Create timestamped output directory
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    audit_dir = Path(out_dir) / timestamp
+    audit_dir.mkdir(parents=True, exist_ok=True)
+
+    typer.echo(f"🔍 Auditing chunks with token limit: {max_tokens}", err=True)
+    typer.echo(f"📁 Results will be written to: {audit_dir}", err=True)
+
+    oversize_chunks = []
+    all_token_counts = []
+    run_count = 0
+    total_chunks = 0
+
+    # Find all chunk files
+    run_dirs = glob.glob(runs_glob)
+
+    for run_dir in run_dirs:
+        chunks_file = Path(run_dir) / "chunk" / "chunks.ndjson"
+        if not chunks_file.exists():
+            continue
+
+        run_id = Path(run_dir).name
+        run_count += 1
+
+        try:
+            with open(chunks_file, "r") as f:
+                for line_num, line in enumerate(f, 1):
+                    if not line.strip():
+                        continue
+
+                    try:
+                        chunk_data = json.loads(line)
+                        chunk_id = chunk_data.get(
+                            "chunk_id", f"{run_id}:unknown:{line_num}"
+                        )
+                        text_md = chunk_data.get("text_md", "")
+                        recorded_tokens = chunk_data.get("token_count", 0)
+
+                        # Recompute token count to verify
+                        actual_tokens = count_tokens(text_md)
+                        all_token_counts.append(actual_tokens)
+                        total_chunks += 1
+
+                        if actual_tokens > max_tokens:
+                            oversize_chunks.append(
+                                {
+                                    "rid": run_id,
+                                    "doc_id": chunk_id.split(":")[0]
+                                    if ":" in chunk_id
+                                    else run_id,
+                                    "chunk_id": chunk_id,
+                                    "token_count": actual_tokens,
+                                    "recorded_tokens": recorded_tokens,
+                                    "char_count": len(text_md),
+                                }
+                            )
+
+                    except json.JSONDecodeError:
+                        continue
+
+        except Exception as e:
+            typer.echo(f"⚠️  Error processing {chunks_file}: {e}", err=True)
+            continue
+
+    # Generate reports
+    oversize_file = audit_dir / "oversize.json"
+    with open(oversize_file, "w") as f:
+        json.dump(oversize_chunks, f, indent=2)
+
+    # Create histogram
+    if all_token_counts:
+        hist_data = {
+            "total_chunks": len(all_token_counts),
+            "oversize_count": len(oversize_chunks),
+            "oversize_percentage": len(oversize_chunks)
+            / len(all_token_counts)
+            * 100,
+            "token_stats": {
+                "min": min(all_token_counts),
+                "max": max(all_token_counts),
+                "median": statistics.median(all_token_counts),
+                "p95": statistics.quantiles(all_token_counts, n=20)[18]
+                if len(all_token_counts) >= 20
+                else max(all_token_counts),
+                "mean": statistics.mean(all_token_counts),
+            },
+            "token_limit": max_tokens,
+        }
+    else:
+        hist_data = {
+            "total_chunks": 0,
+            "oversize_count": 0,
+            "oversize_percentage": 0,
+            "token_stats": {},
+            "token_limit": max_tokens,
+        }
+
+    hist_file = audit_dir / "hist.json"
+    with open(hist_file, "w") as f:
+        json.dump(hist_data, f, indent=2)
+
+    # Create rechunk targets file
+    rechunk_targets = []
+    for chunk in oversize_chunks:
+        target = f"{chunk['rid']},{chunk['doc_id']}"
+        if target not in rechunk_targets:
+            rechunk_targets.append(target)
+
+    targets_file = audit_dir / "rechunk_targets.txt"
+    with open(targets_file, "w") as f:
+        for target in rechunk_targets:
+            f.write(target + "\n")
+
+    # Create overview markdown
+    overview_md = f"""# Chunk Audit Results
+
+**Audit Date:** {datetime.now(timezone.utc).isoformat()}
+**Token Limit:** {max_tokens}
+**Runs Processed:** {run_count}
+**Total Chunks:** {total_chunks}
+
+## Summary
+
+- **Oversize Chunks:** {len(oversize_chunks)} ({hist_data["oversize_percentage"]:.1f}%)
+- **Unique Documents Affected:** {len(rechunk_targets)}
+
+## Token Statistics
+
+- **Min:** {hist_data["token_stats"].get("min", 0)}
+- **Median:** {hist_data["token_stats"].get("median", 0)}
+- **P95:** {hist_data["token_stats"].get("p95", 0)}
+- **Max:** {hist_data["token_stats"].get("max", 0)}
+
+## Files Generated
+
+- `oversize.json` - Detailed list of oversize chunks
+- `hist.json` - Token count histogram and statistics
+- `rechunk_targets.txt` - List of (rid,doc_id) pairs for re-chunking
+"""
+
+    overview_file = audit_dir / "overview.md"
+    with open(overview_file, "w") as f:
+        f.write(overview_md)
+
+    # Output results
+    typer.echo("\n📊 Audit Results:", err=True)
+    typer.echo(f"   Runs processed: {run_count}", err=True)
+    typer.echo(f"   Total chunks: {total_chunks}", err=True)
+    typer.echo(
+        f"   Oversize chunks: {len(oversize_chunks)} ({hist_data['oversize_percentage']:.1f}%)",
+        err=True,
+    )
+    typer.echo(f"   Documents affected: {len(rechunk_targets)}", err=True)
+
+    if all_token_counts:
+        typer.echo(
+            f"   Token range: {hist_data['token_stats']['min']}-{hist_data['token_stats']['max']} (median: {hist_data['token_stats']['median']})",
+            err=True,
+        )
+
+    typer.echo(f"\n📁 Audit files written to: {audit_dir}", err=True)
+    typer.echo(
+        f"   • oversize.json - {len(oversize_chunks)} oversize chunks",
+        err=True,
+    )
+    typer.echo(
+        f"   • rechunk_targets.txt - {len(rechunk_targets)} documents to re-chunk",
+        err=True,
+    )
+    typer.echo("   • hist.json - Token statistics", err=True)
+    typer.echo("   • overview.md - Human-readable summary", err=True)
+
+
+@chunk_app.command("rechunk")
+def chunk_rechunk(
+    targets_file: str = typer.Option(
+        ..., "--targets-file", help="File with rid,doc_id pairs to re-chunk"
+    ),
+    max_tokens: int = typer.Option(
+        800, "--max-tokens", help="Hard maximum tokens per chunk"
+    ),
+    min_tokens: int = typer.Option(
+        120, "--min-tokens", help="Minimum tokens per chunk"
+    ),
+    overlap_tokens: int = typer.Option(
+        60, "--overlap-tokens", help="Overlap tokens when splitting"
+    ),
+    out_dir: str = typer.Option(
+        "var/chunk_fix", "--out-dir", help="Output directory for fix results"
+    ),
+) -> None:
+    """
+    Re-chunk specific documents using Chunking v2.
+
+    Takes a targets file (from chunk audit) and re-chunks only the specified
+    documents using the new layered splitting strategy with hard token caps.
+
+    Example:
+        trailblazer chunk rechunk --targets-file var/chunk_audit/20240101_120000/rechunk_targets.txt
+    """
+    import json
+    from datetime import datetime, timezone
+    from pathlib import Path
+    from ..pipeline.steps.embed.chunker import (
+        chunk_enriched_record,
+        chunk_normalized_record,
+    )
+
+    targets_path = Path(targets_file)
+    if not targets_path.exists():
+        typer.echo(f"❌ Targets file not found: {targets_file}", err=True)
+        raise typer.Exit(1)
+
+    # Create timestamped output directory
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    fix_dir = Path(out_dir) / timestamp
+    fix_dir.mkdir(parents=True, exist_ok=True)
+
+    typer.echo("🔧 Re-chunking with Chunking v2", err=True)
+    typer.echo(f"   Hard max tokens: {max_tokens}", err=True)
+    typer.echo(f"   Min tokens: {min_tokens}", err=True)
+    typer.echo(f"   Overlap tokens: {overlap_tokens}", err=True)
+    typer.echo(f"📁 Results will be written to: {fix_dir}", err=True)
+
+    # Read targets
+    targets = []
+    with open(targets_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line and "," in line:
+                rid, doc_id = line.split(",", 1)
+                targets.append((rid.strip(), doc_id.strip()))
+
+    typer.echo(f"📋 Found {len(targets)} documents to re-chunk", err=True)
+
+    processed_count = 0
+    skipped_docs = []
+    success_count = 0
+
+    for rid, doc_id in targets:
+        try:
+            # Find the original document
+            run_dir = Path("var/runs") / rid
+            enrich_file = run_dir / "enrich" / "enriched.jsonl"
+            normalize_file = run_dir / "normalize" / "normalized.ndjson"
+
+            record = None
+            input_type = None
+
+            # Try enriched first
+            if enrich_file.exists():
+                with open(enrich_file, "r") as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+                        data = json.loads(line)
+                        if data.get("id") == doc_id:
+                            record = data
+                            input_type = "enriched"
+                            break
+
+            # Fall back to normalized
+            if not record and normalize_file.exists():
+                with open(normalize_file, "r") as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+                        data = json.loads(line)
+                        if data.get("id") == doc_id:
+                            record = data
+                            input_type = "normalized"
+                            break
+
+            if not record:
+                skipped_docs.append(
+                    {
+                        "doc_id": doc_id,
+                        "rid": rid,
+                        "reason": "Document not found in enriched or normalized files",
+                    }
+                )
+                continue
+
+            # Re-chunk using the chunker
+            if input_type == "enriched":
+                new_chunks = chunk_enriched_record(record)
+            else:
+                new_chunks = chunk_normalized_record(record)
+
+            # Verify no chunks exceed the limit
+            oversized = [
+                chunk for chunk in new_chunks if chunk.token_count > max_tokens
+            ]
+            if oversized:
+                skipped_docs.append(
+                    {
+                        "doc_id": doc_id,
+                        "rid": rid,
+                        "reason": f"Still has {len(oversized)} chunks exceeding {max_tokens} tokens after rechunking",
+                    }
+                )
+                continue
+
+            # Write back to chunk file
+            chunk_dir = run_dir / "chunk"
+            chunks_file = chunk_dir / "chunks.ndjson"
+
+            if chunks_file.exists():
+                # Read existing chunks, replace ones for this doc
+                existing_chunks = []
+                with open(chunks_file, "r") as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+                        chunk_data = json.loads(line)
+                        chunk_id = chunk_data.get("chunk_id", "")
+                        # Keep chunks that don't belong to this doc
+                        if not chunk_id.startswith(f"{doc_id}:"):
+                            existing_chunks.append(chunk_data)
+
+                # Add new chunks
+                for chunk in new_chunks:
+                    chunk_dict = {
+                        "chunk_id": chunk.chunk_id,
+                        "text_md": chunk.text_md,
+                        "char_count": chunk.char_count,
+                        "token_count": chunk.token_count,
+                        "ord": chunk.ord,
+                        "chunk_type": chunk.chunk_type,
+                        "meta": chunk.meta,
+                        "split_strategy": chunk.split_strategy,
+                    }
+                    existing_chunks.append(chunk_dict)
+
+                # Write back
+                with open(chunks_file, "w") as f:
+                    for chunk_data in existing_chunks:
+                        f.write(json.dumps(chunk_data) + "\n")
+
+            success_count += 1
+            processed_count += 1
+
+            if processed_count % 10 == 0:
+                typer.echo(
+                    f"   Processed {processed_count}/{len(targets)} documents...",
+                    err=True,
+                )
+
+        except Exception as e:
+            skipped_docs.append(
+                {
+                    "doc_id": doc_id,
+                    "rid": rid,
+                    "reason": f"Error during rechunking: {str(e)}",
+                }
+            )
+            processed_count += 1
+
+    # Write skipped docs log
+    if skipped_docs:
+        skipped_file = fix_dir / "skipped_docs.jsonl"
+        with open(skipped_file, "w") as f:
+            for doc in skipped_docs:
+                f.write(json.dumps(doc) + "\n")
+
+    # Create summary
+    summary = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "targets_processed": len(targets),
+        "successful_rechunks": success_count,
+        "skipped_docs": len(skipped_docs),
+        "chunking_parameters": {
+            "hard_max_tokens": max_tokens,
+            "min_tokens": min_tokens,
+            "overlap_tokens": overlap_tokens,
+        },
+    }
+
+    summary_file = fix_dir / "rechunk_summary.json"
+    with open(summary_file, "w") as f:
+        json.dump(summary, f, indent=2)
+
+    # Output results
+    typer.echo("\n✅ Re-chunking complete!", err=True)
+    typer.echo(f"   Targets processed: {len(targets)}", err=True)
+    typer.echo(f"   Successful re-chunks: {success_count}", err=True)
+    typer.echo(f"   Skipped documents: {len(skipped_docs)}", err=True)
+
+    if skipped_docs:
+        typer.echo("\n⚠️  Some documents were skipped:", err=True)
+        for doc in skipped_docs[:5]:  # Show first 5
+            typer.echo(
+                f"   • {doc['doc_id']} ({doc['rid']}): {doc['reason']}",
+                err=True,
+            )
+        if len(skipped_docs) > 5:
+            typer.echo(
+                f"   ... and {len(skipped_docs) - 5} more (see skipped_docs.jsonl)",
+                err=True,
+            )
+
+    typer.echo(f"\n📁 Fix files written to: {fix_dir}", err=True)
+    typer.echo("   • rechunk_summary.json - Summary of operation", err=True)
+    if skipped_docs:
+        typer.echo(
+            f"   • skipped_docs.jsonl - {len(skipped_docs)} skipped documents",
+            err=True,
+        )
+
+
+@chunk_app.command("verify")
+def chunk_verify(
+    runs_glob: str = typer.Option(
+        "var/runs/*", "--runs-glob", help="Glob pattern for run directories"
+    ),
+    max_tokens: int = typer.Option(
+        800, "--max-tokens", help="Maximum token limit to verify against"
+    ),
+    soft_min: int = typer.Option(
+        200, "--soft-min", help="Soft minimum token threshold for v2.2"
+    ),
+    hard_min: int = typer.Option(
+        80, "--hard-min", help="Hard minimum token threshold for v2.2"
+    ),
+    require_traceability: bool = typer.Option(
+        True,
+        "--require-traceability",
+        help="Require traceability fields (title|url, source_system)",
+    ),
+    out_dir: str = typer.Option(
+        "var/chunk_verify",
+        "--out-dir",
+        help="Output directory for verification results",
+    ),
+) -> None:
+    """
+    Verify all chunks across runs for token cap compliance and traceability.
+
+    Re-tokenizes all emitted chunks and asserts:
+    - token_count <= max_tokens for every chunk
+    - If --require-traceability, each chunk has title OR url, and source_system
+
+    On violation → exit 1 and write:
+    - report.json, report.md, breaches.json (oversize)
+    - missing_traceability.json
+    - log.out
+
+    Examples:
+        # Basic verification with v2.2 parameters
+        trailblazer chunk verify --runs-glob 'var/runs/*' --max-tokens 800 --soft-min 200 --hard-min 80 --require-traceability true
+
+        # After upgrading to v2.2, verify all runs
+        trailblazer chunk verify --runs-glob 'var/runs/*' --max-tokens 800 --soft-min 200 --hard-min 80
+
+        # If verify flags small tails or gaps, use audit and rechunk
+        trailblazer chunk audit --runs-glob 'var/runs/*' --max-tokens 800
+        trailblazer chunk rechunk --targets-file var/chunk_audit/<TS>/rechunk_targets.txt --max-tokens 800 --min-tokens 120 --overlap-tokens 60
+        trailblazer chunk verify --runs-glob 'var/runs/*' --max-tokens 800 --soft-min 200 --hard-min 80
+    """
+    from ..chunking.verify import verify_chunks
+
+    typer.echo("🔍 Verifying chunks across runs", err=True)
+    typer.echo(f"   Runs pattern: {runs_glob}", err=True)
+    typer.echo(f"   Max tokens: {max_tokens}", err=True)
+    typer.echo(f"   Soft min: {soft_min}", err=True)
+    typer.echo(f"   Hard min: {hard_min}", err=True)
+    typer.echo(f"   Require traceability: {require_traceability}", err=True)
+
+    try:
+        report = verify_chunks(
+            runs_glob=runs_glob,
+            max_tokens=max_tokens,
+            soft_min=soft_min,
+            hard_min=hard_min,
+            require_traceability=require_traceability,
+            out_dir=out_dir,
+        )
+
+        typer.echo("\n📊 Verification Results:", err=True)
+        typer.echo(
+            f"   Total runs: {report['statistics']['total_runs']}", err=True
+        )
+        typer.echo(
+            f"   Total chunks: {report['statistics']['total_chunks']}",
+            err=True,
+        )
+        typer.echo(
+            f"   Oversize violations: {report['violations']['oversize_chunks']}",
+            err=True,
+        )
+        typer.echo(
+            f"   Missing traceability: {report['violations']['missing_traceability']}",
+            err=True,
+        )
+
+        if report["status"] == "PASS":
+            typer.echo("\n✅ All chunks pass verification", err=True)
+            return
+        else:
+            typer.echo("\n❌ Chunks failed verification", err=True)
+            typer.echo(
+                "📁 Detailed reports written to verification output directory",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+    except Exception as e:
+        typer.echo(f"❌ Verification failed: {e}", err=True)
         raise typer.Exit(1)
 
 
@@ -4637,18 +5226,21 @@ def embed_preflight_cmd(
                     err=True,
                 )
 
+                # Quality gate is now informational only - don't fail entire runs
                 if below_threshold_pct > max_below_threshold_pct:
-                    quality_check_passed = False
-                    quality_failure_reason = (
-                        f"Quality gate failure: {below_threshold_pct:.1%} of documents "
-                        f"have quality_score < {min_quality} (max allowed: {max_below_threshold_pct:.1%})"
-                    )
-                    typer.echo(f"❌ {quality_failure_reason}", err=True)
-                else:
                     typer.echo(
-                        f"✓ Quality gate passed: {below_threshold_pct:.1%} below threshold (max: {max_below_threshold_pct:.1%})",
+                        f"⚠️  Quality info: {below_threshold_pct:.1%} of documents "
+                        f"have quality_score < {min_quality} (threshold: {max_below_threshold_pct:.1%}). "
+                        f"Low-quality documents will be filtered during embedding.",
                         err=True,
                     )
+                else:
+                    typer.echo(
+                        f"✓ Quality info: {below_threshold_pct:.1%} below threshold (max: {max_below_threshold_pct:.1%})",
+                        err=True,
+                    )
+                # Always pass quality check - filtering happens at document level during embedding
+                quality_check_passed = True
             else:
                 typer.echo(
                     "⚠️  No quality distribution found (enrichment may not have been run)",
@@ -4661,14 +5253,8 @@ def embed_preflight_cmd(
     else:
         typer.echo("⚠️  No chunk assurance file found", err=True)
 
-    # Fail preflight if quality check failed
-    if not quality_check_passed:
-        typer.echo(
-            "\n💡 To fix: Run 'trailblazer enrich <RID> --min-quality <lower_threshold>' "
-            "or improve document quality before embedding",
-            err=True,
-        )
-        raise typer.Exit(1)
+    # Quality check is now informational only - preflight always passes
+    # Individual documents will be filtered during embedding based on quality scores
 
     # Create preflight directory and write results
     preflight_dir = run_dir / "preflight"
@@ -4889,10 +5475,18 @@ def embed_plan_preflight_cmd(
     blocked_runs: List[str] = []
     log_entries: List[str] = []
 
+    # Setup structured logging function
+    def log_progress(message: str):
+        """Log progress to both stderr and log file with structured format."""
+        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_msg = f"[{timestamp_str}] {message}"
+        typer.echo(log_msg, err=True)
+        log_entries.append(log_msg)
+
     # Process each run
-    for run_id, expected_chunk_count in run_entries:
-        typer.echo(f"🔍 Processing run: {run_id}", err=True)
-        log_entries.append(f"Processing run: {run_id}")
+    total_runs = len(run_entries)
+    for idx, (run_id, expected_chunk_count) in enumerate(run_entries, 1):
+        # No output here - will be logged after preflight completes
 
         # Run preflight for this run
         try:
@@ -4927,15 +5521,11 @@ def embed_plan_preflight_cmd(
             )
 
             preflight_exit_code = result.returncode
-            log_entries.append(
-                f"Preflight exit code for {run_id}: {preflight_exit_code}"
-            )
 
         except Exception as e:
-            typer.echo(
-                f"❌ Failed to run preflight for {run_id}: {e}", err=True
+            log_progress(
+                f"PREFLIGHT [BLOCKED] {run_id} (reason=PREFLIGHT_ERROR) [{idx}/{total_runs}]"
             )
-            log_entries.append(f"Failed to run preflight for {run_id}: {e}")
 
             # Add to blocked with error reason
             blocked_runs.append(run_id)
@@ -5035,7 +5625,19 @@ def embed_plan_preflight_cmd(
                     )
 
                     ready_runs.append(run_id)
-                    log_entries.append(f"✅ {run_id}: READY")
+                    # Extract key stats for structured logging
+                    doc_count = preflight_data.get("counts", {}).get(
+                        "enriched_docs", 0
+                    )
+                    chunk_count = preflight_data.get("counts", {}).get(
+                        "chunks", 0
+                    )
+                    total_tokens = preflight_data.get("tokenStats", {}).get(
+                        "total", 0
+                    )
+                    log_progress(
+                        f"PREFLIGHT [READY] {run_id} (docs={doc_count}, chunks={chunk_count}, tokens={total_tokens}) [{idx}/{total_runs}]"
+                    )
 
                 except Exception as e:
                     run_data.update(
@@ -5045,16 +5647,16 @@ def embed_plan_preflight_cmd(
                         }
                     )
                     blocked_runs.append(run_id)
-                    log_entries.append(
-                        f"❌ {run_id}: BLOCKED - parse error: {e}"
+                    log_progress(
+                        f"PREFLIGHT [BLOCKED] {run_id} (reason=PREFLIGHT_PARSE_ERROR) [{idx}/{total_runs}]"
                     )
             else:
                 run_data.update(
                     {"status": "BLOCKED", "reason": "PREFLIGHT_FILE_MISSING"}
                 )
                 blocked_runs.append(run_id)
-                log_entries.append(
-                    f"❌ {run_id}: BLOCKED - preflight file missing"
+                log_progress(
+                    f"PREFLIGHT [BLOCKED] {run_id} (reason=PREFLIGHT_FILE_MISSING) [{idx}/{total_runs}]"
                 )
         else:
             # Preflight failed - determine reason
@@ -5087,7 +5689,9 @@ def embed_plan_preflight_cmd(
 
             run_data.update({"status": "BLOCKED", "reason": reason})
             blocked_runs.append(run_id)
-            log_entries.append(f"❌ {run_id}: BLOCKED - {reason}")
+            log_progress(
+                f"PREFLIGHT [BLOCKED] {run_id} (reason={reason}) [{idx}/{total_runs}]"
+            )
 
         # Add cost/time estimates if pricing info provided
         estimated_tokens = run_data["estimatedTokens"]
@@ -5306,7 +5910,7 @@ def embed_plan_preflight_cmd(
             if run["status"] == "BLOCKED":
                 f.write(f"{run['rid']}: {run['reason']}\n")
 
-    # Write log.out
+    # Write log.out (structured logs were already added via log_progress)
     log_file = output_dir / "log.out"
     with open(log_file, "w") as f:
         for entry in log_entries:

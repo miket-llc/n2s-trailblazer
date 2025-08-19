@@ -1,7 +1,10 @@
+"""
+Main chunking engine with layered splitting strategy and hard token caps.
+"""
+
 from __future__ import annotations
 
 import re
-from enum import Enum
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
 try:
@@ -10,25 +13,29 @@ except ImportError:
     tiktoken = None  # type: ignore
 
 try:
-    from ....obs.events import emit_event  # type: ignore
+    from ..obs.events import emit_event  # type: ignore
 except ImportError:
     # Fallback for testing - create a no-op function
     def emit_event(*args, **kwargs):  # type: ignore
         pass
 
 
-class ChunkType(Enum):
-    """Types of content chunks for specialized handling."""
-
-    TEXT = "text"
-    CODE = "code"
-    TABLE = "table"
-    MACRO = "macro"
-    DIGEST = "digest"
+from .boundaries import (
+    split_by_headings,
+    split_by_paragraphs,
+    split_by_sentences,
+    split_code_fence_by_lines,
+    split_table_by_rows,
+    split_by_token_window,
+    detect_content_type,
+    normalize_text,
+    count_tokens,
+    ChunkType,
+)
 
 
 class Chunk(NamedTuple):
-    """A text chunk with metadata."""
+    """A text chunk with complete traceability metadata."""
 
     chunk_id: str
     text_md: str
@@ -37,261 +44,22 @@ class Chunk(NamedTuple):
     ord: int
     chunk_type: str = ChunkType.TEXT.value
     meta: Optional[Dict] = None
-    split_strategy: str = "paragraph"  # New field to track how chunk was split
+    split_strategy: str = "paragraph"
 
+    # Character spans for coverage tracking (v2.2)
+    char_start: int = 0
+    char_end: int = 0
+    token_start: int = 0
+    token_end: int = 0
 
-def normalize_text(text: str) -> str:
-    """Normalize text for consistent chunking."""
-    # Normalize line endings CRLF -> LF
-    text = re.sub(r"\r\n?", "\n", text)
-    # Remove any triple+ blank lines
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
-def split_on_paragraphs_and_headings(text: str) -> List[str]:
-    """Split text into paragraphs and headings while preserving code blocks."""
-    # Normalize text first
-    text = normalize_text(text)
-
-    # Pattern to match fenced code blocks (``` or ~~~ with optional language)
-    code_block_pattern = r"^(```|~~~).*?^\1"
-
-    # Find all code blocks to preserve them
-    code_blocks: List[str] = []
-    code_placeholder = "___CODE_BLOCK_{}___"
-
-    # Replace code blocks with placeholders
-    def replace_code_block(match):
-        idx = len(code_blocks)
-        code_blocks.append(match.group(0))
-        return code_placeholder.format(idx)
-
-    text_with_placeholders = re.sub(
-        code_block_pattern,
-        replace_code_block,
-        text,
-        flags=re.MULTILINE | re.DOTALL,
-    )
-
-    # Split on double newlines (paragraph breaks) and headings
-    parts = []
-    current_part: List[str] = []
-
-    for line in text_with_placeholders.split("\n"):
-        # Check if line is a heading (starts with #)
-        if re.match(r"^#+\s", line):
-            # Finish current part if it has content
-            if current_part:
-                parts.append("\n".join(current_part).strip())
-                current_part = []
-            # Start new part with heading
-            current_part = [line]
-        elif line.strip() == "":
-            # Empty line - check if we should break here
-            if current_part:
-                current_part.append(line)
-                # If we have multiple empty lines, break the part
-                if len(current_part) >= 2 and current_part[-2].strip() == "":
-                    parts.append("\n".join(current_part[:-1]).strip())
-                    current_part = []
-        else:
-            current_part.append(line)
-
-    # Add final part
-    if current_part:
-        parts.append("\n".join(current_part).strip())
-
-    # Restore code blocks in all parts
-    restored_parts = []
-    for part in parts:
-        if part:
-            for i, code_block in enumerate(code_blocks):
-                part = part.replace(code_placeholder.format(i), code_block)
-            restored_parts.append(part)
-
-    return [p for p in restored_parts if p.strip()]
-
-
-def count_tokens(text: str, model: str = "text-embedding-3-small") -> int:
-    """Count tokens using tiktoken for accurate OpenAI token counting."""
-    if tiktoken is None:
-        # Fallback to rough estimation: 4 chars per token
-        return len(text) // 4  # type: ignore[unreachable]
-
-    try:
-        encoding = tiktoken.encoding_for_model(model)  # type: ignore[attr-defined]
-        return len(encoding.encode(text))
-    except Exception:
-        # Fallback if model not found
-        encoding = tiktoken.get_encoding("cl100k_base")  # type: ignore[attr-defined]
-        return len(encoding.encode(text))
-
-
-def split_by_headings(text: str) -> List[Tuple[str, str]]:
-    """Split text by headings, returning (content, strategy) tuples."""
-    lines = text.split("\n")
-    chunks = []
-    current_chunk = []
-
-    for line in lines:
-        if re.match(r"^#+\s", line) and current_chunk:
-            # Found a heading, finish current chunk
-            chunks.append(("\n".join(current_chunk).strip(), "heading"))
-            current_chunk = [line]
-        else:
-            current_chunk.append(line)
-
-    # Add final chunk
-    if current_chunk:
-        chunks.append(("\n".join(current_chunk).strip(), "heading"))
-
-    return [(chunk, strategy) for chunk, strategy in chunks if chunk.strip()]
-
-
-def split_by_paragraphs(text: str) -> List[Tuple[str, str]]:
-    """Split text by paragraph boundaries."""
-    # Split on double newlines (paragraph breaks)
-    paragraphs = re.split(r"\n\s*\n", text)
-    return [(p.strip(), "paragraph") for p in paragraphs if p.strip()]
-
-
-def split_by_sentences(text: str) -> List[Tuple[str, str]]:
-    """Split text by sentence boundaries using simple heuristics."""
-    # Simple sentence splitting on period, question mark, exclamation
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    return [(s.strip(), "sentence") for s in sentences if s.strip()]
-
-
-def split_code_fence_by_lines(
-    text: str, hard_max_tokens: int, overlap_tokens: int, model: str
-) -> List[Tuple[str, str]]:
-    """Split code fences by line blocks, never cutting mid-line."""
-    # Extract language and code content
-    match = re.match(r"^```(\w*)\n(.*?)\n```$", text, re.DOTALL)
-    if not match:
-        return [(text, "code-fence-lines")]
-
-    language = match.group(1)
-    code_content = match.group(2)
-    code_lines = code_content.split("\n")
-
-    chunks = []
-    current_lines = []
-
-    for line in code_lines:
-        # Test if adding this line would exceed the cap
-        test_chunk = (
-            f"```{language}\n" + "\n".join(current_lines + [line]) + "\n```"
-        )
-        if count_tokens(test_chunk, model) > hard_max_tokens and current_lines:
-            # Emit current chunk
-            chunk_text = (
-                f"```{language}\n" + "\n".join(current_lines) + "\n```"
-            )
-            chunks.append((chunk_text, "code-fence-lines"))
-
-            # Start new chunk with overlap
-            if overlap_tokens > 0 and len(current_lines) > 1:
-                # Estimate lines needed for overlap
-                overlap_lines = min(
-                    len(current_lines), max(1, overlap_tokens // 20)
-                )  # ~20 tokens per line estimate
-                current_lines = current_lines[-overlap_lines:] + [line]
-            else:
-                current_lines = [line]
-        else:
-            current_lines.append(line)
-
-    # Add final chunk
-    if current_lines:
-        chunk_text = f"```{language}\n" + "\n".join(current_lines) + "\n```"
-        chunks.append((chunk_text, "code-fence-lines"))
-
-    return chunks
-
-
-def split_table_by_rows(
-    text: str, hard_max_tokens: int, overlap_tokens: int, model: str
-) -> List[Tuple[str, str]]:
-    """Split tables by row groups, never cutting mid-cell."""
-    lines = text.split("\n")
-    table_lines = [line for line in lines if "|" in line]
-
-    if len(table_lines) < 2:
-        return [(text, "table-rows")]
-
-    chunks = []
-    current_rows = []
-    header_rows = (
-        table_lines[:2] if len(table_lines) >= 2 else table_lines[:1]
-    )  # Header + separator
-
-    # Always include header rows
-    current_rows = header_rows[:]
-
-    for row in table_lines[len(header_rows) :]:
-        test_chunk = "\n".join(current_rows + [row])
-        if count_tokens(test_chunk, model) > hard_max_tokens and len(
-            current_rows
-        ) > len(header_rows):
-            # Emit current chunk
-            chunks.append(("\n".join(current_rows), "table-rows"))
-
-            # Start new chunk with header + overlap rows
-            overlap_row_count = min(
-                len(current_rows) - len(header_rows),
-                max(1, overlap_tokens // 30),
-            )  # ~30 tokens per row estimate
-            if overlap_row_count > 0:
-                overlap_rows = current_rows[-overlap_row_count:]
-                current_rows = header_rows + overlap_rows + [row]
-            else:
-                current_rows = header_rows + [row]
-        else:
-            current_rows.append(row)
-
-    # Add final chunk
-    if len(current_rows) > len(header_rows):
-        chunks.append(("\n".join(current_rows), "table-rows"))
-
-    return chunks if chunks else [(text, "table-rows")]
-
-
-def split_by_token_window(
-    text: str, hard_max_tokens: int, overlap_tokens: int, model: str
-) -> List[Tuple[str, str]]:
-    """Final fallback: greedy token slicing with overlap."""
-    if count_tokens(text, model) <= hard_max_tokens:
-        return [(text, "token-window")]
-
-    chunks = []
-    words = text.split()
-    current_words = []
-
-    for word in words:
-        test_text = " ".join(current_words + [word])
-        if count_tokens(test_text, model) > hard_max_tokens and current_words:
-            # Emit current chunk
-            chunk_text = " ".join(current_words)
-            chunks.append((chunk_text, "token-window"))
-
-            # Start new chunk with overlap
-            if overlap_tokens > 0 and len(current_words) > 1:
-                overlap_word_count = min(
-                    len(current_words), max(1, overlap_tokens // 2)
-                )  # ~2 tokens per word estimate
-                current_words = current_words[-overlap_word_count:] + [word]
-            else:
-                current_words = [word]
-        else:
-            current_words.append(word)
-
-    # Add final chunk
-    if current_words:
-        chunks.append((" ".join(current_words), "token-window"))
-
-    return chunks
+    # Required traceability fields per spec
+    doc_id: str = ""
+    title: str = ""
+    url: str = ""
+    source_system: str = ""
+    labels: List[str] = []
+    space: Optional[Dict] = None
+    media_refs: List[Dict] = []
 
 
 def split_with_layered_strategy(
@@ -388,6 +156,7 @@ def split_with_layered_strategy(
 
             if chunks:
                 return chunks
+
         except Exception:
             pass  # Fall through to next strategy
 
@@ -441,21 +210,48 @@ def split_with_layered_strategy(
         paragraph_chunks = split_by_paragraphs(text)
         if len(paragraph_chunks) > 1:  # Only if we actually split
             result_chunks = []
-            for chunk_text, strategy in paragraph_chunks:
-                if count_tokens(chunk_text, model) <= hard_max_tokens:
-                    result_chunks.append((chunk_text, strategy))
+            current_paragraphs: List[str] = []
+            current_text = ""
+
+            for para_text, strategy in paragraph_chunks:
+                test_text = (
+                    current_text + "\n\n" + para_text
+                    if current_text
+                    else para_text
+                )
+                if (
+                    count_tokens(test_text, model) > hard_max_tokens
+                    and current_text
+                ):
+                    # Emit current chunk
+                    result_chunks.append((current_text, "paragraph"))
+
+                    # Start new chunk with overlap
+                    if overlap_tokens > 0 and len(current_paragraphs) > 1:
+                        overlap_count = min(
+                            len(current_paragraphs),
+                            max(1, overlap_tokens // 100),
+                        )  # ~100 tokens per paragraph estimate
+                        overlap_paragraphs = current_paragraphs[
+                            -overlap_count:
+                        ]
+                        current_text = (
+                            "\n\n".join(overlap_paragraphs)
+                            + "\n\n"
+                            + para_text
+                        )
+                        current_paragraphs = overlap_paragraphs + [para_text]
+                    else:
+                        current_text = para_text
+                        current_paragraphs = [para_text]
                 else:
-                    # Recursively split oversized paragraphs
-                    sub_chunks = split_with_layered_strategy(
-                        chunk_text,
-                        hard_max_tokens,
-                        overlap_tokens,
-                        min_tokens,
-                        model,
-                        section_map=None,
-                        prefer_headings=False,
-                    )
-                    result_chunks.extend(sub_chunks)
+                    current_text = test_text
+                    current_paragraphs.append(para_text)
+
+            # Add final chunk
+            if current_text:
+                result_chunks.append((current_text, "paragraph"))
+
             return result_chunks
     except Exception:
         pass  # Fall through to next strategy
@@ -465,7 +261,7 @@ def split_with_layered_strategy(
         sentence_chunks = split_by_sentences(text)
         if len(sentence_chunks) > 1:  # Only if we actually split
             result_chunks = []
-            current_sentences = []
+            current_sentences: List[str] = []
             current_text = ""
 
             for sentence_text, strategy in sentence_chunks:
@@ -509,72 +305,6 @@ def split_with_layered_strategy(
 
     # Strategy 7: Final fallback - token window
     return split_by_token_window(text, hard_max_tokens, overlap_tokens, model)
-
-
-def detect_content_type(text: str) -> Tuple[ChunkType, Dict]:
-    """Detect content type and extract metadata."""
-    text_stripped = text.strip()
-
-    # Tables (markdown or HTML) - check before code blocks
-    table_patterns = [
-        r"\|.*\|.*\|",  # Markdown table with pipes
-        r"<table[\s\S]*?</table>",  # HTML table
-    ]
-
-    for pattern in table_patterns:
-        if re.search(pattern, text_stripped, re.IGNORECASE):
-            # Count rows/columns
-            table_rows = len(re.findall(r"\|.*\|", text_stripped))
-            return ChunkType.TABLE, {"estimated_rows": table_rows}
-
-    # Detect structured data that looks like tables (common in AWS/config data)
-    # Look for patterns like repeated column headers followed by data rows
-    lines = text_stripped.split("\n")
-    if len(lines) > 10:  # Must have enough lines to be a data table
-        # Check for repeated patterns that indicate tabular data
-        non_empty_lines = [line.strip() for line in lines if line.strip()]
-        if len(non_empty_lines) > 20:  # Lots of data rows
-            # Look for consistent field patterns (like AWS config dumps)
-            field_counts: Dict[str, int] = {}
-            for line in non_empty_lines[:50]:  # Sample first 50 lines
-                if len(line.split()) == 1 and not line.startswith(
-                    "#"
-                ):  # Single field per line
-                    field_counts[line] = field_counts.get(line, 0) + 1
-
-            # If we see repeated field names, this is likely structured data
-            repeated_fields = [
-                field for field, count in field_counts.items() if count > 2
-            ]
-            if len(repeated_fields) > 3:  # Multiple repeated field patterns
-                return ChunkType.TABLE, {
-                    "estimated_rows": len(non_empty_lines),
-                    "data_format": "structured",
-                }
-
-    # Code blocks - check after tables to avoid false positives
-    if re.search(r"^```\w*\n[\s\S]*?^```$", text_stripped, re.MULTILINE):
-        # Extract language if present
-        match = re.search(r"^```(\w+)", text_stripped, re.MULTILINE)
-        language = match.group(1) if match else "unknown"
-        return ChunkType.CODE, {"language": language}
-
-    # Confluence macros and boilerplate
-    macro_patterns = [
-        r"\{[^}]+\}",  # {macro-name}
-        r"<ac:[^>]+[/>]",  # <ac:structured-macro>
-        r"\[\w+:[^\]]+\]",  # [info:text]
-        r"<!-- .* -->",  # HTML comments
-    ]
-
-    macro_count = sum(
-        len(re.findall(pattern, text_stripped, re.IGNORECASE))
-        for pattern in macro_patterns
-    )
-    if macro_count > 3:  # Threshold for macro-heavy content
-        return ChunkType.MACRO, {"macro_count": macro_count}
-
-    return ChunkType.TEXT, {}
 
 
 def create_table_digest(text: str, max_rows: int = 5) -> str:
@@ -678,8 +408,23 @@ def _create_safe_chunk(
     max_tokens: int,
     model: str,
     split_strategy: str = "paragraph",
+    char_start: int = 0,
+    char_end: int = 0,
+    token_start: int = 0,
+    token_end: int = 0,
+    title: str = "",
+    url: str = "",
+    source_system: str = "",
+    labels: Optional[List[str]] = None,
+    space: Optional[Dict] = None,
+    media_refs: Optional[List[Dict]] = None,
 ) -> Chunk:
-    """Create a single chunk with guaranteed max_tokens compliance."""
+    """Create a single chunk with guaranteed max_tokens compliance and full traceability."""
+    if labels is None:
+        labels = []
+    if media_refs is None:
+        media_refs = []
+
     chunk_id = f"{doc_id}:{ord_num:04d}"
     chunk_type, chunk_meta = detect_content_type(chunk_text)
 
@@ -755,6 +500,17 @@ def _create_safe_chunk(
         else chunk_type,
         meta=chunk_meta,
         split_strategy=split_strategy,
+        char_start=char_start,
+        char_end=char_end,
+        token_start=token_start,
+        token_end=token_end,
+        doc_id=doc_id,
+        title=title,
+        url=url,
+        source_system=source_system,
+        labels=labels,
+        space=space,
+        media_refs=media_refs,
     )
 
     emit_event(
@@ -767,47 +523,167 @@ def _create_safe_chunk(
     return chunk
 
 
-def chunk_document(
-    doc_id: str,
-    text_md: str,
-    title: str = "",
-    hard_max_tokens: int = 800,
-    min_tokens: int = 120,
-    overlap_tokens: int = 60,
-    prefer_headings: bool = True,
-    soft_boundaries: Optional[List[int]] = None,
-    section_map: Optional[List[Dict]] = None,
-    model: str = "text-embedding-3-small",
+def apply_glue_pass(
+    chunks: List[Chunk],
+    soft_min_tokens: int,
+    hard_min_tokens: int,
+    hard_max_tokens: int,
+    orphan_heading_merge: bool,
+    small_tail_merge: bool,
+    model: str,
 ) -> List[Chunk]:
     """
-    Chunk a document using layered splitting with guaranteed hard token cap.
+    Apply glue pass to merge small chunks according to v2.2 bottom-end controls.
 
     Args:
-        doc_id: Document identifier
-        text_md: Markdown text content
-        title: Document title (prepended to first chunk)
-        hard_max_tokens: Absolute ceiling for tokens (default 800)
-        min_tokens: Minimum tokens preferred (can go down to 80 when forced)
-        overlap_tokens: Tokens to overlap when splitting (default 60)
-        prefer_headings: Whether to prefer heading-aligned splits
-        soft_boundaries: Character positions that are good split points
-        section_map: List of heading sections with positions
+        chunks: List of chunks to process
+        soft_min_tokens: Target minimum tokens after glue
+        hard_min_tokens: Absolute minimum tokens for any chunk
+        hard_max_tokens: Absolute maximum tokens (never exceed)
+        orphan_heading_merge: Whether to merge orphan headings
+        small_tail_merge: Whether to merge small tail chunks
         model: Model name for token counting
 
     Returns:
-        List of Chunk objects with guaranteed token cap compliance
+        List of chunks after glue pass
     """
-    return _chunk_document_impl(
-        doc_id=doc_id,
-        text_md=text_md,
-        title=title,
-        hard_max_tokens=hard_max_tokens,
-        min_tokens=min_tokens,
-        overlap_tokens=overlap_tokens,
-        prefer_headings=prefer_headings,
-        soft_boundaries=soft_boundaries,
-        section_map=section_map,
-        model=model,
+    if not chunks:
+        return chunks
+
+    glued_chunks: List[Chunk] = []
+    i = 0
+
+    while i < len(chunks):
+        current_chunk = chunks[i]
+        current_tokens = current_chunk.token_count
+
+        # Check if chunk needs gluing
+        needs_glue = current_tokens < soft_min_tokens
+
+        # Check for orphan headings (just a heading or ultra-short boilerplate)
+        is_orphan_heading = orphan_heading_merge and _is_orphan_heading(
+            current_chunk.text_md
+        )
+
+        if needs_glue or is_orphan_heading:
+            # Try to merge with next chunk first
+            merged_chunk = None
+            if i + 1 < len(chunks):
+                next_chunk = chunks[i + 1]
+                merged_tokens = current_tokens + next_chunk.token_count
+                if merged_tokens <= hard_max_tokens:
+                    merged_chunk = _merge_chunks(
+                        current_chunk, next_chunk, model
+                    )
+                    i += 2  # Skip both chunks
+                else:
+                    # Try merging with previous chunk
+                    if i > 0 and glued_chunks:
+                        prev_chunk = glued_chunks[-1]
+                        merged_tokens = prev_chunk.token_count + current_tokens
+                        if merged_tokens <= hard_max_tokens:
+                            # Replace the last chunk in glued_chunks with merged version
+                            glued_chunks[-1] = _merge_chunks(
+                                prev_chunk, current_chunk, model
+                            )
+                            i += 1
+                            continue
+
+                    # Can't merge, keep as is but flag if it's a small tail
+                    if (
+                        small_tail_merge
+                        and i == len(chunks) - 1
+                        and current_tokens < hard_min_tokens
+                    ):
+                        # Mark as small tail
+                        meta = (
+                            dict(current_chunk.meta)
+                            if current_chunk.meta
+                            else {}
+                        )
+                        meta["tail_small"] = True
+                        merged_chunk = current_chunk._replace(meta=meta)
+                    else:
+                        merged_chunk = current_chunk
+                    i += 1
+            else:
+                # Last chunk - try to merge with previous
+                if i > 0 and glued_chunks:
+                    prev_chunk = glued_chunks[-1]
+                    merged_tokens = prev_chunk.token_count + current_tokens
+                    if merged_tokens <= hard_max_tokens:
+                        glued_chunks[-1] = _merge_chunks(
+                            prev_chunk, current_chunk, model
+                        )
+                        i += 1
+                        continue
+
+                # Can't merge, mark as small tail if needed
+                if small_tail_merge and current_tokens < hard_min_tokens:
+                    meta = (
+                        dict(current_chunk.meta) if current_chunk.meta else {}
+                    )
+                    meta["tail_small"] = True
+                    merged_chunk = current_chunk._replace(meta=meta)
+                else:
+                    merged_chunk = current_chunk
+                i += 1
+
+            if merged_chunk:
+                glued_chunks.append(merged_chunk)
+        else:
+            # Chunk is fine as is
+            glued_chunks.append(current_chunk)
+            i += 1
+
+    return glued_chunks
+
+
+def _is_orphan_heading(text_md: str) -> bool:
+    """Check if text is just a heading or ultra-short boilerplate."""
+    text = text_md.strip()
+    if not text:
+        return True
+
+    lines = text.split("\n")
+    non_empty_lines = [line.strip() for line in lines if line.strip()]
+
+    if len(non_empty_lines) <= 1:
+        # Single line - check if it's just a heading
+        if non_empty_lines and non_empty_lines[0].startswith("#"):
+            return True
+        # Check for common boilerplate
+        if text.lower() in ["references", "see also", "notes", "todo", "tbd"]:
+            return True
+
+    return False
+
+
+def _merge_chunks(chunk1: Chunk, chunk2: Chunk, model: str) -> Chunk:
+    """Merge two chunks into one, updating all metadata appropriately."""
+    # Combine text
+    combined_text = chunk1.text_md + "\n\n" + chunk2.text_md
+    combined_tokens = count_tokens(combined_text, model)
+
+    # Update split strategy
+    new_strategy = chunk1.split_strategy + "+glue"
+
+    # Combine metadata
+    meta1 = chunk1.meta or {}
+    meta2 = chunk2.meta or {}
+    combined_meta = dict(meta1)
+    combined_meta.update(meta2)
+    combined_meta["glued_from"] = [chunk1.chunk_id, chunk2.chunk_id]
+
+    # Create merged chunk (use chunk1 as base)
+    return chunk1._replace(
+        text_md=combined_text,
+        char_count=len(combined_text),
+        token_count=combined_tokens,
+        split_strategy=new_strategy,
+        char_end=chunk2.char_end,  # Extend to end of second chunk
+        token_end=chunk2.token_end,
+        meta=combined_meta,
     )
 
 
@@ -846,45 +722,58 @@ def inject_media_placeholders(text_md: str, attachments: List[Dict]) -> str:
     return text_md
 
 
-def chunk_normalized_record(record: Dict) -> List[Chunk]:
-    """
-    Chunk a normalized record from the normalize phase.
-
-    Args:
-        record: Normalized record with id, title, text_md fields
-
-    Returns:
-        List of Chunk objects with guaranteed token cap compliance
-    """
-    doc_id = record.get("id", "")
-    title = record.get("title", "")
-    text_md = record.get("text_md", "")
-    attachments = record.get("attachments", [])
-
-    if not doc_id:
-        raise ValueError("Record missing required 'id' field")
-
-    # Inject media placeholders to make media chunk-addressable
-    text_with_media = inject_media_placeholders(text_md, attachments)
-
-    return chunk_document(doc_id, text_with_media, title)
-
-
-def _chunk_document_impl(
+def chunk_document(
     doc_id: str,
     text_md: str,
     title: str = "",
+    url: str = "",
+    source_system: str = "",
+    labels: Optional[List[str]] = None,
+    space: Optional[Dict] = None,
+    media_refs: Optional[List[Dict]] = None,
     hard_max_tokens: int = 800,
     min_tokens: int = 120,
     overlap_tokens: int = 60,
+    soft_min_tokens: int = 200,
+    hard_min_tokens: int = 80,
+    orphan_heading_merge: bool = True,
+    small_tail_merge: bool = True,
     prefer_headings: bool = True,
     soft_boundaries: Optional[List[int]] = None,
     section_map: Optional[List[Dict]] = None,
     model: str = "text-embedding-3-small",
 ) -> List[Chunk]:
     """
-    Internal implementation of document chunking with guaranteed hard token cap.
+    Chunk a document using layered splitting with guaranteed hard token cap and full traceability.
+
+    Args:
+        doc_id: Document identifier
+        text_md: Markdown text content
+        title: Document title (prepended to first chunk)
+        url: Document URL for traceability
+        source_system: Source system (confluence, dita, etc.) for traceability
+        labels: Document labels for traceability
+        space: Confluence space info for traceability
+        media_refs: Media references for traceability
+        hard_max_tokens: Absolute ceiling for tokens (default 800)
+        min_tokens: Minimum tokens preferred (can go down to 80 when forced)
+        overlap_tokens: Tokens to overlap when splitting (default 60)
+        soft_min_tokens: Target minimum tokens after glue pass (default 200)
+        hard_min_tokens: Absolute minimum tokens for any chunk (default 80)
+        orphan_heading_merge: Whether to merge orphan headings (default True)
+        small_tail_merge: Whether to merge small tail chunks (default True)
+        prefer_headings: Whether to prefer heading-aligned splits
+        soft_boundaries: Character positions that are good split points
+        section_map: List of heading sections with positions
+        model: Model name for token counting
+
+    Returns:
+        List of Chunk objects with guaranteed token cap compliance and full traceability
     """
+    if labels is None:
+        labels = []
+    if media_refs is None:
+        media_refs = []
     if soft_boundaries is None:
         soft_boundaries = []
     if section_map is None:
@@ -946,55 +835,31 @@ def _chunk_document_impl(
             )
 
         chunk = _create_safe_chunk(
-            doc_id, chunk_text, ord_num, hard_max_tokens, model, split_strategy
+            doc_id=doc_id,
+            chunk_text=chunk_text,
+            ord_num=ord_num,
+            max_tokens=hard_max_tokens,
+            model=model,
+            split_strategy=split_strategy,
+            title=title,
+            url=url,
+            source_system=source_system,
+            labels=labels,
+            space=space,
+            media_refs=media_refs,
         )
         chunks.append(chunk)
 
+    # Apply glue pass for v2.2 bottom-end controls
+    if soft_min_tokens > 0:
+        chunks = apply_glue_pass(
+            chunks,
+            soft_min_tokens,
+            hard_min_tokens,
+            hard_max_tokens,
+            orphan_heading_merge,
+            small_tail_merge,
+            model,
+        )
+
     return chunks
-
-
-def chunk_enriched_record(record: Dict) -> List[Chunk]:
-    """
-    Chunk an enriched record from the enrich phase.
-
-    This version respects chunk_hints and section_map for heading-aligned splits.
-
-    Args:
-        record: Enriched record with id, title, text_md fields plus enrichment data
-
-    Returns:
-        List of Chunk objects with guaranteed token cap compliance
-    """
-    doc_id = record.get("id", "")
-    title = record.get("title", "")
-    text_md = record.get("text_md", "")
-    attachments = record.get("attachments", [])
-
-    # Get enrichment data
-    chunk_hints = record.get("chunk_hints", {})
-    section_map = record.get("section_map", [])
-
-    if not doc_id:
-        raise ValueError("Record missing required 'id' field")
-
-    # Extract chunk parameters from hints
-    hard_max_tokens = chunk_hints.get("maxTokens", 800)
-    min_tokens = chunk_hints.get("minTokens", 120)
-    overlap_tokens = chunk_hints.get("overlapTokens", 60)
-    prefer_headings = chunk_hints.get("preferHeadings", True)
-    soft_boundaries = chunk_hints.get("softBoundaries", [])
-
-    # Inject media placeholders to make media chunk-addressable
-    text_with_media = inject_media_placeholders(text_md, attachments)
-
-    return chunk_document(
-        doc_id=doc_id,
-        text_md=text_with_media,
-        title=title,
-        hard_max_tokens=hard_max_tokens,
-        min_tokens=min_tokens,
-        overlap_tokens=overlap_tokens,
-        prefer_headings=prefer_headings,
-        soft_boundaries=soft_boundaries,
-        section_map=section_map,
-    )

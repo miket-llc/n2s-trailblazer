@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     ENRICH_MAX_DOCS: Optional[int] = None  # Limit for testing
     ENRICH_BUDGET: Optional[str] = None  # Budget limit for LLM usage
 
+    # Chunking configuration (v2.2 bottom-end controls)
+    CHUNK_SOFT_MIN_TOKENS: int = 200  # Target minimum after glue
+    CHUNK_HARD_MIN_TOKENS: int = 80  # Absolute minimum for any chunk
+    CHUNK_HARD_MAX_TOKENS: int = 800  # Absolute maximum (already present)
+    CHUNK_OVERLAP_TOKENS: int = 60  # Overlap tokens when splitting
+    CHUNK_ORPHAN_HEADING_MERGE: bool = True  # Merge orphan headings
+    CHUNK_SMALL_TAIL_MERGE: bool = True  # Merge small tail chunks
+
     # Workspace paths
     TRAILBLAZER_DATA_DIR: str = "data"  # Human-managed inputs
     TRAILBLAZER_WORKDIR: str = "var"  # Tool-managed artifacts

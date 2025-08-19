@@ -183,10 +183,19 @@ trailblazer ask "How do I configure SSO?"
 **Key Features:**
 
 - **Idempotent loading** via content SHA256 hashing - skips unchanged documents
+- **Smart chunking v2.2** with bottom-end glue, coverage tracking, and verification
 - **Media-aware chunking** with ![media: filename] placeholders for attachments
 - **Pluggable providers**: dummy (deterministic), OpenAI, SentenceTransformers
 - **Postgres-first**: Required for production, SQLite only for tests
 - **Selective re-embed** with `--changed-only` (via enrichment fingerprints)
+
+**Chunking v2.2 Features:**
+
+- **Bottom-end glue pass**: Merges small chunks for better semantic coherence
+- **Coverage verification**: Ensures ≥99.5% document coverage with gap detection
+- **Quality thresholds**: Configurable soft/hard minimums with exception tracking
+- **Traceability enforcement**: Validates required metadata fields
+- **Comprehensive verification**: Multi-dimensional quality checks across corpus
 - **Assurance reports**: JSON + Markdown with statistics and error summaries
 
 ### Selective Re-embed with --changed-only (via enrichment fingerprints)

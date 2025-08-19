@@ -11,31 +11,61 @@ def test_db_url():
 
 
 @pytest.fixture(autouse=True)
-def setup_test_db(test_db_url, monkeypatch):
-    """Set up test database URL for all tests."""
-    from trailblazer.db import engine as engine_module
-    from trailblazer.core import config as config_module
+def setup_test_db(test_db_url, monkeypatch, request):
+    """Set up test database URL for all tests that need it."""
+    import os
 
-    # Set the environment variable first
-    monkeypatch.setenv("TRAILBLAZER_DB_URL", test_db_url)
+    # Skip database setup for tests that don't need it
+    if hasattr(request.node, "get_closest_marker"):
+        if request.node.get_closest_marker("no_db"):
+            yield
+            return
 
-    # Reset global settings and engine to pick up new environment variable
-    config_module.SETTINGS = config_module.Settings()
-    engine_module._engine = None
-    engine_module._session_factory = None
+    # Skip database setup if TB_TESTING=1 is not set (for simple unit tests)
+    if os.environ.get("TB_TESTING") != "1":
+        # For tests that don't explicitly need database, skip setup
+        test_name = request.node.name
+        if any(
+            keyword in test_name.lower()
+            for keyword in ["coupling", "lint", "boundaries"]
+        ):
+            yield
+            return
 
-    # Create fresh tables for each test
-    from trailblazer.db.engine import Base, get_engine
+    try:
+        from trailblazer.db import engine as engine_module
+        from trailblazer.core import config as config_module
 
-    engine = get_engine()
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+        # Set the environment variable first
+        monkeypatch.setenv("TRAILBLAZER_DB_URL", test_db_url)
 
-    yield
+        # Reset global settings and engine to pick up new environment variable
+        config_module.SETTINGS = config_module.Settings()
+        engine_module._engine = None
+        engine_module._session_factory = None
 
-    # Clean up after test
-    Base.metadata.drop_all(engine)
+        # Create fresh tables for each test
+        from trailblazer.db.engine import Base, get_engine
 
-    # Reset engine and settings again after test to avoid state leakage
-    engine_module._engine = None
-    engine_module._session_factory = None
+        engine = get_engine()
+        Base.metadata.drop_all(engine)
+        Base.metadata.create_all(engine)
+
+        yield
+
+        # Clean up after test
+        Base.metadata.drop_all(engine)
+
+        # Reset engine and settings again after test to avoid state leakage
+        engine_module._engine = None
+        engine_module._session_factory = None
+
+    except Exception as e:
+        # If database connection fails, skip database-dependent tests
+        if (
+            "connection refused" in str(e).lower()
+            or "operational" in str(e).lower()
+        ):
+            pytest.skip(f"Database not available: {e}")
+        else:
+            raise

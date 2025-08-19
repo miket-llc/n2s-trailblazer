@@ -128,7 +128,7 @@ def run_from_backlog(
 
 
 def _execute_phase(
-    phase: str, out: str, settings: Optional["Settings"] = None
+    phase: str, out: str, settings: Optional["Settings"] = None, **kwargs
 ) -> None:
     if phase == "ingest":
         from .steps.ingest.confluence import ingest_confluence
@@ -146,19 +146,25 @@ def _execute_phase(
 
         normalize_from_ingest(outdir=out)
     elif phase == "chunk":
-        # Chunk phase: process enriched or normalized docs into chunks
-        from .steps.embed.chunker import (
-            chunk_enriched_record,
-            chunk_normalized_record,
-        )
+        # Chunk phase: process enriched or normalized docs into chunks using new chunking package
+        from ..chunking.engine import chunk_document, inject_media_placeholders
+        from ..chunking.assurance import build_chunk_assurance
         import json
         import hashlib
-        import statistics
         from datetime import datetime, timezone
         from pathlib import Path
 
         # Extract run_id from output path (runs/<run_id>/chunk)
         run_id = out.split("/")[-2]
+
+        # Get chunking parameters from kwargs
+        max_tokens = kwargs.get("max_tokens", 800)
+        min_tokens = kwargs.get("min_tokens", 120)
+        overlap_tokens = kwargs.get("overlap_tokens", 60)
+        soft_min_tokens = kwargs.get("soft_min_tokens", 200)
+        hard_min_tokens = kwargs.get("hard_min_tokens", 80)
+        orphan_heading_merge = kwargs.get("orphan_heading_merge", True)
+        small_tail_merge = kwargs.get("small_tail_merge", True)
 
         # Prefer enriched input if available, otherwise use normalized
         enriched_file = Path(out).parent / "enrich" / "enriched.jsonl"
@@ -166,25 +172,35 @@ def _execute_phase(
 
         if enriched_file.exists():
             input_file = enriched_file
-            chunk_func = chunk_enriched_record
             input_type = "enriched"
         else:
             input_file = normalized_file
-            chunk_func = chunk_normalized_record
             input_type = "normalized"
 
         chunk_dir = Path(out)
         chunk_dir.mkdir(parents=True, exist_ok=True)
 
         chunks_file = chunk_dir / "chunks.ndjson"
+        skipped_file = chunk_dir / "skipped_docs.jsonl"
         total_chunks = 0
         total_docs = 0
         token_counts = []
+        char_counts = []
+        split_strategies = []
+        skipped_docs = []
+
         chunk_config = {
-            "target_tokens": 700,
-            "max_tokens": 8000,
-            "overlap_pct": 0.15,
-            "model": "text-embedding-3-small",
+            "max_tokens": max_tokens,
+            "hard_max_tokens": max_tokens,
+            "min_tokens": min_tokens,
+            "overlap_tokens": overlap_tokens,
+            "soft_min_tokens": soft_min_tokens,
+            "hard_min_tokens": hard_min_tokens,
+            "orphan_heading_merge": orphan_heading_merge,
+            "small_tail_merge": small_tail_merge,
+            "prefer_headings": True,
+            "respect_fences": True,
+            "split_tables": "row-groups",
         }
 
         # Compute hash of input file for traceability
@@ -194,48 +210,165 @@ def _execute_phase(
                 input_hash = hashlib.sha256(f.read()).hexdigest()
 
         with open(input_file, "r") as fin, open(chunks_file, "w") as fout:
-            for line in fin:
+            for line_num, line in enumerate(fin, 1):
                 if not line.strip():
                     continue
-                record = json.loads(line.strip())
-                chunks = chunk_func(record)
-                total_docs += 1
-                for chunk in chunks:
-                    chunk_data = {
-                        "chunk_id": chunk.chunk_id,
-                        "doc_id": record.get("id"),
-                        "ord": chunk.ord,
-                        "text_md": chunk.text_md,
-                        "char_count": chunk.char_count,
-                        "token_count": chunk.token_count,
-                        "chunk_type": chunk.chunk_type,
-                        "meta": chunk.meta,
-                    }
-                    fout.write(json.dumps(chunk_data) + "\n")
-                    total_chunks += 1
-                    token_counts.append(chunk.token_count)
 
-        # Compute token statistics
-        token_stats = {}
-        if token_counts:
-            # Compute P95 manually since statistics.quantile is not available in all Python versions
-            sorted_tokens = sorted(token_counts)
-            p95_index = int(0.95 * len(sorted_tokens))
-            p95_value = sorted_tokens[min(p95_index, len(sorted_tokens) - 1)]
+                try:
+                    record = json.loads(line.strip())
+                    doc_id = record.get("id", "")
+                    if not doc_id:
+                        continue
 
-            token_stats = {
-                "count": len(token_counts),
-                "min": min(token_counts),
-                "median": int(statistics.median(token_counts)),
-                "p95": p95_value,
-                "max": max(token_counts),
-                "total": sum(token_counts),
+                    total_docs += 1
+
+                    # Extract document data
+                    title = record.get("title", "")
+                    text_md = record.get("text_md", "")
+                    url = record.get("url", "")
+                    source_system = record.get("source_system", "")
+                    labels = record.get("labels", [])
+                    space = record.get("space", {})
+                    attachments = record.get("attachments", [])
+
+                    # Get enrichment data if available
+                    if input_type == "enriched":
+                        chunk_hints = record.get("chunk_hints", {})
+                        section_map = record.get("section_map", [])
+
+                        # Override config with chunk hints
+                        hard_max_tokens = chunk_hints.get(
+                            "maxTokens", max_tokens
+                        )
+                        min_tokens_doc = chunk_hints.get(
+                            "minTokens", min_tokens
+                        )
+                        overlap_tokens_doc = chunk_hints.get(
+                            "overlapTokens", overlap_tokens
+                        )
+                        prefer_headings = chunk_hints.get(
+                            "preferHeadings", True
+                        )
+                        soft_boundaries = chunk_hints.get("softBoundaries", [])
+                    else:
+                        hard_max_tokens = max_tokens
+                        min_tokens_doc = min_tokens
+                        overlap_tokens_doc = overlap_tokens
+                        prefer_headings = True
+                        soft_boundaries = []
+                        section_map = []
+
+                    # Inject media placeholders
+                    text_with_media = inject_media_placeholders(
+                        text_md, attachments
+                    )
+
+                    # Create media refs for traceability
+                    media_refs = []
+                    for attachment in attachments:
+                        media_refs.append(
+                            {
+                                "type": attachment.get("type", "attachment"),
+                                "ref": attachment.get("filename", ""),
+                            }
+                        )
+
+                    # Chunk document
+                    chunks = chunk_document(
+                        doc_id=doc_id,
+                        text_md=text_with_media,
+                        title=title,
+                        url=url,
+                        source_system=source_system,
+                        labels=labels,
+                        space=space,
+                        media_refs=media_refs,
+                        hard_max_tokens=hard_max_tokens,
+                        min_tokens=min_tokens_doc,
+                        overlap_tokens=overlap_tokens_doc,
+                        prefer_headings=prefer_headings,
+                        soft_boundaries=soft_boundaries,
+                        section_map=section_map,
+                    )
+
+                    # Write chunks
+                    for chunk in chunks:
+                        chunk_data = {
+                            "chunk_id": chunk.chunk_id,
+                            "text_md": chunk.text_md,
+                            "char_count": chunk.char_count,
+                            "token_count": chunk.token_count,
+                            "ord": chunk.ord,
+                            "chunk_type": chunk.chunk_type,
+                            "meta": chunk.meta,
+                            "split_strategy": chunk.split_strategy,
+                            "doc_id": chunk.doc_id,
+                            "title": chunk.title,
+                            "url": chunk.url,
+                            "source_system": chunk.source_system,
+                            "labels": chunk.labels,
+                            "space": chunk.space,
+                            "media_refs": chunk.media_refs,
+                        }
+                        fout.write(json.dumps(chunk_data) + "\n")
+
+                        total_chunks += 1
+                        token_counts.append(chunk.token_count)
+                        char_counts.append(chunk.char_count)
+                        split_strategies.append(chunk.split_strategy)
+
+                except Exception as e:
+                    skipped_docs.append(
+                        {
+                            "doc_id": record.get("id", f"line_{line_num}"),
+                            "reason": f"Error processing document: {str(e)}",
+                            "line_number": line_num,
+                        }
+                    )
+                    continue
+
+        # Write skipped docs if any
+        if skipped_docs:
+            with open(skipped_file, "w") as f:
+                for doc in skipped_docs:
+                    f.write(json.dumps(doc) + "\n")
+
+        # Build chunk assurance using new chunking package
+        assurance = build_chunk_assurance(Path(out).parent, chunk_config)
+
+        # Add additional metadata
+        assurance.update(
+            {
+                "run_id": run_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "docCount": total_docs,
+                "chunkCount": total_chunks,
+                "tokenizer": "tiktoken",
+                "chunkConfig": chunk_config,
+                "inputType": input_type,
+                "inputHash": input_hash,
+                "artifacts": {
+                    "chunks_file": str(chunks_file),
+                    "input_file": str(input_file),
+                    "normalized_file": str(normalized_file),
+                    "enriched_file": str(enriched_file)
+                    if enriched_file.exists()
+                    else None,
+                },
             }
+        )
+
+        # Add split strategy distribution
+        if split_strategies:
+            strategy_counts = {}
+            for strategy in split_strategies:
+                strategy_counts[strategy] = (
+                    strategy_counts.get(strategy, 0) + 1
+                )
+            assurance["splitStrategies"].update(strategy_counts)
 
         # Get quality distribution from enriched data if available
-        quality_distribution = None
         if input_type == "enriched" and enriched_file.exists():
-            # Try to extract quality distribution from enriched records
             quality_scores = []
             try:
                 with open(enriched_file, "r") as f:
@@ -268,43 +401,21 @@ def _execute_phase(
                         "minQuality": min_quality,
                         "maxBelowThresholdPct": max_below_threshold_pct,
                     }
+                    assurance["qualityDistribution"] = quality_distribution
             except Exception as e:
                 log.warning("chunk.quality_distribution_failed", error=str(e))
 
         # Write chunk assurance file
-        chunk_assurance = {
-            "run_id": run_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "docCount": total_docs,
-            "chunkCount": total_chunks,
-            "tokenStats": token_stats,
-            "tokenizer": "tiktoken",
-            "chunkConfig": chunk_config,
-            "inputType": input_type,
-            "inputHash": input_hash,
-            "artifacts": {
-                "chunks_file": str(chunks_file),
-                "input_file": str(input_file),
-                "normalized_file": str(normalized_file),
-                "enriched_file": str(enriched_file)
-                if enriched_file.exists()
-                else None,
-            },
-        }
-
-        # Add quality distribution if available
-        if quality_distribution:
-            chunk_assurance["qualityDistribution"] = quality_distribution
-
         assurance_file = chunk_dir / "chunk_assurance.json"
         with open(assurance_file, "w") as f:
-            json.dump(chunk_assurance, f, indent=2)
+            json.dump(assurance, f, indent=2)
 
         log.info(
             "chunk.assurance",
             run_id=run_id,
             docs=total_docs,
             chunks=total_chunks,
+            skipped=len(skipped_docs),
             assurance_file=str(assurance_file),
         )
 

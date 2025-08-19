@@ -282,7 +282,7 @@ while IFS= read -r run_id; do
     if [[ -z "$run_id" || "$run_id" =~ ^[[:space:]]*# ]]; then
         continue
     fi
-    
+
     # Remove any trailing colon and chunk count if present
     run_id="${run_id%%:*}"
 
@@ -354,8 +354,15 @@ echo "👥 Starting ${WORKERS} embedding workers..."
 process_run() {
     local run_info="$1"
     local worker_id="$2"
-    local run_id="${run_info%:*}"
-    local chunk_count="${run_info#*:}"
+
+    # Parse run_id and chunk_count from run_info
+    if [[ "$run_info" == *:* ]]; then
+        local run_id="${run_info%:*}"
+        local chunk_count="${run_info#*:}"
+    else
+        local run_id="$run_info"
+        local chunk_count="0"
+    fi
 
     local worker_log="${WORKER_DIRS[worker_id-1]}/worker_${worker_id}.log"
 

@@ -99,7 +99,11 @@ def test_overlap_maintained():
     text_md = "\n\n".join(sections)
 
     chunks = chunk_document(
-        doc_id, text_md, target_tokens=500, max_tokens=800, overlap_pct=0.2
+        doc_id,
+        text_md,
+        hard_max_tokens=800,
+        min_tokens=200,
+        overlap_tokens=100,
     )
 
     if len(chunks) > 1:
