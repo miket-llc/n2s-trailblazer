@@ -1,7 +1,9 @@
+import time
 from typing import Dict, List, Optional, TYPE_CHECKING
 from .dag import DEFAULT_PHASES, validate_phases
 from ..core.artifacts import new_run_id, phase_dir
 from ..core.logging import log
+from ..obs.events import stage_run, emit_info
 
 if TYPE_CHECKING:
     from ..core.config import Settings
@@ -25,16 +27,45 @@ def run(
 
     # Traditional single-run mode
     rid = run_id or new_run_id()
-    log.info("pipeline.run.start", run_id=rid, phases=phases, dry_run=dry_run)
 
-    for phase in phases:
-        outdir = phase_dir(rid, phase)
-        log.info("phase.start", phase=phase, out=str(outdir), run_id=rid)
-        if not dry_run:
-            _execute_phase(phase, out=str(outdir), settings=settings)
-        log.info("phase.end", phase=phase, run_id=rid)
+    # Use stage_run context manager for top-level pipeline events
+    with stage_run(
+        "runner", rid, "pipeline", phases=phases, dry_run=dry_run
+    ) as ctx:
+        emit_info(
+            "runner",
+            rid,
+            "pipeline",
+            message="Starting pipeline run",
+            phases=phases,
+            dry_run=dry_run,
+        )
 
-    log.info("pipeline.run.end", run_id=rid)
+        phase_results = {}
+        for phase in phases:
+            outdir = phase_dir(rid, phase)
+            log.info("phase.start", phase=phase, out=str(outdir), run_id=rid)
+            if not dry_run:
+                _execute_phase(phase, out=str(outdir), settings=settings)
+            log.info("phase.end", phase=phase, run_id=rid)
+            phase_results[phase] = "completed"
+
+        # Update context with results
+        ctx.update(
+            phases_completed=list(phase_results.keys()),
+            total_phases=len(phases),
+        )
+
+        emit_info(
+            "runner",
+            rid,
+            "pipeline",
+            message="Pipeline run completed",
+            phases_completed=list(phase_results.keys()),
+            total_phases=len(phases),
+            dry_run=dry_run,
+        )
+
     return rid
 
 
@@ -78,51 +109,86 @@ def run_from_backlog(
         )
         return f"No runs available for {phase}"
 
-    # Print banner to stderr
-    import sys
-
-    earliest = summary.get("earliest", "unknown")
-    latest = summary.get("latest", "unknown")
-    print(
-        f"🔄 {phase.title()} Backlog: {total} runs available", file=sys.stderr
-    )
-    print(f"   Date range: {earliest} to {latest}", file=sys.stderr)
-    print(f"   Sample runs: {', '.join(sample_runs[:5])}", file=sys.stderr)
-
-    if dry_run:
-        return f"Would process {total} runs for {phase}"
-
-    processed = 0
-    while True:
-        if limit and processed >= limit:
-            break
-
-        # Claim next run
-        if phase == "chunk":
-            run_record = claim_run_for_chunking()
-        else:  # embed
-            run_record = claim_run_for_embedding()
-
-        if not run_record:
-            log.info(f"{phase}.backlog.exhausted", processed=processed)
-            break
-
-        run_id = run_record["run_id"]
-        log.info(
-            f"{phase}.backlog.processing",
-            run_id=run_id,
-            progress=f"{processed + 1}/{total}",
+    # Use stage_run context manager for backlog processing events
+    backlog_run_id = f"backlog-{phase}-{int(time.time())}"
+    with stage_run(
+        "runner",
+        backlog_run_id,
+        "backlog",
+        phase=phase,
+        total_available=total,
+        dry_run=dry_run,
+    ) as ctx:
+        emit_info(
+            "runner",
+            backlog_run_id,
+            "backlog",
+            message="Starting backlog processing",
+            phase=phase,
+            total_available=total,
         )
 
-        try:
-            # Execute the phase
-            outdir = phase_dir(run_id, phase)
-            _execute_phase(phase, str(outdir), settings=settings)
-            processed += 1
+        # Print banner to stderr
+        import sys
 
-        except Exception as e:
-            log.error(f"{phase}.backlog.failed", run_id=run_id, error=str(e))
-            # Continue processing other runs
+        earliest = summary.get("earliest", "unknown")
+        latest = summary.get("latest", "unknown")
+        print(
+            f"🔄 {phase.title()} Backlog: {total} runs available",
+            file=sys.stderr,
+        )
+        print(f"   Date range: {earliest} to {latest}", file=sys.stderr)
+        print(f"   Sample runs: {', '.join(sample_runs[:5])}", file=sys.stderr)
+
+        if dry_run:
+            ctx.update(processed_runs=0, total_available=total, dry_run=True)
+            return f"Would process {total} runs for {phase}"
+
+        processed = 0
+        while True:
+            if limit and processed >= limit:
+                break
+
+            # Claim next run
+            if phase == "chunk":
+                run_record = claim_run_for_chunking()
+            else:  # embed
+                run_record = claim_run_for_embedding()
+
+            if not run_record:
+                log.info(f"{phase}.backlog.exhausted", processed=processed)
+                break
+
+            run_id = run_record["run_id"]
+            log.info(
+                f"{phase}.backlog.processing",
+                run_id=run_id,
+                progress=f"{processed + 1}/{total}",
+            )
+
+            try:
+                # Execute the phase
+                outdir = phase_dir(run_id, phase)
+                _execute_phase(phase, str(outdir), settings=settings)
+                processed += 1
+
+            except Exception as e:
+                log.error(
+                    f"{phase}.backlog.failed", run_id=run_id, error=str(e)
+                )
+                # Continue processing other runs
+
+        # Update context and emit completion event
+        ctx.update(processed_runs=processed, total_available=total)
+        emit_info(
+            "runner",
+            backlog_run_id,
+            "backlog",
+            message="Backlog processing completed",
+            phase=phase,
+            processed_runs=processed,
+            total_available=total,
+        )
 
     return f"Processed {processed} runs for {phase}"
 

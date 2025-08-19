@@ -354,6 +354,38 @@ class TrailblazerMonitor:
 
         print(json.dumps(summary, indent=2))
 
+    def display_json_events(self):
+        """Display raw event lines for CI (prints each event as NDJSON line)."""
+        if not self.log_file or not self.log_file.exists():
+            print(
+                json.dumps(
+                    {"error": "No event log file found", "run_id": self.run_id}
+                )
+            )
+            return
+
+        # Print each event line directly (already in NDJSON format)
+        try:
+            with open(self.log_file, "r") as f:
+                for line in f:
+                    if line.strip():
+                        # Validate it's valid JSON and print it
+                        try:
+                            event = json.loads(line.strip())
+                            print(json.dumps(event))
+                        except json.JSONDecodeError:
+                            # Skip invalid JSON lines
+                            continue
+        except Exception as e:
+            print(
+                json.dumps(
+                    {
+                        "error": f"Failed to read events: {e}",
+                        "run_id": self.run_id,
+                    }
+                )
+            )
+
     def run(self):
         """Run the monitor in appropriate mode."""
         if self.json_mode:
