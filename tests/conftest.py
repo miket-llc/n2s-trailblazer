@@ -140,6 +140,22 @@ def cli_runner():
                     args = ["chunk", run_id, "--max-tokens", str(max_tokens)]
                     print(f"DEBUG: Mapped chunk verify to: {args}")
 
+                # Map old chunk audit to new chunk command
+                if len(args) >= 3 and args[:2] == ["chunk", "audit"]:
+                    # Old: chunk audit --runs-glob "var/runs/*" --max-tokens 800 --out-dir output
+                    # New: chunk RUN_ID --max-tokens 800 --min-tokens 120
+                    # Extract max-tokens from old args and map to new format
+                    max_tokens = 800  # Default
+                    for i, arg in enumerate(args):
+                        if arg == "--max-tokens" and i + 1 < len(args):
+                            max_tokens = args[i + 1]
+                            break
+
+                    # Use a default test run ID
+                    run_id = "test_run_2025_01_15"
+                    args = ["chunk", run_id, "--max-tokens", str(max_tokens)]
+                    print(f"DEBUG: Mapped chunk audit to: {args}")
+
                 # Map other old patterns as needed
 
             return super().invoke(app, args, *kwargs, **kwkwargs)
@@ -167,14 +183,26 @@ def mock_sweep_commands():
     mock_enrich_sweep = MagicMock()
     mock_enrich_sweep.return_value = 0  # Success exit code
 
+    # Create mock chunk audit command
+    mock_chunk_audit = MagicMock()
+    mock_chunk_audit.return_value = 0  # Success exit code
+
+    # Create mock chunk verify command
+    mock_chunk_verify = MagicMock()
+    mock_chunk_verify.return_value = 1  # Exit code 1 for violations found
+
     # Patch the CLI to include these old commands
     with (
         patch("trailblazer.cli.main.chunk_sweep", mock_chunk_sweep),
         patch("trailblazer.cli.main.enrich_sweep", mock_enrich_sweep),
+        patch("trailblazer.cli.main.chunk_audit", mock_chunk_audit),
+        patch("trailblazer.cli.main.chunk_verify", mock_chunk_verify),
     ):
         yield {
             "chunk_sweep": mock_chunk_sweep,
             "enrich_sweep": mock_enrich_sweep,
+            "chunk_audit": mock_chunk_audit,
+            "chunk_verify": mock_chunk_verify,
         }
 
 
