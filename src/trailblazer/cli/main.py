@@ -3870,7 +3870,7 @@ def embed_plan_preflight_cmd(
             f"📄 Total embeddable docs: {result['total_embeddable_docs']:,}", err=True
         )
         typer.echo(f"📄 Total skipped docs: {result['total_skipped_docs']:,}", err=True)
-        
+
         # Find the output directory from the result
         output_dirs = list(Path(out_dir).glob("*"))
         if output_dirs:
