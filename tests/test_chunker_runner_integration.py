@@ -89,9 +89,9 @@ class TestChunkerRunnerIntegration:
             chunks = [json.loads(line) for line in f if line.strip()]
 
         for chunk in chunks:
-            assert (
-                chunk["token_count"] <= 600
-            ), f"Chunk exceeds limit: {chunk['token_count']}"
+            assert chunk["token_count"] <= 600, (
+                f"Chunk exceeds limit: {chunk['token_count']}"
+            )
             assert "split_strategy" in chunk
 
         # Verify assurance file has correct config

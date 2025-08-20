@@ -110,9 +110,9 @@ def test_preflight_never_emits_quality_gate_reason():
 
                 # Verify QUALITY_GATE never appears in reasons
                 reasons = result.get("reasons", [])
-                assert (
-                    "QUALITY_GATE" not in reasons
-                ), f"QUALITY_GATE found in reasons for scenario '{scenario['name']}': {reasons}"
+                assert "QUALITY_GATE" not in reasons, (
+                    f"QUALITY_GATE found in reasons for scenario '{scenario['name']}': {reasons}"
+                )
 
                 # Verify expected status
                 assert result["status"] == scenario["expected_status"], (
@@ -234,9 +234,9 @@ def test_plan_preflight_never_emits_quality_gate_reason():
             runs_detail = result.get("runs_detail", [])
             for run_data in runs_detail:
                 reason = run_data.get("reason", "")
-                assert (
-                    "QUALITY_GATE" not in reason
-                ), f"QUALITY_GATE found in reason for run {run_data.get('rid')}: {reason}"
+                assert "QUALITY_GATE" not in reason, (
+                    f"QUALITY_GATE found in reason for run {run_data.get('rid')}: {reason}"
+                )
 
                 # Verify that only valid blocking reasons are used
                 if run_data.get("status") == "BLOCKED":
@@ -254,7 +254,9 @@ def test_plan_preflight_never_emits_quality_gate_reason():
                         assert any(
                             valid_reason in reason_part
                             for valid_reason in valid_reasons
-                        ), f"Invalid blocking reason found: {reason_part} in {reason}"
+                        ), (
+                            f"Invalid blocking reason found: {reason_part} in {reason}"
+                        )
 
         finally:
             # Restore original paths function
@@ -316,28 +318,28 @@ def test_quality_advisory_always_true():
             )
 
             # Even with terrible quality, should be READY because quality is advisory
-            assert (
-                result["status"] == "READY"
-            ), f"Run should be READY despite poor quality (quality is advisory): {result}"
+            assert result["status"] == "READY", (
+                f"Run should be READY despite poor quality (quality is advisory): {result}"
+            )
 
             # Should not have QUALITY_GATE reason
             reasons = result.get("reasons", [])
-            assert (
-                "QUALITY_GATE" not in reasons
-            ), f"QUALITY_GATE should never appear in reasons: {reasons}"
+            assert "QUALITY_GATE" not in reasons, (
+                f"QUALITY_GATE should never appear in reasons: {reasons}"
+            )
 
             # Should have quality stats for advisory purposes
             quality_stats = result.get("quality", {})
             below_threshold_pct = quality_stats.get("belowThresholdPct", 0)
-            assert (
-                below_threshold_pct > 0.9
-            ), "Should detect high below-threshold percentage"
+            assert below_threshold_pct > 0.9, (
+                "Should detect high below-threshold percentage"
+            )
 
             # Advisory flag should be set
             advisory = result.get("advisory", {})
-            assert (
-                advisory.get("quality") is True
-            ), "Quality should be marked as advisory"
+            assert advisory.get("quality") is True, (
+                "Quality should be marked as advisory"
+            )
 
         finally:
             trailblazer.core.paths.runs = original_runs

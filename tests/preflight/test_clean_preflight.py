@@ -269,7 +269,7 @@ def test_clean_preflight_dry_run(temp_workspace):
 
 def test_clean_preflight_creates_report(temp_workspace):
     """Test that clean-preflight creates a cleanup report."""
-    bad_bundle = create_plan_bundle(
+    create_plan_bundle(
         temp_workspace,
         "plan_preflight_bad",
         is_bad=True,

@@ -212,9 +212,7 @@ def test_load_normalized_to_db_basic():
                 mock_provider.return_value = mock_embedder
 
                 # Mock document existence check
-                mock_session.query.return_value.filter_by.return_value.first.return_value = (
-                    None
-                )
+                mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
                 # Run the loader
                 metrics = load_normalized_to_db(
@@ -272,9 +270,7 @@ def test_load_normalized_to_db_idempotency():
 
                 # Mock existing document (same content hash)
                 mock_existing_doc = MagicMock()
-                mock_session.query.return_value.filter_by.return_value.first.return_value = (
-                    mock_existing_doc
-                )
+                mock_session.query.return_value.filter_by.return_value.first.return_value = mock_existing_doc
 
                 # Run the loader
                 metrics = load_normalized_to_db(
@@ -334,9 +330,7 @@ def test_load_normalized_to_db_invalid_json():
                 mock_provider.return_value = mock_embedder
 
                 # Mock no existing documents
-                mock_session.query.return_value.filter_by.return_value.first.return_value = (
-                    None
-                )
+                mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
                 # Mock stdout capture for events
                 with patch("builtins.print"):
@@ -426,9 +420,7 @@ def test_load_normalized_to_db_chunking_error():
                 mock_provider.return_value = mock_embedder
 
                 # Mock no existing documents
-                mock_session.query.return_value.filter_by.return_value.first.return_value = (
-                    None
-                )
+                mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
                 # Mock chunking to raise an error
                 with patch(
@@ -490,9 +482,7 @@ def test_load_normalized_to_db_batch_processing():
                 mock_provider.return_value = mock_embedder
 
                 # Mock no existing documents
-                mock_session.query.return_value.filter_by.return_value.first.return_value = (
-                    None
-                )
+                mock_session.query.return_value.filter_by.return_value.first.return_value = None
                 mock_session.get.return_value = None  # No existing chunks
 
                 metrics = load_normalized_to_db(

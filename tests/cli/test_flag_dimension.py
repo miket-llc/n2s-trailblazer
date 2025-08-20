@@ -28,17 +28,9 @@ class TestFlagDimension:
         assert "--dimension" in result.stdout
         assert "--dimensions" not in result.stdout
 
-    def test_embed_preflight_has_dim_flag(self):
-        """Test that embed preflight exposes --dim flag."""
-        result = self.runner.invoke(app, ["embed", "preflight", "--help"])
-
-        assert result.exit_code == 0
-        assert "--dim" in result.stdout
-        # preflight uses --dim for brevity, which is fine
-
-    def test_embed_diff_has_dimension_flag(self):
-        """Test that embed diff exposes --dimension flag."""
-        result = self.runner.invoke(app, ["embed", "diff", "--help"])
+    def test_embed_plan_preflight_has_dimension_flag(self):
+        """Test that embed plan-preflight exposes --dimension flag."""
+        result = self.runner.invoke(app, ["embed", "plan-preflight", "--help"])
 
         assert result.exit_code == 0
         assert "--dimension" in result.stdout
@@ -72,9 +64,10 @@ class TestFlagDimension:
 
         # Should fail with "no such option" error
         assert result.exit_code != 0
+        # Check stderr for error message since typer outputs there
         assert (
-            "no such option" in result.stdout.lower()
-            or "unrecognized" in result.stdout.lower()
+            "no such option" in result.output.lower()
+            or "unrecognized" in result.output.lower()
         )
 
     def test_embed_corpus_rejects_dimensions_flag(self):
@@ -93,9 +86,10 @@ class TestFlagDimension:
 
         # Should fail with "no such option" error
         assert result.exit_code != 0
+        # Check stderr for error message since typer outputs there
         assert (
-            "no such option" in result.stdout.lower()
-            or "unrecognized" in result.stdout.lower()
+            "no such option" in result.output.lower()
+            or "unrecognized" in result.output.lower()
         )
 
     def test_dimension_flag_help_text(self):
@@ -110,7 +104,12 @@ class TestFlagDimension:
 
     def test_embed_help_consistency(self):
         """Test that all embed subcommands consistently use dimension terminology."""
-        embed_commands = ["load", "corpus", "diff", "reembed-if-changed"]
+        embed_commands = [
+            "load",
+            "corpus",
+            "reembed-if-changed",
+            "plan-preflight",
+        ]
 
         for cmd in embed_commands:
             result = self.runner.invoke(app, ["embed", cmd, "--help"])
@@ -129,6 +128,6 @@ class TestFlagDimension:
                 # Check that we don't have "dimensions" in flag names
                 for context in dimension_contexts:
                     if "--" in context:  # This is a flag line
-                        assert (
-                            "--dimensions" not in context
-                        ), f"Found --dimensions in {cmd}: {context}"
+                        assert "--dimensions" not in context, (
+                            f"Found --dimensions in {cmd}: {context}"
+                        )

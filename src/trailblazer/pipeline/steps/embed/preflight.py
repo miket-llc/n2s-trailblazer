@@ -4,13 +4,14 @@ Preflight validation for embedding with advisory quality gates and doc skiplists
 
 import json
 import statistics
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple, Any
 
 from ....core.logging import log
 from ....core.paths import runs
-from ....obs.events import emit_event
+from ....obs.events import EventEmitter
 
 
 def validate_preflight_artifacts(run_id: str) -> Tuple[bool, List[str]]:
@@ -164,15 +165,9 @@ def run_preflight_check(
     Returns:
         Preflight validation results
     """
-    emit_event(
-        "preflight.start",
-        run_id=run_id,
-        provider=provider,
-        model=model,
-        dimension=dimension,
-    )
+    start_time = time.time()
 
-    # Validate artifacts
+    # Validate artifacts BEFORE EventEmitter to avoid path issues
     artifacts_valid, missing_artifacts = validate_preflight_artifacts(run_id)
 
     # Validate config
@@ -185,92 +180,104 @@ def run_preflight_check(
         compute_embeddable_docs(run_id, min_quality, max_below_threshold_pct)
     )
 
-    # Determine status and reasons
-    reasons = []
-
-    if not artifacts_valid:
-        reasons.extend(
-            [
-                f"MISSING_{artifact.upper().replace('.', '_')}"
-                for artifact in missing_artifacts
-            ]
+    with EventEmitter(
+        run_id=run_id, phase="embed", component="preflight"
+    ) as ee:
+        ee.embed_start(
+            provider=provider, model=model, embedding_dims=dimension
         )
 
-    if not config_valid:
-        reasons.extend(config_issues)
+        # Determine status and reasons
+        reasons = []
 
-    # Quality is now advisory only - never blocks runs
-    # QUALITY_GATE is forbidden as a run-level blocking reason per requirements
-    # below_threshold_pct = quality_stats.get("belowThresholdPct", 0.0)  # Advisory only
+        if not artifacts_valid:
+            reasons.extend(
+                [
+                    f"MISSING_{artifact.upper().replace('.', '_')}"
+                    for artifact in missing_artifacts
+                ]
+            )
 
-    # Only block for structural reasons or zero embeddable docs
-    if embeddable_docs < min_embed_docs:
-        reasons.append("EMBEDDABLE_DOCS=0")
+        if not config_valid:
+            reasons.extend(config_issues)
 
-    # Status determination
-    if reasons:
-        status = "BLOCKED"
-    else:
-        status = "READY"
+        # Quality is now advisory only - never blocks runs
+        # QUALITY_GATE is forbidden as a run-level blocking reason per requirements
+        # below_threshold_pct = quality_stats.get("belowThresholdPct", 0.0)  # Advisory only
 
-    # Create preflight result
-    result = {
-        "status": status,
-        "reasons": reasons,
-        "docTotals": {
-            "all": total_docs,
-            "embeddable": embeddable_docs,
-            "skipped": len(skipped_doc_ids),
-        },
-        "quality": quality_stats,
-        "advisory": {"quality": quality_advisory},
-        "artifacts": {
-            "enriched": "enriched.jsonl" not in missing_artifacts,
-            "chunks": "chunks.ndjson" not in missing_artifacts,
-            "tokenizer": len([i for i in config_issues if "tokenizer" in i])
-            == 0,
-            "config": len([i for i in config_issues if "tokenizer" not in i])
-            == 0,
-        },
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "run_id": run_id,
-        "provider": provider,
-        "model": model,
-        "dimension": dimension,
-    }
+        # Only block for structural reasons or zero embeddable docs
+        if embeddable_docs < min_embed_docs:
+            reasons.append("EMBEDDABLE_DOCS=0")
 
-    # Write preflight results
-    run_dir = runs() / run_id
-    preflight_dir = run_dir / "preflight"
-    preflight_dir.mkdir(parents=True, exist_ok=True)
+        # Status determination
+        if reasons:
+            status = "BLOCKED"
+        else:
+            status = "READY"
 
-    # Write preflight.json
-    preflight_file = preflight_dir / "preflight.json"
-    with open(preflight_file, "w") as f:
-        json.dump(result, f, indent=2)
-
-    # Write doc_skiplist.json if there are skipped docs
-    if skipped_doc_ids:
-        skiplist = {
-            "skip": skipped_doc_ids,
-            "reason": "quality_below_min",
-            "min_quality": min_quality,
-            "total_docs": total_docs,
-            "skipped_count": len(skipped_doc_ids),
+        # Create preflight result
+        result = {
+            "status": status,
+            "reasons": reasons,
+            "docTotals": {
+                "all": total_docs,
+                "embeddable": embeddable_docs,
+                "skipped": len(skipped_doc_ids),
+            },
+            "quality": quality_stats,
+            "advisory": {"quality": quality_advisory},
+            "artifacts": {
+                "enriched": "enriched.jsonl" not in missing_artifacts,
+                "chunks": "chunks.ndjson" not in missing_artifacts,
+                "tokenizer": len(
+                    [i for i in config_issues if "tokenizer" in i]
+                )
+                == 0,
+                "config": len(
+                    [i for i in config_issues if "tokenizer" not in i]
+                )
+                == 0,
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "run_id": run_id,
+            "provider": provider,
+            "model": model,
+            "dimension": dimension,
         }
 
-        skiplist_file = preflight_dir / "doc_skiplist.json"
-        with open(skiplist_file, "w") as f:
-            json.dump(skiplist, f, indent=2)
+        # Write preflight results
+        run_dir = runs() / run_id
+        preflight_dir = run_dir / "preflight"
+        preflight_dir.mkdir(parents=True, exist_ok=True)
 
-    emit_event(
-        "preflight.complete",
-        run_id=run_id,
-        status=status,
-        total_docs=total_docs,
-        embeddable_docs=embeddable_docs,
-        skipped_docs=len(skipped_doc_ids),
-    )
+        # Write preflight.json
+        preflight_file = preflight_dir / "preflight.json"
+        with open(preflight_file, "w") as f:
+            json.dump(result, f, indent=2)
+
+        # Write doc_skiplist.json if there are skipped docs
+        if skipped_doc_ids:
+            skiplist = {
+                "skip": skipped_doc_ids,
+                "reason": "quality_below_min",
+                "min_quality": min_quality,
+                "total_docs": total_docs,
+                "skipped_count": len(skipped_doc_ids),
+            }
+
+            skiplist_file = preflight_dir / "doc_skiplist.json"
+            with open(skiplist_file, "w") as f:
+                json.dump(skiplist, f, indent=2)
+
+        # Emit completion event with timing
+        duration_ms = int((time.time() - start_time) * 1000)
+        ee.embed_complete(
+            total_embedded=embeddable_docs,
+            duration_ms=duration_ms,
+            status=status,
+            total_docs=total_docs,
+            skipped_docs=len(skipped_doc_ids),
+        )
 
     return result
 
@@ -299,171 +306,174 @@ def run_plan_preflight(
     Returns:
         Plan preflight results
     """
-    emit_event(
-        "plan_preflight.start",
-        plan_file=plan_file,
-        provider=provider,
-        model=model,
-        dimension=dimension,
-    )
+    start_time = time.time()
 
-    # Parse plan file
-    plan_path = Path(plan_file)
-    if not plan_path.exists():
-        raise FileNotFoundError(f"Plan file not found: {plan_file}")
+    with EventEmitter(
+        run_id="plan_preflight", phase="embed", component="plan_preflight"
+    ) as ee:
+        ee.embed_start(
+            provider=provider, model=model, embedding_dims=dimension
+        )
 
-    run_entries = []
-    with open(plan_path, "r") as f:
-        for line_num, line in enumerate(f, 1):
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
+        # Parse plan file
+        plan_path = Path(plan_file)
+        if not plan_path.exists():
+            raise FileNotFoundError(f"Plan file not found: {plan_file}")
 
-            # Support both formats: run_id:chunk_count and var/runs/run_id
-            if ":" in line:
-                run_id, chunk_count_str = line.split(":", 1)
-                run_id = run_id.strip()
-                try:
-                    chunk_count = int(chunk_count_str.strip())
-                except ValueError:
+        run_entries = []
+        with open(plan_path, "r") as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                # Support both formats: run_id:chunk_count and var/runs/run_id
+                if ":" in line:
+                    run_id, chunk_count_str = line.split(":", 1)
+                    run_id = run_id.strip()
+                    try:
+                        chunk_count = int(chunk_count_str.strip())
+                    except ValueError:
+                        log.warning(
+                            "plan_preflight.invalid_line",
+                            line_num=line_num,
+                            line=line,
+                        )
+                        continue
+                elif line.startswith("var/runs/"):
+                    run_id = Path(line).name
+                    # Auto-detect chunk count
+                    chunks_file = runs() / run_id / "chunk" / "chunks.ndjson"
+                    if chunks_file.exists():
+                        try:
+                            with open(chunks_file, "r") as cf:
+                                chunk_count = sum(
+                                    1 for cline in cf if cline.strip()
+                                )
+                        except Exception:
+                            chunk_count = 0
+                    else:
+                        chunk_count = 0
+                else:
                     log.warning(
-                        "plan_preflight.invalid_line",
+                        "plan_preflight.unsupported_format",
                         line_num=line_num,
                         line=line,
                     )
                     continue
-            elif line.startswith("var/runs/"):
-                run_id = Path(line).name
-                # Auto-detect chunk count
-                chunks_file = runs() / run_id / "chunk" / "chunks.ndjson"
-                if chunks_file.exists():
-                    try:
-                        with open(chunks_file, "r") as cf:
-                            chunk_count = sum(
-                                1 for cline in cf if cline.strip()
-                            )
-                    except Exception:
-                        chunk_count = 0
-                else:
-                    chunk_count = 0
+
+                run_entries.append((run_id, chunk_count))
+
+        if not run_entries:
+            raise ValueError(f"No valid runs found in plan file: {plan_file}")
+
+        # Create output directory
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        output_dir = Path(out_dir) / timestamp
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Process each run
+        ready_runs = []
+        blocked_runs = []
+        runs_data = []
+        total_embeddable_docs = 0
+        total_skipped_docs = 0
+        total_tokens = 0
+
+        for run_id, expected_chunk_count in run_entries:
+            # Run preflight for this run
+            preflight_result = run_preflight_check(
+                run_id=run_id,
+                provider=provider,
+                model=model,
+                dimension=dimension,
+                min_embed_docs=min_embed_docs,
+                quality_advisory=quality_advisory,
+            )
+
+            # Aggregate results
+            doc_totals = preflight_result["docTotals"]
+            embeddable_docs = doc_totals["embeddable"]
+            skipped_docs = doc_totals["skipped"]
+
+            total_embeddable_docs += embeddable_docs
+            total_skipped_docs += skipped_docs
+
+            # Calculate tokens for this run
+            chunks_file = runs() / run_id / "chunk" / "chunks.ndjson"
+            run_tokens = 0
+            if chunks_file.exists():
+                try:
+                    with open(chunks_file, "r") as f:
+                        for line in f:
+                            if line.strip():
+                                chunk = json.loads(line.strip())
+                                run_tokens += chunk.get("token_count", 0)
+                except Exception:
+                    pass
+
+            total_tokens += run_tokens
+
+            # Classify run
+            if preflight_result["status"] == "READY":
+                ready_runs.append(run_id)
             else:
-                log.warning(
-                    "plan_preflight.unsupported_format",
-                    line_num=line_num,
-                    line=line,
-                )
-                continue
+                blocked_runs.append(run_id)
 
-            run_entries.append((run_id, chunk_count))
+            # Store detailed data
+            runs_data.append(
+                {
+                    "rid": run_id,
+                    "status": preflight_result["status"],
+                    "reason": (
+                        ", ".join(preflight_result["reasons"])
+                        if preflight_result["reasons"]
+                        else ""
+                    ),
+                    "docs_total": doc_totals["all"],
+                    "docs_embeddable": embeddable_docs,
+                    "docs_skipped": skipped_docs,
+                    "tokens": run_tokens,
+                    "quality_p50": preflight_result["quality"].get("p50", 0),
+                    "quality_below_threshold_pct": preflight_result[
+                        "quality"
+                    ].get("belowThresholdPct", 0),
+                }
+            )
 
-    if not run_entries:
-        raise ValueError(f"No valid runs found in plan file: {plan_file}")
+        # Create plan result
+        plan_result = {
+            "timestamp": timestamp,
+            "provider": provider,
+            "model": model,
+            "dimension": dimension,
+            "total_runs_planned": len(run_entries),
+            "ready_runs": len(ready_runs),
+            "blocked_runs": len(blocked_runs),
+            "total_embeddable_docs": total_embeddable_docs,
+            "total_skipped_docs": total_skipped_docs,
+            "total_tokens": total_tokens,
+            "runs_detail": runs_data,
+            "parameters": {
+                "min_embed_docs": min_embed_docs,
+                "quality_advisory": quality_advisory,
+            },
+        }
 
-    # Create output directory
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    output_dir = Path(out_dir) / timestamp
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Process each run
-    ready_runs = []
-    blocked_runs = []
-    runs_data = []
-    total_embeddable_docs = 0
-    total_skipped_docs = 0
-    total_tokens = 0
-
-    for run_id, expected_chunk_count in run_entries:
-        # Run preflight for this run
-        preflight_result = run_preflight_check(
-            run_id=run_id,
-            provider=provider,
-            model=model,
-            dimension=dimension,
-            min_embed_docs=min_embed_docs,
-            quality_advisory=quality_advisory,
+        # Write outputs
+        _write_plan_preflight_outputs(
+            output_dir, plan_result, ready_runs, blocked_runs, runs_data
         )
 
-        # Aggregate results
-        doc_totals = preflight_result["docTotals"]
-        embeddable_docs = doc_totals["embeddable"]
-        skipped_docs = doc_totals["skipped"]
-
-        total_embeddable_docs += embeddable_docs
-        total_skipped_docs += skipped_docs
-
-        # Calculate tokens for this run
-        chunks_file = runs() / run_id / "chunk" / "chunks.ndjson"
-        run_tokens = 0
-        if chunks_file.exists():
-            try:
-                with open(chunks_file, "r") as f:
-                    for line in f:
-                        if line.strip():
-                            chunk = json.loads(line.strip())
-                            run_tokens += chunk.get("token_count", 0)
-            except Exception:
-                pass
-
-        total_tokens += run_tokens
-
-        # Classify run
-        if preflight_result["status"] == "READY":
-            ready_runs.append(run_id)
-        else:
-            blocked_runs.append(run_id)
-
-        # Store detailed data
-        runs_data.append(
-            {
-                "rid": run_id,
-                "status": preflight_result["status"],
-                "reason": (
-                    ", ".join(preflight_result["reasons"])
-                    if preflight_result["reasons"]
-                    else ""
-                ),
-                "docs_total": doc_totals["all"],
-                "docs_embeddable": embeddable_docs,
-                "docs_skipped": skipped_docs,
-                "tokens": run_tokens,
-                "quality_p50": preflight_result["quality"].get("p50", 0),
-                "quality_below_threshold_pct": preflight_result["quality"].get(
-                    "belowThresholdPct", 0
-                ),
-            }
+        # Emit completion event with timing
+        duration_ms = int((time.time() - start_time) * 1000)
+        ee.embed_complete(
+            total_embedded=total_embeddable_docs,
+            duration_ms=duration_ms,
+            ready_runs=len(ready_runs),
+            blocked_runs=len(blocked_runs),
+            output_dir=str(output_dir),
         )
-
-    # Create plan result
-    plan_result = {
-        "timestamp": timestamp,
-        "provider": provider,
-        "model": model,
-        "dimension": dimension,
-        "total_runs_planned": len(run_entries),
-        "ready_runs": len(ready_runs),
-        "blocked_runs": len(blocked_runs),
-        "total_embeddable_docs": total_embeddable_docs,
-        "total_skipped_docs": total_skipped_docs,
-        "total_tokens": total_tokens,
-        "runs_detail": runs_data,
-        "parameters": {
-            "min_embed_docs": min_embed_docs,
-            "quality_advisory": quality_advisory,
-        },
-    }
-
-    # Write outputs
-    _write_plan_preflight_outputs(
-        output_dir, plan_result, ready_runs, blocked_runs, runs_data
-    )
-
-    emit_event(
-        "plan_preflight.complete",
-        ready_runs=len(ready_runs),
-        blocked_runs=len(blocked_runs),
-        total_embeddable_docs=total_embeddable_docs,
-        output_dir=str(output_dir),
-    )
 
     return plan_result
 

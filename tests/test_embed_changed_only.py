@@ -309,9 +309,7 @@ class TestSelectiveReEmbedIntegration:
             mock_session = mock_session_factory.return_value
             mock_session.__enter__ = lambda x: mock_session
             mock_session.__exit__ = lambda *args: None
-            mock_session.query.return_value.filter_by.return_value.first.return_value = (
-                None
-            )
+            mock_session.query.return_value.filter_by.return_value.first.return_value = None
             mock_session.commit.return_value = None
 
             mock_embedder = mock_provider.return_value
@@ -374,9 +372,7 @@ class TestSelectiveReEmbedIntegration:
             mock_session = mock_session_factory.return_value
             mock_session.__enter__ = lambda x: mock_session
             mock_session.__exit__ = lambda *args: None
-            mock_session.query.return_value.filter_by.return_value.first.return_value = (
-                None
-            )
+            mock_session.query.return_value.filter_by.return_value.first.return_value = None
             mock_session.commit.return_value = None
 
             mock_embedder = mock_provider.return_value

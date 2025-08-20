@@ -41,17 +41,17 @@ This is the third paragraph.
 
     for chunk in chunks:
         # Every chunk must have source_system
-        assert (
-            chunk.source_system
-        ), f"Chunk {chunk.chunk_id} missing source_system"
+        assert chunk.source_system, (
+            f"Chunk {chunk.chunk_id} missing source_system"
+        )
         assert chunk.source_system == "confluence"
 
         # Every chunk must have either title or url (or both)
         has_title = bool(chunk.title and chunk.title.strip())
         has_url = bool(chunk.url and chunk.url.strip())
-        assert (
-            has_title or has_url
-        ), f"Chunk {chunk.chunk_id} missing both title and url"
+        assert has_title or has_url, (
+            f"Chunk {chunk.chunk_id} missing both title and url"
+        )
 
         # Verify specific values are carried through
         if has_title:

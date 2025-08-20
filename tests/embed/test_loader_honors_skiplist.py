@@ -164,12 +164,12 @@ def test_loader_honors_skiplist_skips_correct_docs(
             )
 
             # Verify skiplist was loaded and applied
-            assert (
-                result["chunks_skipped"] == 1
-            ), f"Expected 1 chunk skipped (doc2), got {result['chunks_skipped']}"
-            assert (
-                result["chunks_embedded"] == 3
-            ), f"Expected 3 chunks embedded (doc1:2 + doc3:1), got {result['chunks_embedded']}"
+            assert result["chunks_skipped"] == 1, (
+                f"Expected 1 chunk skipped (doc2), got {result['chunks_skipped']}"
+            )
+            assert result["chunks_embedded"] == 3, (
+                f"Expected 3 chunks embedded (doc1:2 + doc3:1), got {result['chunks_embedded']}"
+            )
 
             # Verify embedder was called with correct texts (should not include doc2)
             embed_calls = mock_embedder.embed_texts.call_args_list
@@ -178,15 +178,15 @@ def test_loader_honors_skiplist_skips_correct_docs(
                 embedded_texts.extend(call[0][0])  # First arg is list of texts
 
             # Should have 3 texts (2 from doc1, 1 from doc3, none from doc2)
-            assert (
-                len(embedded_texts) == 3
-            ), f"Expected 3 texts embedded, got {len(embedded_texts)}"
+            assert len(embedded_texts) == 3, (
+                f"Expected 3 texts embedded, got {len(embedded_texts)}"
+            )
 
             # Verify no doc2 content was embedded
             for text in embedded_texts:
-                assert (
-                    "document 2" not in text.lower()
-                ), f"doc2 content should be skipped: {text}"
+                assert "document 2" not in text.lower(), (
+                    f"doc2 content should be skipped: {text}"
+                )
 
             # Verify doc1 and doc3 content was embedded
             doc1_found = any(
@@ -251,12 +251,12 @@ def test_loader_honors_skiplist_multiple_docs(
             )
 
             # Should skip 3 chunks (2 from doc1, 1 from doc3) and embed 1 (from doc2)
-            assert (
-                result["chunks_skipped"] == 3
-            ), f"Expected 3 chunks skipped, got {result['chunks_skipped']}"
-            assert (
-                result["chunks_embedded"] == 1
-            ), f"Expected 1 chunk embedded, got {result['chunks_embedded']}"
+            assert result["chunks_skipped"] == 3, (
+                f"Expected 3 chunks skipped, got {result['chunks_skipped']}"
+            )
+            assert result["chunks_embedded"] == 1, (
+                f"Expected 1 chunk embedded, got {result['chunks_embedded']}"
+            )
 
             # Verify only doc2 content was embedded
             embed_calls = mock_embedder.embed_texts.call_args_list
@@ -264,12 +264,12 @@ def test_loader_honors_skiplist_multiple_docs(
             for call in embed_calls:
                 embedded_texts.extend(call[0][0])
 
-            assert (
-                len(embedded_texts) == 1
-            ), f"Expected 1 text embedded, got {len(embedded_texts)}"
-            assert (
-                "document 2" in embedded_texts[0].lower()
-            ), "Only doc2 should be embedded"
+            assert len(embedded_texts) == 1, (
+                f"Expected 1 text embedded, got {len(embedded_texts)}"
+            )
+            assert "document 2" in embedded_texts[0].lower(), (
+                "Only doc2 should be embedded"
+            )
 
 
 def test_loader_no_skiplist_embeds_all(mock_session_factory, mock_embedder):
@@ -351,12 +351,12 @@ def test_loader_no_skiplist_embeds_all(mock_session_factory, mock_embedder):
             )
 
             # Should embed all chunks
-            assert (
-                result["chunks_skipped"] == 0
-            ), f"Expected 0 chunks skipped, got {result['chunks_skipped']}"
-            assert (
-                result["chunks_embedded"] == 2
-            ), f"Expected 2 chunks embedded, got {result['chunks_embedded']}"
+            assert result["chunks_skipped"] == 0, (
+                f"Expected 0 chunks skipped, got {result['chunks_skipped']}"
+            )
+            assert result["chunks_embedded"] == 2, (
+                f"Expected 2 chunks embedded, got {result['chunks_embedded']}"
+            )
 
 
 def test_loader_empty_skiplist_embeds_all(mock_session_factory, mock_embedder):
@@ -409,12 +409,12 @@ def test_loader_empty_skiplist_embeds_all(mock_session_factory, mock_embedder):
             )
 
             # Should embed all chunks
-            assert (
-                result["chunks_skipped"] == 0
-            ), f"Expected 0 chunks skipped, got {result['chunks_skipped']}"
-            assert (
-                result["chunks_embedded"] == 4
-            ), f"Expected 4 chunks embedded, got {result['chunks_embedded']}"
+            assert result["chunks_skipped"] == 0, (
+                f"Expected 0 chunks skipped, got {result['chunks_skipped']}"
+            )
+            assert result["chunks_embedded"] == 4, (
+                f"Expected 4 chunks embedded, got {result['chunks_embedded']}"
+            )
 
 
 def test_loader_skiplist_load_failure_continues(
@@ -491,6 +491,6 @@ def test_loader_skiplist_load_failure_continues(
             )
 
             # Should proceed to embed all chunks (skiplist loading failed)
-            assert (
-                result["chunks_embedded"] == 1
-            ), f"Expected 1 chunk embedded, got {result['chunks_embedded']}"
+            assert result["chunks_embedded"] == 1, (
+                f"Expected 1 chunk embedded, got {result['chunks_embedded']}"
+            )

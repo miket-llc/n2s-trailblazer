@@ -241,7 +241,7 @@ def load_chunks_to_db(
         chunks_file: Chunks NDJSON file to load (overrides run_id)
         provider_name: Embedding provider to use
         model: Model name for the provider (e.g., text-embedding-3-small)
-        dimensions: Embedding dimensions (e.g., 512, 1024, 1536)
+        dimension: Embedding dimension (e.g., 1536)
         batch_size: Batch size for embedding generation
         max_docs: Maximum number of documents to process
         max_chunks: Maximum number of chunks to process

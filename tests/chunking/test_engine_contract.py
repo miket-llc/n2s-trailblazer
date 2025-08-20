@@ -131,9 +131,9 @@ class TestEngineContract:
                     overlap_found = any(
                         word in chunk2_words for word in chunk1_words
                     )
-                    assert (
-                        overlap_found
-                    ), f"No overlap found between chunks {i} and {i + 1} for strategy {case['expected_strategy']}"
+                    assert overlap_found, (
+                        f"No overlap found between chunks {i} and {i + 1} for strategy {case['expected_strategy']}"
+                    )
 
     def test_hard_token_cap_never_exceeded(self):
         """Test that hard_max_tokens is never exceeded, even with edge cases."""
@@ -180,12 +180,12 @@ class TestEngineContract:
                 # Re-tokenize to verify
                 actual_tokens = count_tokens(chunk.text_md)
 
-                assert (
-                    actual_tokens <= hard_cap
-                ), f"Chunk {j} in test case {i} has {actual_tokens} tokens, exceeding hard cap of {hard_cap}"
-                assert (
-                    chunk.token_count <= hard_cap
-                ), f"Reported token count {chunk.token_count} exceeds hard cap"
+                assert actual_tokens <= hard_cap, (
+                    f"Chunk {j} in test case {i} has {actual_tokens} tokens, exceeding hard cap of {hard_cap}"
+                )
+                assert chunk.token_count <= hard_cap, (
+                    f"Reported token count {chunk.token_count} exceeds hard cap"
+                )
 
     def test_chunk_metadata_complete(self):
         """Test that all chunk metadata is properly populated."""

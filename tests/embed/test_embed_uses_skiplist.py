@@ -82,12 +82,10 @@ def test_embed_honors_skiplist(
         with patch(
             "trailblazer.pipeline.steps.embed.loader.upsert_document"
         ) as mock_upsert_doc:
-            with patch(
-                "trailblazer.pipeline.steps.embed.loader.upsert_chunk"
-            ) as mock_upsert_chunk:
+            with patch("trailblazer.pipeline.steps.embed.loader.upsert_chunk"):
                 with patch(
                     "trailblazer.pipeline.steps.embed.loader.upsert_chunk_embedding"
-                ) as mock_upsert_embed:
+                ):
                     result = load_chunks_to_db(
                         run_id=mock_run_with_skiplist, provider_name="dummy"
                     )

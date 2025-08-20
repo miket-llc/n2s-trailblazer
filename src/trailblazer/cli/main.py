@@ -2171,9 +2171,7 @@ def _generate_enrichment_assurance_md(stats: dict, output_path: Path) -> None:
 ## Next Steps
 
 Run `trailblazer embed load --run-id {run_id}` to embed the enriched documents into the vector database.
-""".format(
-        run_id=stats["run_id"]
-    )
+""".format(run_id=stats["run_id"])
 
     output_path.write_text(content, encoding="utf-8")
 
@@ -2715,7 +2713,7 @@ def ops_dispatch_cmd(
             """
             run_id="$0"; docs="${1:-0}";
             echo "[DISPATCH] $run_id ($docs docs)"
-            PYTHONPATH=src python3 -m trailblazer.cli.main embed load --run-id "$run_id" --provider "${EMBED_PROVIDER:-openai}" --model "${EMBED_MODEL:-text-embedding-3-small}" --dimensions "${EMBED_DIMENSIONS:-1536}" --batch "${BATCH_SIZE:-128}"
+            PYTHONPATH=src python3 -m trailblazer.cli.main embed load --run-id "$run_id" --provider "${EMBED_PROVIDER:-openai}" --model "${EMBED_MODEL:-text-embedding-3-small}" --dimension "${EMBED_DIMENSIONS:-1536}" --batch "${BATCH_SIZE:-128}"
             """,
         ]
 

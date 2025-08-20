@@ -46,12 +46,12 @@ def test_preflight_routes_to_library():
                 ):
                     has_library_call = True
 
-        assert (
-            has_library_import
-        ), "Preflight command must import run_preflight_check from library"
-        assert (
-            has_library_call
-        ), "Preflight command must call run_preflight_check function"
+        assert has_library_import, (
+            "Preflight command must import run_preflight_check from library"
+        )
+        assert has_library_call, (
+            "Preflight command must call run_preflight_check function"
+        )
 
 
 def test_plan_preflight_routes_to_library():
@@ -99,9 +99,9 @@ def test_plan_preflight_routes_to_library():
                 ):
                     has_library_call = True
 
-        assert (
-            has_library_import
-        ), "Plan-preflight command must import run_plan_preflight from library"
-        assert (
-            has_library_call
-        ), "Plan-preflight command must call run_plan_preflight function"
+        assert has_library_import, (
+            "Plan-preflight command must import run_plan_preflight from library"
+        )
+        assert has_library_call, (
+            "Plan-preflight command must call run_plan_preflight function"
+        )

@@ -26,23 +26,23 @@ def test_no_subprocess_in_embed_steps():
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         if alias.name in forbidden_imports:
-                            assert (
-                                False
-                            ), f"Forbidden import '{alias.name}' found in {py_file}"
+                            assert False, (
+                                f"Forbidden import '{alias.name}' found in {py_file}"
+                            )
 
                 elif isinstance(node, ast.ImportFrom):
                     if node.module in forbidden_imports:
-                        assert (
-                            False
-                        ), f"Forbidden import 'from {node.module}' found in {py_file}"
+                        assert False, (
+                            f"Forbidden import 'from {node.module}' found in {py_file}"
+                        )
 
                     # Check for specific functions
                     if node.module == "os" and any(
                         alias.name == "system" for alias in node.names
                     ):
-                        assert (
-                            False
-                        ), f"Forbidden import 'from os import system' found in {py_file}"
+                        assert False, (
+                            f"Forbidden import 'from os import system' found in {py_file}"
+                        )
 
         except Exception:
             # If we can't parse the file, that's a different issue
@@ -79,15 +79,15 @@ def test_no_subprocess_in_cli_main():
                             and node.func.value.id in ["subprocess", "os"]
                             and node.func.attr in ["run", "system", "popen"]
                         ):
-                            assert (
-                                False
-                            ), f"Forbidden subprocess call in {func_node.name}: {node.func.value.id}.{node.func.attr}"
+                            assert False, (
+                                f"Forbidden subprocess call in {func_node.name}: {node.func.value.id}.{node.func.attr}"
+                            )
 
                     elif isinstance(node.func, ast.Name):
                         if node.func.id in ["system", "popen"]:
-                            assert (
-                                False
-                            ), f"Forbidden shell call in {func_node.name}: {node.func.id}"
+                            assert False, (
+                                f"Forbidden shell call in {func_node.name}: {node.func.id}"
+                            )
 
     except Exception:
         # If we can't parse, that's a different issue
