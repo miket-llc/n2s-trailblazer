@@ -285,6 +285,11 @@ while IFS= read -r run_id; do
 
     # Remove any trailing colon and chunk count if present
     run_id="${run_id%%:*}"
+    
+    # Handle both formats: "var/runs/run_id" and just "run_id"
+    if [[ "$run_id" == var/runs/* ]]; then
+        run_id="${run_id#var/runs/}"
+    fi
 
     # Validate run directory exists
     if [[ ! -d "var/runs/${run_id}" ]]; then
@@ -298,22 +303,11 @@ while IFS= read -r run_id; do
         chunk_count=$(wc -l < "var/runs/${run_id}/chunk/chunks.ndjson" 2>/dev/null || echo 0)
     fi
 
-    # Always run per-RID preflight check for safety
-    echo "🔍 Running preflight check for ${run_id}..."
-    if trailblazer embed preflight "${run_id}" --provider "${RESOLVED_PROVIDER}" --model "${RESOLVED_MODEL}" --dim "${RESOLVED_DIMENSION}" >/dev/null 2>&1; then
-        RUNS+=("${run_id}:${chunk_count}")
-        TOTAL_CHUNKS=$((TOTAL_CHUNKS + chunk_count))
-        echo "✅ Run: ${run_id} (${chunk_count} chunks) - preflight passed"
-    else
-        # Log preflight failure to dispatcher.out
-        preflight_json="var/runs/${run_id}/preflight/preflight.json"
-        if [[ -f "${preflight_json}" ]]; then
-            echo -e "${RED}❌ SKIPPED RID ${run_id}: preflight failed - see ${preflight_json}${NC}" | tee -a "${DISPATCHER_LOG}"
-        else
-            echo -e "${RED}❌ SKIPPED RID ${run_id}: preflight failed - no preflight.json generated${NC}" | tee -a "${DISPATCHER_LOG}"
-        fi
-        SKIPPED_PREFLIGHT_COUNT=$((SKIPPED_PREFLIGHT_COUNT + 1))
-    fi
+    # Trust plan-preflight validation - no redundant per-RID preflight needed
+    # Plan-preflight already validated these runs with proper advisory quality gates
+    RUNS+=("${run_id}:${chunk_count}")
+    TOTAL_CHUNKS=$((TOTAL_CHUNKS + chunk_count))
+    echo "✅ Run: ${run_id} (${chunk_count} chunks) - from validated plan"
 done < "${SELECTED_PLAN_FILE}"
 
 if [[ ${#RUNS[@]} -eq 0 ]]; then

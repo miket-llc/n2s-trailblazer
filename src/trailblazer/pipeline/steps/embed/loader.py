@@ -284,6 +284,27 @@ def load_chunks_to_db(
                     if doc_id:
                         doc_metadata[doc_id] = record
 
+    # Load doc skiplist if it exists (from preflight)
+    skipped_doc_ids = set()
+    if run_id and run_id != "unknown":
+        from ....core.paths import runs
+
+        skiplist_path = runs() / run_id / "preflight" / "doc_skiplist.json"
+        if skiplist_path.exists():
+            try:
+                with open(skiplist_path, "r", encoding="utf-8") as f:
+                    skiplist_data = json.load(f)
+                    skipped_doc_ids = set(skiplist_data.get("skip", []))
+                    log.info(
+                        "embed.skiplist_loaded",
+                        run_id=run_id,
+                        skipped_count=len(skipped_doc_ids),
+                    )
+            except Exception as e:
+                log.warning(
+                    "embed.skiplist_load_failed", run_id=run_id, error=str(e)
+                )
+
     # Determine which documents to process based on fingerprints
     if reembed_all:
         changed_docs = None  # Process all documents
@@ -359,7 +380,10 @@ def load_chunks_to_db(
     with event_emitter:
         try:
             from ....obs.events import EventEmitter as _EE
-            _EE.set_event_context(run_id=run_id or "unknown", stage="embed", component="loader")
+
+            _EE.set_event_context(
+                run_id=run_id or "unknown", stage="embed", component="loader"
+            )
         except Exception:
             pass
         event_emitter.embed_start(
@@ -460,6 +484,15 @@ def load_chunks_to_db(
 
                     # Extract doc_id from chunk_id
                     doc_id = ":".join(chunk_id.split(":")[:-1])
+
+                    # Skip if doc is in skiplist (from preflight)
+                    if doc_id in skipped_doc_ids:
+                        chunks_skipped += 1
+                        # Also track document skip if this is the first chunk we've seen for this doc
+                        if doc_id not in processed_docs:
+                            docs_skipped += 1
+                            processed_docs.add(doc_id)
+                        continue
 
                     # Track unique documents
                     if doc_id not in processed_docs:
@@ -727,8 +760,11 @@ def load_chunks_to_db(
             emit_event("embed.fingerprints_save_error", error=str(e))
             log.warning("embed.fingerprints_save_failed", error=str(e))
 
-    # Generate assurance report
+    # Generate assurance report with skiplist information
     if run_id and run_id != "unknown":
+        # Add skiplist information to metrics for assurance report
+        metrics["embeddedDocs"] = docs_embedded
+        metrics["skippedDocs"] = docs_skipped
         _generate_assurance_report(run_id, metrics)
 
     # Write embed manifest after successful embedding
@@ -796,6 +832,7 @@ def load_chunks_to_db(
     # Write per-stage progress file atomically
     try:
         from ....core.paths import progress as progress_dir
+
         progress_path = progress_dir() / "embed.json"
         progress_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = progress_path.with_suffix(".json.tmp")
@@ -879,12 +916,12 @@ def _generate_assurance_report(run_id: str, metrics: Dict[str, Any]) -> None:
         f.write(f"**Duration**: {metrics['duration_seconds']:.2f}s\n\n")
         f.write("## Metrics\n\n")
         f.write(
-            f"- Documents: {metrics['docs_embedded']} embedded, {metrics['docs_skipped']} skipped\n"
+            f"- Documents: {metrics.get('embeddedDocs', metrics['docs_embedded'])} embedded, {metrics.get('skippedDocs', metrics['docs_skipped'])} skipped\n"
         )
         f.write(
             f"- Chunks: {metrics['chunks_embedded']} embedded, {metrics['chunks_skipped']} skipped\n"
         )
-        if metrics["errors"]:
+        if metrics.get("errors"):
             f.write(f"- Errors: {len(metrics['errors'])}\n")
 
 

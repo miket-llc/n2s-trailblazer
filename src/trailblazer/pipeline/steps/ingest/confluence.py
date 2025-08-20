@@ -1309,6 +1309,7 @@ def ingest_confluence(
     if total_unknown_count > 0:
         try:
             from ...obs.events import emit_event
+
             emit_event(
                 "ingest.warn",
                 reason="unknown_space_key",

@@ -1,0 +1,28 @@
+{
+  "status": "BLOCKED",
+  "reasons": [
+    "MISSING_ENRICHED_JSONL",
+    "MISSING_CHUNKS_NDJSON",
+    "EMBEDDABLE_DOCS=0"
+  ],
+  "docTotals": {
+    "all": 0,
+    "embeddable": 0,
+    "skipped": 0
+  },
+  "quality": {},
+  "advisory": {
+    "quality": true
+  },
+  "artifacts": {
+    "enriched": false,
+    "chunks": false,
+    "tokenizer": true,
+    "config": true
+  },
+  "timestamp": "2025-08-20T11:41:08.937153+00:00",
+  "run_id": "test_run",
+  "provider": "openai",
+  "model": "text-embedding-3-small",
+  "dimension": 1536
+}

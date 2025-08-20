@@ -98,6 +98,16 @@ class EventEmitter:
         self._file: Optional[TextIO] = None
         self._start_time = time.time()
 
+    def __enter__(self):
+        # Check for rotation before opening
+        self._rotate_if_needed()
+        self._file = open(self.events_path, "a", encoding="utf-8")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._file:
+            self._file.close()
+
     def _create_symlinks(self):
         """Create and update symlinks per logging convention."""
         # Run-specific symlink: var/logs/<run_id>.ndjson -> var/logs/<run_id>/events.ndjson
@@ -179,6 +189,239 @@ class EventEmitter:
         """Clear global event context."""
         cls._global_context = {}
 
+    def _emit(
+        self,
+        action: EventAction,
+        level: EventLevel = EventLevel.INFO,
+        duration_ms: Optional[int] = None,
+        **kwargs,
+    ) -> None:
+        """Emit a structured event using the canonical schema."""
+        if not self._file:
+            return
+
+        # Map action to canonical status
+        status_map = {
+            EventAction.START: "START",
+            EventAction.COMPLETE: "END",
+            EventAction.ERROR: "FAIL",
+            EventAction.WARNING: "OK",
+            EventAction.TICK: "OK",
+            EventAction.HEARTBEAT: "OK",
+        }
+        status = status_map.get(action, "OK")
+
+        # Build counts if provided
+        counts = kwargs.get("counts") or {
+            "docs": int(kwargs.get("docs", 0) or 0),
+            "chunks": int(kwargs.get("chunks", 0) or 0),
+            "tokens": int(kwargs.get("tokens", 0) or 0),
+        }
+
+        # Operation name: prefer explicit op, else derive from component/action
+        op = kwargs.get("op") or f"{self.component}.{action.value}"
+
+        canonical_event = {
+            "ts": datetime.now(timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z"),
+            "level": str(level).split(".")[-1].upper(),
+            "stage": self.phase,
+            "rid": self.run_id,
+            "op": op,
+            "status": status,
+            "duration_ms": duration_ms,
+            "counts": counts,
+            "doc_id": kwargs.get("doc_id"),
+            "chunk_id": kwargs.get("chunk_id"),
+            "provider": kwargs.get("provider"),
+            "model": kwargs.get("model"),
+            "dimension": kwargs.get("dimension")
+            or kwargs.get("embedding_dims"),
+            "reason": kwargs.get("reason"),
+        }
+
+        try:
+            self._file.write(
+                json.dumps(
+                    {k: v for k, v in canonical_event.items() if v is not None}
+                )
+                + "\n"
+            )
+            self._file.flush()
+        except Exception:
+            pass  # Silently fail to avoid breaking the main process
+
+    # Phase-specific events
+    def ingest_start(
+        self,
+        space_key: Optional[str] = None,
+        sourcefile: Optional[str] = None,
+        **kwargs,
+    ):
+        """Emit ingest.start event."""
+        self._emit(
+            EventAction.START,
+            space_key=space_key,
+            sourcefile=sourcefile,
+            **kwargs,
+        )
+
+    def ingest_tick(self, processed: int, **kwargs):
+        """Emit ingest.tick event."""
+        self._emit(
+            EventAction.TICK, metadata={"processed": processed}, **kwargs
+        )
+
+    def ingest_complete(
+        self, total_processed: int, duration_ms: int, **kwargs
+    ):
+        """Emit ingest.complete event."""
+        self._emit(
+            EventAction.COMPLETE,
+            duration_ms=duration_ms,
+            metadata={"total_processed": total_processed},
+            **kwargs,
+        )
+
+    def normalize_start(self, input_file: Optional[str] = None, **kwargs):
+        """Emit normalize.start event."""
+        self._emit(EventAction.START, sourcefile=input_file, **kwargs)
+
+    def normalize_tick(self, processed: int, **kwargs):
+        """Emit normalize.tick event."""
+        self._emit(
+            EventAction.TICK, metadata={"processed": processed}, **kwargs
+        )
+
+    def normalize_complete(
+        self, total_processed: int, duration_ms: int, **kwargs
+    ):
+        """Emit normalize.complete event."""
+        self._emit(
+            EventAction.COMPLETE,
+            duration_ms=duration_ms,
+            metadata={"total_processed": total_processed},
+            **kwargs,
+        )
+
+    def enrich_start(self, input_file: Optional[str] = None, **kwargs):
+        """Emit enrich.start event."""
+        self._emit(EventAction.START, sourcefile=input_file, **kwargs)
+
+    def enrich_tick(self, processed: int, **kwargs):
+        """Emit enrich.tick event."""
+        self._emit(
+            EventAction.TICK, metadata={"processed": processed}, **kwargs
+        )
+
+    def enrich_complete(
+        self, total_processed: int, duration_ms: int, **kwargs
+    ):
+        """Emit enrich.complete event."""
+        self._emit(
+            EventAction.COMPLETE,
+            duration_ms=duration_ms,
+            metadata={"total_processed": total_processed},
+            **kwargs,
+        )
+
+    def chunk_start(self, input_file: Optional[str] = None, **kwargs):
+        """Emit chunk.start event."""
+        self._emit(EventAction.START, sourcefile=input_file, **kwargs)
+
+    def chunk_tick(self, chunk_id: str, processed: int, **kwargs):
+        """Emit chunk.tick event."""
+        self._emit(
+            EventAction.TICK,
+            chunk_id=chunk_id,
+            metadata={"processed": processed},
+            **kwargs,
+        )
+
+    def chunk_complete(self, total_chunks: int, duration_ms: int, **kwargs):
+        """Emit chunk.complete event."""
+        self._emit(
+            EventAction.COMPLETE,
+            duration_ms=duration_ms,
+            metadata={"total_chunks": total_chunks},
+            **kwargs,
+        )
+
+    def embed_start(
+        self, provider: str, model: str, embedding_dims: int, **kwargs
+    ):
+        """Emit embed.start event."""
+        self._emit(
+            EventAction.START,
+            provider=provider,
+            model=model,
+            embedding_dims=embedding_dims,
+            **kwargs,
+        )
+
+    def embed_chunk(self, chunk_id: str, embedding_dims: int, **kwargs):
+        """Emit embed.chunk event."""
+        self._emit(
+            EventAction.TICK,
+            chunk_id=chunk_id,
+            embedding_dims=embedding_dims,
+            **kwargs,
+        )
+
+    def embed_tick(self, processed: int, **kwargs):
+        """Emit embed.tick event."""
+        self._emit(
+            EventAction.TICK, metadata={"processed": processed}, **kwargs
+        )
+
+    def embed_complete(self, total_embedded: int, duration_ms: int, **kwargs):
+        """Emit embed.complete event."""
+        self._emit(
+            EventAction.COMPLETE,
+            duration_ms=duration_ms,
+            metadata={"total_embedded": total_embedded},
+            **kwargs,
+        )
+
+    def warning(self, message: str, **kwargs):
+        """Emit warning event."""
+        self._emit(
+            EventAction.WARNING,
+            level=EventLevel.WARNING,
+            metadata={"message": message},
+            **kwargs,
+        )
+
+    def error(self, message: str, error_type: Optional[str] = None, **kwargs):
+        """Emit error event."""
+        self._emit(
+            EventAction.ERROR,
+            level=EventLevel.ERROR,
+            metadata={"message": message, "error_type": error_type},
+            **kwargs,
+        )
+
+    def heartbeat(
+        self,
+        processed: int,
+        rate: float,
+        eta_seconds: Optional[float] = None,
+        active_workers: int = 1,
+        **kwargs,
+    ):
+        """Emit heartbeat event."""
+        self._emit(
+            EventAction.HEARTBEAT,
+            metadata={
+                "processed": processed,
+                "rate": rate,
+                "eta_seconds": eta_seconds,
+                "active_workers": active_workers,
+                **kwargs,
+            },
+        )
+
 
 # Free function expected by chunk engine and other legacy call sites
 def emit_event(event_type: str, **kwargs) -> None:
@@ -219,7 +462,9 @@ def emit_event(event_type: str, **kwargs) -> None:
         }
 
         event = {
-            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "ts": datetime.now(timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z"),
             "level": level,
             "stage": stage,
             "rid": run_id,
@@ -231,9 +476,8 @@ def emit_event(event_type: str, **kwargs) -> None:
             "chunk_id": kwargs.get("chunk_id"),
             "provider": kwargs.get("provider"),
             "model": kwargs.get("model"),
-            "dimension": kwargs.get("dimension") or kwargs.get(
-                "embedding_dims"
-            ),
+            "dimension": kwargs.get("dimension")
+            or kwargs.get("embedding_dims"),
             "reason": kwargs.get("reason"),
         }
 
@@ -242,20 +486,13 @@ def emit_event(event_type: str, **kwargs) -> None:
         log_dir.mkdir(parents=True, exist_ok=True)
         events_path = log_dir / "events.ndjson"
         with open(events_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({k: v for k, v in event.items() if v is not None}) + "\n")
+            f.write(
+                json.dumps({k: v for k, v in event.items() if v is not None})
+                + "\n"
+            )
     except Exception:
         # Never break main flow on observability errors
         pass
-
-    def __enter__(self):
-        # Check for rotation before opening
-        self._rotate_if_needed()
-        self._file = open(self.events_path, "a", encoding="utf-8")
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._file:
-            self._file.close()
 
     def _emit(
         self,
@@ -290,7 +527,9 @@ def emit_event(event_type: str, **kwargs) -> None:
         op = kwargs.get("op") or f"{self.component}.{action.value}"
 
         canonical_event = {
-            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "ts": datetime.now(timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z"),
             "level": str(level).split(".")[-1].upper(),
             "stage": self.phase,
             "rid": self.run_id,
@@ -302,13 +541,16 @@ def emit_event(event_type: str, **kwargs) -> None:
             "chunk_id": kwargs.get("chunk_id"),
             "provider": kwargs.get("provider"),
             "model": kwargs.get("model"),
-            "dimension": kwargs.get("dimension") or kwargs.get("embedding_dims"),
+            "dimension": kwargs.get("dimension")
+            or kwargs.get("embedding_dims"),
             "reason": kwargs.get("reason"),
         }
 
         try:
             self._file.write(
-                json.dumps({k: v for k, v in canonical_event.items() if v is not None})
+                json.dumps(
+                    {k: v for k, v in canonical_event.items() if v is not None}
+                )
                 + "\n"
             )
             self._file.flush()
