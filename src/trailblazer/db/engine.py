@@ -160,12 +160,14 @@ def ensure_vector_index() -> None:
         # IVFFLAT cosine index; requires ANALYZE and pgvector >= 0.5.0
         try:
             conn.execute(
-                text("""
+                text(
+                    """
                 CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_vec
                 ON chunk_embeddings
                 USING ivfflat (embedding vector_cosine_ops)
                 WITH (lists = 100);
-            """)
+            """
+                )
             )
             conn.execute(text("ANALYZE chunk_embeddings;"))
             conn.commit()

@@ -140,9 +140,9 @@ def test_overlap_maintained():
 
             # Should have at least some overlap
             overlap = current_words.intersection(next_words)
-            assert len(overlap) > 0, (
-                f"No overlap found between chunks {i} and {i + 1}"
-            )
+            assert (
+                len(overlap) > 0
+            ), f"No overlap found between chunks {i} and {i + 1}"
 
 
 def test_code_block_preservation():

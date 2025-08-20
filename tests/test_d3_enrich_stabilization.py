@@ -11,7 +11,7 @@ from trailblazer.pipeline.steps.chunk.engine import (
     chunk_document,
     inject_media_placeholders,
 )
-from trailblazer.cli.main import embed_preflight_cmd
+from trailblazer.cli.main import embed_plan_preflight_cmd
 
 
 def chunk_enriched_record(record):
@@ -160,9 +160,11 @@ class TestEnrichChunkPreflightFlow:
                             "text_md": chunk.text_md,
                             "char_count": chunk.char_count,
                             "token_count": chunk.token_count,
-                            "chunk_type": chunk.chunk_type.value
-                            if hasattr(chunk.chunk_type, "value")
-                            else str(chunk.chunk_type),
+                            "chunk_type": (
+                                chunk.chunk_type.value
+                                if hasattr(chunk.chunk_type, "value")
+                                else str(chunk.chunk_type)
+                            ),
                             "meta": chunk.meta,
                         }
                         f.write(json.dumps(chunk_data) + "\n")
@@ -195,7 +197,7 @@ class TestEnrichChunkPreflightFlow:
 
                         # This should pass without raising an exception
                         try:
-                            embed_preflight_cmd(
+                            embed_plan_preflight_cmd(
                                 run=run_id,
                                 provider="openai",
                                 model="text-embedding-3-small",
@@ -205,9 +207,9 @@ class TestEnrichChunkPreflightFlow:
                         except SystemExit as e:
                             preflight_passed = e.code == 0
 
-                        assert preflight_passed, (
-                            "Healthy sample should pass preflight"
-                        )
+                        assert (
+                            preflight_passed
+                        ), "Healthy sample should pass preflight"
 
     def test_poor_quality_sample_fails_preflight(self):
         """Test that a poor quality sample fails preflight checks."""
@@ -313,7 +315,7 @@ class TestEnrichChunkPreflightFlow:
                         # This should fail due to quality gate
                         preflight_failed = False
                         try:
-                            embed_preflight_cmd(
+                            embed_plan_preflight_cmd(
                                 run=run_id,
                                 provider="openai",
                                 model="text-embedding-3-small",
@@ -322,9 +324,9 @@ class TestEnrichChunkPreflightFlow:
                         except SystemExit as e:
                             preflight_failed = e.code != 0
 
-                        assert preflight_failed, (
-                            "Poor quality sample should fail preflight"
-                        )
+                        assert (
+                            preflight_failed
+                        ), "Poor quality sample should fail preflight"
 
     def test_enriched_sample_output_format(self):
         """Test that enriched.jsonl sample has the expected format."""

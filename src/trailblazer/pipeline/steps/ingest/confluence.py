@@ -459,9 +459,7 @@ def ingest_confluence(
         first_space_key = (
             space_keys[0]
             if space_keys
-            else list(space_key_by_id.values())[0]
-            if space_key_by_id
-            else None
+            else list(space_key_by_id.values())[0] if space_key_by_id else None
         )
         if first_space_key:
             state_file = state_base / f"{first_space_key}_state.json"
@@ -545,9 +543,9 @@ def ingest_confluence(
     space_details_cache: Dict[str, Dict] = {}  # Cache space details
     space_stats: Dict[str, Dict] = {}  # space_key -> stats
     last_highwater: Optional[datetime] = None
-    space_key_unknown_count: Dict[
-        str, int
-    ] = {}  # Track failed space_key resolutions
+    space_key_unknown_count: Dict[str, int] = (
+        {}
+    )  # Track failed space_key resolutions
 
     # Open CSV writers
     with (
@@ -589,11 +587,7 @@ def ingest_confluence(
             nonlocal written_pages, written_attachments, last_highwater
             nonlocal link_stats, links_data, attachments_manifest_data
             nonlocal media_data, edges_data, labels_data, breadcrumbs_data
-            nonlocal \
-                content_hash_collisions, \
-                media_refs_total, \
-                labels_total, \
-                ancestors_total
+            nonlocal content_hash_collisions, media_refs_total, labels_total, ancestors_total
             page_dict = p.model_dump(mode="json")
 
             # Add new body representation fields
@@ -894,9 +888,11 @@ def ingest_confluence(
             first_space_key = (
                 space_keys[0]
                 if space_keys
-                else list(space_key_by_id.values())[0]
-                if space_key_by_id
-                else "unknown"
+                else (
+                    list(space_key_by_id.values())[0]
+                    if space_key_by_id
+                    else "unknown"
+                )
             )
             event_logger.space_begin(
                 source="confluence",
@@ -1209,9 +1205,9 @@ def ingest_confluence(
         "total_pages": written_pages,
         "total_attachments": written_attachments,
         "space_key_unknown_count": total_unknown_count,
-        "progress_checkpoints": written_pages // progress_every
-        if progress_every > 0
-        else 0,
+        "progress_checkpoints": (
+            written_pages // progress_every if progress_every > 0 else 0
+        ),
         # Traceability stats
         "links_total": link_stats["total"],
         "links_internal": link_stats["internal"],
@@ -1224,9 +1220,9 @@ def ingest_confluence(
         "ancestors_total": ancestors_total,
         "content_hash_collisions": content_hash_collisions,
         "resume_from": None,  # For future use
-        "checkpoints_written": written_pages // progress_every
-        if progress_every > 0
-        else 0,
+        "checkpoints_written": (
+            written_pages // progress_every if progress_every > 0 else 0
+        ),
         "spaces": {},
     }
 

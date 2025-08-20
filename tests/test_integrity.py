@@ -99,13 +99,15 @@ def create_test_run():
     compose_dir = run_dir / "compose"
     compose_dir.mkdir(exist_ok=True)
 
-    (compose_dir / "test_output.md").write_text("""# Test Output
+    (compose_dir / "test_output.md").write_text(
+        """# Test Output
 
 This is a test markdown file.
 
 - Item 1
 - Item 2
-""")
+"""
+    )
 
     return run_id, run_dir
 

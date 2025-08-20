@@ -268,9 +268,11 @@ def build_chunk_assurance(
         "count": len(token_counts),
         "min": min(token_counts) if token_counts else 0,
         "median": int(statistics.median(token_counts)) if token_counts else 0,
-        "p95": int(statistics.quantiles(token_counts, n=20)[18])
-        if len(token_counts) > 20
-        else (max(token_counts) if token_counts else 0),
+        "p95": (
+            int(statistics.quantiles(token_counts, n=20)[18])
+            if len(token_counts) > 20
+            else (max(token_counts) if token_counts else 0)
+        ),
         "max": max(token_counts) if token_counts else 0,
         "total": sum(token_counts),
     }
@@ -278,9 +280,11 @@ def build_chunk_assurance(
     char_stats = {
         "min": min(char_counts) if char_counts else 0,
         "median": int(statistics.median(char_counts)) if char_counts else 0,
-        "p95": int(statistics.quantiles(char_counts, n=20)[18])
-        if len(char_counts) > 20
-        else (max(char_counts) if char_counts else 0),
+        "p95": (
+            int(statistics.quantiles(char_counts, n=20)[18])
+            if len(char_counts) > 20
+            else (max(char_counts) if char_counts else 0)
+        ),
         "max": max(char_counts) if char_counts else 0,
     }
 
@@ -317,9 +321,9 @@ def build_chunk_assurance(
         "bottoms": {
             "softMinTokens": soft_min_tokens,
             "hardMinTokens": hard_min_tokens,
-            "pctBelowSoftMin": (len(below_soft_min) / len(chunks)) * 100
-            if chunks
-            else 0.0,
+            "pctBelowSoftMin": (
+                (len(below_soft_min) / len(chunks)) * 100 if chunks else 0.0
+            ),
             "belowSoftMinExamples": below_soft_min[:10],  # Limit examples
             "hardMinExceptions": {
                 "count": len(below_hard_min),

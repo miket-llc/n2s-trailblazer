@@ -123,12 +123,14 @@ def compute_embeddable_docs(
     if quality_scores:
         quality_stats = {
             "p50": statistics.median(quality_scores),
-            "p90": statistics.quantiles(quality_scores, n=10)[8]
-            if len(quality_scores) >= 10
-            else max(quality_scores),
-            "belowThresholdPct": len(skipped_doc_ids) / total_docs
-            if total_docs > 0
-            else 0.0,
+            "p90": (
+                statistics.quantiles(quality_scores, n=10)[8]
+                if len(quality_scores) >= 10
+                else max(quality_scores)
+            ),
+            "belowThresholdPct": (
+                len(skipped_doc_ids) / total_docs if total_docs > 0 else 0.0
+            ),
             "minQuality": min_quality,
             "maxBelowThresholdPct": max_below_threshold_pct,
         }
@@ -143,7 +145,6 @@ def run_preflight_check(
     dimension: int = 1536,
     min_embed_docs: int = 1,
     quality_advisory: bool = True,
-    quality_hard_gate: bool = False,
     min_quality: float = 0.60,
     max_below_threshold_pct: float = 0.20,
 ) -> Dict[str, Any]:
@@ -156,8 +157,7 @@ def run_preflight_check(
         model: Model name
         dimension: Embedding dimension
         min_embed_docs: Minimum embeddable docs required
-        quality_advisory: Whether quality is advisory only
-        quality_hard_gate: Whether to enforce quality as hard gate
+        quality_advisory: Whether quality is advisory only (always True now)
         min_quality: Minimum quality threshold
         max_below_threshold_pct: Maximum below threshold percentage
 
@@ -199,12 +199,11 @@ def run_preflight_check(
     if not config_valid:
         reasons.extend(config_issues)
 
-    # Quality gate logic
-    below_threshold_pct = quality_stats.get("belowThresholdPct", 0.0)
+    # Quality is now advisory only - never blocks runs
+    # QUALITY_GATE is forbidden as a run-level blocking reason per requirements
+    # below_threshold_pct = quality_stats.get("belowThresholdPct", 0.0)  # Advisory only
 
-    if quality_hard_gate and below_threshold_pct > max_below_threshold_pct:
-        reasons.append("QUALITY_GATE")
-
+    # Only block for structural reasons or zero embeddable docs
     if embeddable_docs < min_embed_docs:
         reasons.append("EMBEDDABLE_DOCS=0")
 
@@ -283,7 +282,6 @@ def run_plan_preflight(
     dimension: int = 1536,
     min_embed_docs: int = 1,
     quality_advisory: bool = True,
-    quality_hard_gate: bool = False,
     out_dir: str = "var/plan_preflight/",
 ) -> Dict[str, Any]:
     """
@@ -295,8 +293,7 @@ def run_plan_preflight(
         model: Model name
         dimension: Embedding dimension
         min_embed_docs: Minimum embeddable docs required
-        quality_advisory: Whether quality is advisory only
-        quality_hard_gate: Whether to enforce quality as hard gate
+        quality_advisory: Whether quality is advisory only (always True now)
         out_dir: Output directory
 
     Returns:
@@ -384,7 +381,6 @@ def run_plan_preflight(
             dimension=dimension,
             min_embed_docs=min_embed_docs,
             quality_advisory=quality_advisory,
-            quality_hard_gate=quality_hard_gate,
         )
 
         # Aggregate results
@@ -421,9 +417,11 @@ def run_plan_preflight(
             {
                 "rid": run_id,
                 "status": preflight_result["status"],
-                "reason": ", ".join(preflight_result["reasons"])
-                if preflight_result["reasons"]
-                else "",
+                "reason": (
+                    ", ".join(preflight_result["reasons"])
+                    if preflight_result["reasons"]
+                    else ""
+                ),
                 "docs_total": doc_totals["all"],
                 "docs_embeddable": embeddable_docs,
                 "docs_skipped": skipped_docs,
@@ -451,7 +449,6 @@ def run_plan_preflight(
         "parameters": {
             "min_embed_docs": min_embed_docs,
             "quality_advisory": quality_advisory,
-            "quality_hard_gate": quality_hard_gate,
         },
     }
 
@@ -495,7 +492,8 @@ def _write_plan_preflight_outputs(
 
     # Write plan_preflight.md
     with open(output_dir / "plan_preflight.md", "w") as f:
-        f.write(f"""# Plan Preflight Report
+        f.write(
+            f"""# Plan Preflight Report
 
 **Timestamp:** {plan_result["timestamp"]}
 **Provider:** {plan_result["provider"]}
@@ -504,25 +502,25 @@ def _write_plan_preflight_outputs(
 
 ## Summary
 
-- **Total Runs Planned:** {plan_result.get("total_runs_planned", plan_result["summary"]["total_runs"])}
-- **Ready Runs:** {plan_result.get("ready_runs", plan_result["summary"]["ready_runs"])}
-- **Blocked Runs:** {plan_result.get("blocked_runs", plan_result["summary"]["blocked_runs"])}
-- **Total Embeddable Docs:** {plan_result.get("total_embeddable_docs", plan_result["summary"]["total_embeddable_docs"]):,}
-- **Total Skipped Docs:** {plan_result.get("total_skipped_docs", plan_result["summary"]["total_skipped_docs"]):,}
-- **Total Tokens:** {plan_result.get("total_tokens", plan_result["summary"]["total_tokens"]):,}
+- **Total Runs Planned:** {plan_result["total_runs_planned"]}
+- **Ready Runs:** {plan_result["ready_runs"]}
+- **Blocked Runs:** {plan_result["blocked_runs"]}
+- **Total Embeddable Docs:** {plan_result["total_embeddable_docs"]:,}
+- **Total Skipped Docs:** {plan_result["total_skipped_docs"]:,}
+- **Total Tokens:** {plan_result["total_tokens"]:,}
 
 ## Quality Mode
 
-- **Advisory Mode:** {plan_result["parameters"]["quality_advisory"]}
-- **Hard Gate Mode:** {plan_result["parameters"]["quality_hard_gate"]}
+- **Advisory Mode:** {plan_result["parameters"]["quality_advisory"]} (quality never blocks runs)
 
 ## Status
 
-{"✅ READY" if plan_result.get("blocked_runs", plan_result["summary"]["blocked_runs"]) == 0 else f"⚠️  {plan_result.get('blocked_runs', plan_result['summary']['blocked_runs'])} BLOCKED"} - Runs validated for embedding
+{"✅ READY" if plan_result["blocked_runs"] == 0 else f"⚠️  {plan_result['blocked_runs']} BLOCKED"} - Runs validated for embedding
 
 ## Ready Runs ({len(ready_runs)})
 
-""")
+"""
+        )
 
         if ready_runs:
             f.write("| Run ID | Embeddable Docs | Skipped Docs | Tokens |\n")

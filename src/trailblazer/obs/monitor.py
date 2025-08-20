@@ -307,23 +307,27 @@ class TrailblazerMonitor:
                 "run_id": status.get("run_id"),
                 "phase": status.get("phase"),
                 "timestamp": status.get("timestamp"),
-                "status": "running"
-                if status.get("remaining", 0) > 0
-                else "completed",
+                "status": (
+                    "running"
+                    if status.get("remaining", 0) > 0
+                    else "completed"
+                ),
                 "progress": {
                     "processed": status.get("processed", 0),
                     "total_planned": status.get("total_planned"),
                     "remaining": status.get("remaining", 0),
-                    "percentage": round(
-                        (
-                            status.get("processed", 0)
-                            / status.get("total_planned", 1)
+                    "percentage": (
+                        round(
+                            (
+                                status.get("processed", 0)
+                                / status.get("total_planned", 1)
+                            )
+                            * 100,
+                            1,
                         )
-                        * 100,
-                        1,
-                    )
-                    if status.get("total_planned")
-                    else None,
+                        if status.get("total_planned")
+                        else None
+                    ),
                 },
                 "performance": {
                     "rate_current": status.get("rate_current", 0),

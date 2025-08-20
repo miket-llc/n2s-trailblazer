@@ -245,9 +245,9 @@ class TestChunkerAssuranceSchema:
         }
 
         for strategy in strategies.keys():
-            assert strategy in valid_strategies, (
-                f"Invalid strategy: {strategy}"
-            )
+            assert (
+                strategy in valid_strategies
+            ), f"Invalid strategy: {strategy}"
 
         # Counts should sum to total chunks
         total_strategy_count = sum(strategies.values())
@@ -440,9 +440,9 @@ Final paragraph with more text."""
 
         # Should have multiple split strategies
         strategies = assurance["splitStrategies"]
-        assert len(strategies) > 1, (
-            "Mixed content should use multiple strategies"
-        )
+        assert (
+            len(strategies) > 1
+        ), "Mixed content should use multiple strategies"
 
         # Should still have no breaches
         assert assurance["tokenCap"]["breaches"]["count"] == 0

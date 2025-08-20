@@ -132,9 +132,11 @@ def _create_dita_record(
         record.update(
             {
                 "doctype": doc.doctype,
-                "body_dita_xml": doc.body_xml[:10000]
-                if len(doc.body_xml) > 10000
-                else doc.body_xml,  # Truncate if huge
+                "body_dita_xml": (
+                    doc.body_xml[:10000]
+                    if len(doc.body_xml) > 10000
+                    else doc.body_xml
+                ),  # Truncate if huge
                 "ancestors": [],  # Will be populated from maps
                 "attachments": [ref.filename for ref in doc.images],
             }
@@ -447,9 +449,11 @@ def _write_links_sidecar(
                     "target_url": link.target_url,
                     "anchor": link.anchor,
                     "text": link.text,
-                    "rel": "CONREFS"
-                    if link.element_type in ("conref", "conkeyref")
-                    else "links_to",
+                    "rel": (
+                        "CONREFS"
+                        if link.element_type in ("conref", "conkeyref")
+                        else "links_to"
+                    ),
                 }
 
                 f.write(json.dumps(link_record) + "\n")

@@ -34,7 +34,7 @@ def diagnose_blocked_runs(plan_bundle_dir: str) -> Dict[str, Any]:
         raise FileNotFoundError(f"Plan preflight file not found: {plan_file}")
 
     with open(plan_file, "r") as f:
-        plan_data = json.load(f)
+        json.load(f)  # Validate JSON format
 
     # Read blocked runs
     blocked_file = bundle_dir / "blocked.txt"
@@ -178,7 +178,8 @@ def write_diagnostic_pack(
 
     # Write reasons.md histogram
     with open(output_dir / "reasons.md", "w") as f:
-        f.write(f"""# Plan Preflight Diagnostic Report
+        f.write(
+            f"""# Plan Preflight Diagnostic Report
 
 **Timestamp:** {result["timestamp"]}
 **Plan Bundle:** {result["plan_bundle_dir"]}
@@ -186,7 +187,8 @@ def write_diagnostic_pack(
 
 ## Reason Histogram
 
-""")
+"""
+        )
 
         # Sort reasons by count (descending)
         sorted_reasons = sorted(

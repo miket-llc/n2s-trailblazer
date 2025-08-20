@@ -34,7 +34,8 @@ def temp_dita_structure():
 
         # Create sample topic files
         intro_topic = concepts_dir / "introduction.dita"
-        intro_topic.write_text("""<?xml version="1.0"?>
+        intro_topic.write_text(
+            """<?xml version="1.0"?>
         <!DOCTYPE concept PUBLIC "-//OASIS//DTD DITA Concept//EN" "concept.dtd">
         <concept id="introduction">
             <title>Introduction</title>
@@ -51,10 +52,12 @@ def temp_dita_structure():
                 <p>Welcome to our documentation.</p>
                 <p><image href="../images/welcome.png" alt="Welcome image"/></p>
             </conbody>
-        </concept>""")
+        </concept>"""
+        )
 
         setup_task = tasks_dir / "setup.dita"
-        setup_task.write_text("""<?xml version="1.0"?>
+        setup_task.write_text(
+            """<?xml version="1.0"?>
         <!DOCTYPE task PUBLIC "-//OASIS//DTD DITA Task//EN" "task.dtd">
         <task id="setup">
             <title>Setup Instructions</title>
@@ -73,11 +76,13 @@ def temp_dita_structure():
                     <step><cmd>Install according to instructions.</cmd></step>
                 </steps>
             </taskbody>
-        </task>""")
+        </task>"""
+        )
 
         # Create a map file
         user_guide_map = maps_dir / "user-guide.ditamap"
-        user_guide_map.write_text("""<?xml version="1.0"?>
+        user_guide_map.write_text(
+            """<?xml version="1.0"?>
         <!DOCTYPE map PUBLIC "-//OASIS//DTD DITA Map//EN" "map.dtd">
         <map id="user_guide">
             <title>User Guide</title>
@@ -91,17 +96,20 @@ def temp_dita_structure():
             </prolog>
             <topicref href="../concepts/introduction.dita" navtitle="Introduction"/>
             <topicref href="../tasks/setup.dita" navtitle="Setup"/>
-        </map>""")
+        </map>"""
+        )
 
         # Create some non-DITA files that should be skipped
         (root / "readme.txt").write_text("This is a readme file.")
         (root / "archive.zip").write_text("fake zip content")
 
         # Create a plain XML file that's not DITA
-        (root / "config.xml").write_text("""<?xml version="1.0"?>
+        (root / "config.xml").write_text(
+            """<?xml version="1.0"?>
         <configuration>
             <setting name="debug" value="true"/>
-        </configuration>""")
+        </configuration>"""
+        )
 
         yield root
 

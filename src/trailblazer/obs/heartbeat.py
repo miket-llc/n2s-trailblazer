@@ -216,17 +216,19 @@ class HeartbeatManager:
             "retries": self.retries,
             "backoff_429s": self.backoff_429s,
             "active_workers": self.active_workers,
-            "remaining": max(0, self.total_planned - self.processed)
-            if self.total_planned > 0
-            else None,
+            "remaining": (
+                max(0, self.total_planned - self.processed)
+                if self.total_planned > 0
+                else None
+            ),
             "rate_current": round(current_rate, 2),
             "rate_ema_1m": round(self.ema_1m.value, 2),
             "rate_ema_5m": round(self.ema_5m.value, 2),
             "eta_human": eta,
             "eta_iso8601": eta_iso8601,
-            "total_planned": self.total_planned
-            if self.total_planned > 0
-            else None,
+            "total_planned": (
+                self.total_planned if self.total_planned > 0 else None
+            ),
         }
 
         # Write status file atomically

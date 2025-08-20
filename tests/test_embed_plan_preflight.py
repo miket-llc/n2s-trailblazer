@@ -173,9 +173,9 @@ def test_plan_preflight_success_mixed_results(
     ]
 
     for expected_file in expected_files:
-        assert (output_dir / expected_file).exists(), (
-            f"Missing {expected_file}"
-        )
+        assert (
+            output_dir / expected_file
+        ).exists(), f"Missing {expected_file}"
 
     # Check JSON report structure
     json_report = json.loads((output_dir / "plan_preflight.json").read_text())

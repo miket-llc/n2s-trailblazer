@@ -136,12 +136,14 @@ def db_stats() -> None:
 
             # Get embedding providers
             provider_stats = session.execute(
-                text("""
+                text(
+                    """
                 SELECT provider, COUNT(*) as count
                 FROM chunk_embeddings
                 GROUP BY provider
                 ORDER BY count DESC
-            """)
+            """
+                )
             ).fetchall()
 
         # Create stats table

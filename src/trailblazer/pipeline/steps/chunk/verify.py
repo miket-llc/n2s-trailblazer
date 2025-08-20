@@ -213,22 +213,26 @@ def verify_chunks(
         "total_documents": len(chunks_by_doc),
         "token_stats": {
             "min": min(token_counts) if token_counts else 0,
-            "median": int(statistics.median(token_counts))
-            if token_counts
-            else 0,
-            "p95": int(statistics.quantiles(token_counts, n=20)[18])
-            if len(token_counts) > 20
-            else (max(token_counts) if token_counts else 0),
+            "median": (
+                int(statistics.median(token_counts)) if token_counts else 0
+            ),
+            "p95": (
+                int(statistics.quantiles(token_counts, n=20)[18])
+                if len(token_counts) > 20
+                else (max(token_counts) if token_counts else 0)
+            ),
             "max": max(token_counts) if token_counts else 0,
             "mean": int(statistics.mean(token_counts)) if token_counts else 0,
         },
         "coverage_stats": {
-            "avg_coverage_pct": statistics.mean(coverage_percentages)
-            if coverage_percentages
-            else 100.0,
-            "min_coverage_pct": min(coverage_percentages)
-            if coverage_percentages
-            else 100.0,
+            "avg_coverage_pct": (
+                statistics.mean(coverage_percentages)
+                if coverage_percentages
+                else 100.0
+            ),
+            "min_coverage_pct": (
+                min(coverage_percentages) if coverage_percentages else 100.0
+            ),
             "docs_with_gaps": len(gaps_by_doc),
             "docs_analyzed": len(chunks_by_doc),
         },
@@ -279,13 +283,15 @@ def verify_chunks(
             "small_chunks": len(small_chunks),
             "docs_with_gaps": len(gaps_by_doc),
         },
-        "status": "PASS"
-        if (
-            len(oversize_chunks) == 0
-            and len(missing_traceability_chunks) == 0
-            and len(gaps_by_doc) == 0
-        )
-        else "FAIL",
+        "status": (
+            "PASS"
+            if (
+                len(oversize_chunks) == 0
+                and len(missing_traceability_chunks) == 0
+                and len(gaps_by_doc) == 0
+            )
+            else "FAIL"
+        ),
     }
 
     # Write JSON report

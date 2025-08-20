@@ -194,9 +194,9 @@ class TestChunkSweepCLI:
                 "log.out",
             ]
             for filename in expected_files:
-                assert (sweep_dir / filename).exists(), (
-                    f"{filename} should exist"
-                )
+                assert (
+                    sweep_dir / filename
+                ).exists(), f"{filename} should exist"
 
             # Check ready_for_preflight.txt
             ready_content = (
@@ -452,14 +452,16 @@ class TestChunkSweepCLI:
 
             # Create input file with comments and blank lines
             input_file = temp_path / "input.txt"
-            input_file.write_text("""# This is a comment
+            input_file.write_text(
+                """# This is a comment
 run1
 
 # Another comment
 run2
 run3
 
-# Final comment""")
+# Final comment"""
+            )
 
             # Create test run directories with enrich data
             for run_name in ["run1", "run2", "run3"]:

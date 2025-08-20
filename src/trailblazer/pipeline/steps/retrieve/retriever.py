@@ -112,7 +112,8 @@ class DenseRetriever:
         vector_str = "[" + ",".join(str(x) for x in query_vector) + "]"
 
         # SQL query using pgvector cosine similarity (PostgreSQL only)
-        sql_query = text("""
+        sql_query = text(
+            """
             SELECT 
                 c.chunk_id,
                 c.doc_id, 
@@ -127,7 +128,8 @@ class DenseRetriever:
             WHERE ce.provider = :provider
             ORDER BY score DESC, c.doc_id ASC, c.chunk_id ASC
             LIMIT :top_k
-        """)
+        """
+        )
 
         hits = []
         with self.session_factory() as session:

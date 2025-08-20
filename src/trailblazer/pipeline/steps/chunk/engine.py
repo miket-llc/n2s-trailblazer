@@ -630,9 +630,11 @@ def _create_safe_chunk(
         # Emit digest event if we created one
         emit_event(
             "chunk.digest",
-            source=chunk_type.value
-            if isinstance(chunk_type, ChunkType)
-            else chunk_type,
+            source=(
+                chunk_type.value
+                if isinstance(chunk_type, ChunkType)
+                else chunk_type
+            ),
             token_savings=chunk_meta.get("token_savings", 0),
         )
 
@@ -649,9 +651,11 @@ def _create_safe_chunk(
         char_count=len(chunk_text),
         token_count=final_tokens,
         ord=ord_num,
-        chunk_type=chunk_type.value
-        if isinstance(chunk_type, ChunkType)
-        else chunk_type,
+        chunk_type=(
+            chunk_type.value
+            if isinstance(chunk_type, ChunkType)
+            else chunk_type
+        ),
         meta=chunk_meta,
         split_strategy=split_strategy,
         char_start=char_start,

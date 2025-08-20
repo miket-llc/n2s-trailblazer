@@ -199,9 +199,11 @@ class EnrichAssurance(PhaseAssurance):
                 "input_documents": input_count,
                 "enriched_documents": output_count,
                 "coverage_percent": round(
-                    (output_count / input_count * 100)
-                    if input_count > 0
-                    else 0,
+                    (
+                        (output_count / input_count * 100)
+                        if input_count > 0
+                        else 0
+                    ),
                     1,
                 ),
             }
@@ -361,20 +363,22 @@ class EmbedAssurance(PhaseAssurance):
 
                 # Check for HNSW index
                 result = conn.execute(
-                    text("""
+                    text(
+                        """
                     SELECT indexname FROM pg_indexes
                     WHERE tablename = 'chunk_embeddings'
                     AND indexdef LIKE '%hnsw%'
-                """)
+                """
+                    )
                 )
                 hnsw_indexes = [row[0] for row in result]
 
                 self.metrics.update(
                     {
                         "total_embeddings": total_embeddings,
-                        "vector_dimensions": dims[0]
-                        if len(set(dims)) == 1
-                        else "inconsistent",
+                        "vector_dimensions": (
+                            dims[0] if len(set(dims)) == 1 else "inconsistent"
+                        ),
                         "dimension_variations": len(set(dims)),
                         "hnsw_indexes": len(hnsw_indexes),
                         "hnsw_index_names": hnsw_indexes,

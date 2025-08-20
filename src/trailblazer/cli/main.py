@@ -34,6 +34,7 @@ confluence_app = typer.Typer(help="Confluence commands")
 ops_app = typer.Typer(help="Operations commands")
 paths_app = typer.Typer(help="Workspace path commands")
 runs_app = typer.Typer(help="Runs management commands")
+admin_app = typer.Typer(help="Administrative commands")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(normalize_app, name="normalize")
 app.add_typer(db_app, name="db")
@@ -43,6 +44,7 @@ app.add_typer(confluence_app, name="confluence")
 app.add_typer(ops_app, name="ops")
 app.add_typer(paths_app, name="paths")
 app.add_typer(runs_app, name="runs")
+app.add_typer(admin_app, name="admin")
 
 
 def _run_db_preflight_check() -> None:
@@ -439,9 +441,11 @@ def ingest_confluence_cmd(
 
     # Setup logging first
     setup_logging(
-        format_type=cast(LogFormat, log_format)
-        if log_format in ("json", "plain", "auto")
-        else "auto"
+        format_type=(
+            cast(LogFormat, log_format)
+            if log_format in ("json", "plain", "auto")
+            else "auto"
+        )
     )
 
     # Initialize progress renderer
@@ -589,9 +593,11 @@ def ingest_dita_cmd(
 
     # Setup logging first
     setup_logging(
-        format_type=cast(LogFormat, log_format)
-        if log_format in ("json", "plain", "auto")
-        else "auto"
+        format_type=(
+            cast(LogFormat, log_format)
+            if log_format in ("json", "plain", "auto")
+            else "auto"
+        )
     )
 
     # Initialize progress renderer
@@ -2165,7 +2171,9 @@ def _generate_enrichment_assurance_md(stats: dict, output_path: Path) -> None:
 ## Next Steps
 
 Run `trailblazer embed load --run-id {run_id}` to embed the enriched documents into the vector database.
-""".format(run_id=stats["run_id"])
+""".format(
+        run_id=stats["run_id"]
+    )
 
     output_path.write_text(content, encoding="utf-8")
 
@@ -2943,7 +2951,8 @@ def runs_status_cmd() -> None:
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     status,
                     COUNT(*) as count,
@@ -2952,7 +2961,8 @@ def runs_status_cmd() -> None:
                 FROM processed_runs
                 GROUP BY status
                 ORDER BY count DESC
-            """)
+            """
+            )
 
             results = cursor.fetchall()
 
@@ -3182,10 +3192,10 @@ def embed_corpus_cmd(
         "--model",
         help="Model name (e.g., text-embedding-3-small, BAAI/bge-small-en-v1.5)",
     ),
-    dimensions: int = typer.Option(
+    dimension: int = typer.Option(
         1536,
-        "--dimensions",
-        help="Embedding dimension (e.g., 512, 1024, 1536)",
+        "--dimension",
+        help="Embedding dimension (singular, always 1536 per requirements)",
     ),
     batch_size: int = typer.Option(
         1000,
@@ -3245,7 +3255,7 @@ def embed_corpus_cmd(
 
     # Check dimension compatibility unless we're doing a full re-embed
     if not reembed_all:
-        _check_dimension_compatibility(provider, dimensions)
+        _check_dimension_compatibility(provider, dimension)
 
     from ..core.paths import runs, logs, progress as progress_dir
     from ..pipeline.steps.embed.loader import load_normalized_to_db
@@ -3275,7 +3285,7 @@ def embed_corpus_cmd(
 
     log_message("🚀 Starting corpus embedding", "INFO")
     log_message(
-        f"Provider: {provider}, Model: {model}, Dimension: {dimensions}",
+        f"Provider: {provider}, Model: {model}, Dimension: {dimension}",
         "INFO",
     )
     log_message(
@@ -3403,7 +3413,7 @@ def embed_corpus_cmd(
                         run_id=run_id,
                         provider_name=provider,
                         model=model,
-                        dimensions=dimensions,
+                        dimension=dimension,
                         batch_size=batch_size,
                         max_chunks=batch_size,
                         changed_only=changed_only,
@@ -3468,7 +3478,7 @@ def embed_corpus_cmd(
                     run_id=run_id,
                     provider_name=provider,
                     model=model,
-                    dimensions=dimensions,
+                    dimension=dimension,
                     batch_size=batch_size,
                     changed_only=changed_only,
                     reembed_all=reembed_all,
@@ -4065,12 +4075,7 @@ def embed_plan_preflight_cmd(
     quality_advisory: bool = typer.Option(
         True,
         "--quality-advisory/--no-quality-advisory",
-        help="Quality is advisory only (default)",
-    ),
-    quality_hard_gate: bool = typer.Option(
-        False,
-        "--quality-hard-gate",
-        help="Enforce quality as hard gate",
+        help="Quality is advisory only (always True per requirements)",
     ),
 ) -> None:
     """
@@ -4198,7 +4203,6 @@ def embed_plan_preflight_cmd(
                 dimension=resolved_dimension,
                 min_embed_docs=min_embed_docs,
                 quality_advisory=quality_advisory,
-                quality_hard_gate=quality_hard_gate,
             )
 
             # Process NEW preflight result
@@ -4289,7 +4293,6 @@ def embed_plan_preflight_cmd(
         "parameters": {
             "min_embed_docs": min_embed_docs,
             "quality_advisory": quality_advisory,
-            "quality_hard_gate": quality_hard_gate,
             "price_per_1k": price_per_1k,
             "tps_per_worker": tps_per_worker,
             "workers": workers,
@@ -4427,21 +4430,25 @@ def embed_status_cmd() -> None:
 
             # Get provider and dimension info
             result = conn.execute(
-                text("""
+                text(
+                    """
                 SELECT provider, dim, COUNT(*) as count
                 FROM chunk_embeddings
                 GROUP BY provider, dim
                 ORDER BY count DESC
-            """)
+            """
+                )
             )
             provider_info = result.fetchall()
 
             # Get latest embedding timestamp
             result = conn.execute(
-                text("""
+                text(
+                    """
                 SELECT MAX(created_at) as latest_embedding
                 FROM chunk_embeddings
-            """)
+            """
+                )
             )
             latest_embedding = result.fetchone()[0]
 
@@ -4485,6 +4492,507 @@ def embed_status_cmd() -> None:
     except Exception as e:
         typer.echo(f"❌ Error getting status: {e}", err=True)
         raise typer.Exit(1)
+
+
+@embed_app.command("clean-preflight")
+def embed_clean_preflight_cmd(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be cleaned without doing it"
+    )
+) -> None:
+    """Purge bad preflight artifacts (safely archive, never delete)."""
+    import shutil
+    from datetime import datetime, timezone
+    from pathlib import Path
+    import json
+    import glob
+
+    typer.echo("🧹 Cleaning bad preflight artifacts", err=True)
+
+    # Scan for plan_preflight directories
+    plan_preflight_dirs = glob.glob("var/plan_preflight*/")
+    if not plan_preflight_dirs:
+        typer.echo("ℹ️  No plan_preflight directories found", err=True)
+        return
+
+    bad_bundles = []
+    good_bundles = []
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive_base = Path(f"var/archive/bad_plan_preflight/{timestamp}")
+
+    for plan_dir_str in plan_preflight_dirs:
+        plan_dir = Path(plan_dir_str)
+
+        is_bad = False
+        reasons = []
+
+        # Check for missing or invalid plan_preflight.json
+        plan_json_path = plan_dir / "plan_preflight.json"
+        if not plan_json_path.exists():
+            is_bad = True
+            reasons.append("missing_plan_preflight_json")
+        else:
+            try:
+                with open(plan_json_path, "r") as f:
+                    plan_data = json.load(f)
+
+                # Check for QUALITY_GATE in any run reason
+                runs_detail = plan_data.get("runs_detail", [])
+                for run_data in runs_detail:
+                    reason = run_data.get("reason", "")
+                    if "QUALITY_GATE" in reason:
+                        is_bad = True
+                        reasons.append("contains_quality_gate")
+                        break
+
+            except (json.JSONDecodeError, KeyError) as e:
+                is_bad = True
+                reasons.append(f"invalid_plan_json: {e}")
+
+        # Check ready.txt/blocked.txt count consistency
+        ready_file = plan_dir / "ready.txt"
+        blocked_file = plan_dir / "blocked.txt"
+
+        if (
+            ready_file.exists()
+            and blocked_file.exists()
+            and plan_json_path.exists()
+        ):
+            try:
+                with open(ready_file, "r") as f:
+                    ready_count = sum(
+                        1
+                        for line in f
+                        if line.strip() and not line.strip().startswith("#")
+                    )
+                with open(blocked_file, "r") as f:
+                    blocked_count = sum(
+                        1
+                        for line in f
+                        if line.strip() and not line.strip().startswith("#")
+                    )
+
+                if plan_json_path.exists():
+                    with open(plan_json_path, "r") as f:
+                        plan_data = json.load(f)
+
+                    json_ready = plan_data.get("ready_runs", 0)
+                    json_blocked = plan_data.get("blocked_runs", 0)
+
+                    # Allow 1% tolerance for count disagreement
+                    total_json = json_ready + json_blocked
+                    total_files = ready_count + blocked_count
+
+                    if (
+                        total_json > 0
+                        and abs(total_files - total_json) / total_json > 0.01
+                    ):
+                        is_bad = True
+                        reasons.append(
+                            f"count_mismatch: json={total_json} files={total_files}"
+                        )
+
+            except Exception as e:
+                is_bad = True
+                reasons.append(f"count_check_error: {e}")
+
+        if is_bad:
+            bad_bundles.append((plan_dir, reasons))
+        else:
+            good_bundles.append(plan_dir)
+
+    # Also check for stray plan .txt files at root level
+    stray_files = []
+    for pattern in ["var/plan_*.txt", "var/ready_*.txt", "var/blocked_*.txt"]:
+        stray_files.extend(glob.glob(pattern))
+
+    # Report findings
+    typer.echo("\n📊 Scan Results:", err=True)
+    typer.echo(f"   Good bundles: {len(good_bundles)}", err=True)
+    typer.echo(f"   Bad bundles: {len(bad_bundles)}", err=True)
+    typer.echo(f"   Stray files: {len(stray_files)}", err=True)
+
+    if bad_bundles:
+        typer.echo("\n🚨 Bad bundles found:", err=True)
+        for plan_dir, reasons in bad_bundles:
+            typer.echo(f"   - {plan_dir.name}: {', '.join(reasons)}", err=True)
+
+    if stray_files:
+        typer.echo("\n📄 Stray plan files found:", err=True)
+        for stray_file in stray_files:
+            typer.echo(f"   - {stray_file}", err=True)
+
+    if not bad_bundles and not stray_files:
+        typer.echo("✅ No bad preflight artifacts found", err=True)
+        return
+
+    if dry_run:
+        typer.echo(f"\n🔍 DRY RUN: Would archive to {archive_base}/", err=True)
+        return
+
+    # Archive bad bundles and stray files
+    if bad_bundles or stray_files:
+        archive_base.mkdir(parents=True, exist_ok=True)
+
+        # Archive bad bundles
+        for plan_dir, reasons in bad_bundles:
+            archive_dest = archive_base / plan_dir.name
+            typer.echo(
+                f"📦 Archiving {plan_dir.name} -> {archive_dest}", err=True
+            )
+            shutil.copytree(plan_dir, archive_dest)
+            shutil.rmtree(plan_dir)
+
+        # Archive stray files
+        if stray_files:
+            stray_dir = archive_base / "stray_files"
+            stray_dir.mkdir(exist_ok=True)
+            for stray_file in stray_files:
+                stray_path = Path(stray_file)
+                dest_path = stray_dir / stray_path.name
+                typer.echo(
+                    f"📦 Archiving {stray_file} -> {dest_path}", err=True
+                )
+                shutil.move(stray_file, dest_path)
+
+        # Write cleanup report
+        report = {
+            "timestamp": timestamp,
+            "bad_bundles_archived": len(bad_bundles),
+            "stray_files_archived": len(stray_files),
+            "archive_location": str(archive_base),
+            "bad_bundles": [
+                {"bundle": str(plan_dir), "reasons": reasons}
+                for plan_dir, reasons in bad_bundles
+            ],
+            "stray_files": stray_files,
+        }
+
+        report_file = archive_base / "cleanup_report.json"
+        with open(report_file, "w") as f:
+            json.dump(report, f, indent=2)
+
+        typer.echo("\n✅ Cleanup complete", err=True)
+        typer.echo(f"   Archived {len(bad_bundles)} bad bundles", err=True)
+        typer.echo(f"   Archived {len(stray_files)} stray files", err=True)
+        typer.echo(f"   Archive location: {archive_base}", err=True)
+        typer.echo(f"   Report: {report_file}", err=True)
+
+
+@admin_app.command("script-audit")
+def admin_script_audit_cmd(
+    fix: bool = typer.Option(
+        False, "--fix", help="Apply fixes (remove/upgrade scripts)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be done without doing it"
+    ),
+) -> None:
+    """Audit and remove/upgrade legacy scripts to Python-only."""
+    import glob
+    import re
+    from datetime import datetime, timezone
+    from pathlib import Path
+    import json
+    import shutil
+
+    typer.echo("🔍 Auditing scripts for legacy patterns", err=True)
+
+    # Define forbidden patterns
+    forbidden_patterns = {
+        "dimensions_plural": {
+            "regex": r"--dimensions\b",
+            "description": "Uses --dimensions (plural) instead of --dimension",
+            "action": "upgrade",
+        },
+        "embed_chunk_mixing": {
+            "regex": r"(chunk.*embed|embed.*chunk)",
+            "description": "Mixing embed and chunk operations in same script",
+            "action": "remove",
+        },
+        "plan_preflight_final": {
+            "regex": r"plan_preflight_final",
+            "description": "References deprecated plan_preflight_final directory",
+            "action": "upgrade",
+        },
+        "deprecated_cli_paths": {
+            "regex": r"trailblazer\.pipeline\.(chunk|embed)",
+            "description": "Direct imports of deprecated pipeline modules",
+            "action": "remove",
+        },
+        "adhoc_plan_txt": {
+            "regex": r"(var/plan_[^/]+\.txt|var/ready_[^/]+\.txt|var/blocked_[^/]+\.txt)",
+            "description": "Writing/reading ad-hoc plan .txt outside canonical locations",
+            "action": "upgrade",
+        },
+        "bespoke_monitors": {
+            "regex": r"(monitor_embedding|monitor_batch|monitor_retry)\.sh",
+            "description": "Non-canonical monitoring scripts",
+            "action": "upgrade",
+        },
+        "subprocess_usage": {
+            "regex": r"(subprocess\.|os\.system|pexpect|pty\.|shlex\.)",
+            "description": "Uses subprocess/system calls instead of Python CLI",
+            "action": "remove",
+        },
+    }
+
+    # Scan scripts directory
+    script_files = glob.glob("scripts/**", recursive=True)
+    script_files = [
+        f
+        for f in script_files
+        if Path(f).is_file() and f.endswith((".sh", ".py", ".bash"))
+    ]
+
+    if not script_files:
+        typer.echo("ℹ️  No script files found in scripts/", err=True)
+        return
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    audit_dir = Path(f"var/script_audit/{timestamp}")
+
+    audit_results = []
+    remove_scripts = []
+    upgrade_scripts = []
+    keep_scripts = []
+
+    typer.echo(f"📁 Scanning {len(script_files)} script files...", err=True)
+
+    for script_path in script_files:
+        script_file = Path(script_path)
+        patterns_found = []
+        action = "keep"
+
+        try:
+            with open(
+                script_file, "r", encoding="utf-8", errors="ignore"
+            ) as f:
+                content = f.read()
+
+            # Check each forbidden pattern
+            for pattern_name, pattern_info in forbidden_patterns.items():
+                if re.search(pattern_info["regex"], content, re.IGNORECASE):
+                    patterns_found.append(
+                        {
+                            "name": pattern_name,
+                            "description": pattern_info["description"],
+                            "suggested_action": pattern_info["action"],
+                        }
+                    )
+
+                    # Determine overall action (remove takes precedence over upgrade)
+                    if pattern_info["action"] == "remove":
+                        action = "remove"
+                    elif (
+                        pattern_info["action"] == "upgrade"
+                        and action != "remove"
+                    ):
+                        action = "upgrade"
+
+            # Special case: monitor_embedding.sh should be kept as canonical
+            if (
+                script_file.name == "monitor_embedding.sh"
+                and script_file.parent.name == "scripts"
+            ):
+                action = "keep"
+                patterns_found = [
+                    p
+                    for p in patterns_found
+                    if p["name"] != "bespoke_monitors"
+                ]
+
+            audit_result = {
+                "path": str(script_file),
+                "patterns": patterns_found,
+                "action": action,
+                "size_bytes": (
+                    script_file.stat().st_size if script_file.exists() else 0
+                ),
+            }
+
+            audit_results.append(audit_result)
+
+            if action == "remove":
+                remove_scripts.append(script_file)
+            elif action == "upgrade":
+                upgrade_scripts.append(script_file)
+            else:
+                keep_scripts.append(script_file)
+
+        except Exception as e:
+            typer.echo(f"⚠️  Error reading {script_file}: {e}", err=True)
+            audit_results.append(
+                {
+                    "path": str(script_file),
+                    "patterns": [
+                        {
+                            "name": "read_error",
+                            "description": f"Failed to read: {e}",
+                        }
+                    ],
+                    "action": "error",
+                }
+            )
+
+    # Report findings
+    typer.echo("\n📊 Audit Results:", err=True)
+    typer.echo(f"   Keep: {len(keep_scripts)}", err=True)
+    typer.echo(f"   Upgrade: {len(upgrade_scripts)}", err=True)
+    typer.echo(f"   Remove: {len(remove_scripts)}", err=True)
+
+    if remove_scripts:
+        typer.echo("\n🚨 Scripts to remove:", err=True)
+        for script in remove_scripts[:10]:  # Show first 10
+            script_result = [
+                p for p in audit_results if Path(p["path"]) == script
+            ][0]
+            typer.echo(
+                f"   - {script.name}: {len(script_result['patterns'])} issues",
+                err=True,
+            )
+
+    if upgrade_scripts:
+        typer.echo("\n🔧 Scripts to upgrade:", err=True)
+        for script in upgrade_scripts[:10]:  # Show first 10
+            typer.echo(f"   - {script.name}", err=True)
+
+    if dry_run:
+        typer.echo(
+            f"\n🔍 DRY RUN: Would create audit report in {audit_dir}/",
+            err=True,
+        )
+        return
+
+    # Create audit directory and report
+    audit_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write JSON report
+    report_data = {
+        "timestamp": timestamp,
+        "total_scripts": len(script_files),
+        "keep_count": len(keep_scripts),
+        "upgrade_count": len(upgrade_scripts),
+        "remove_count": len(remove_scripts),
+        "forbidden_patterns": forbidden_patterns,
+        "results": audit_results,
+    }
+
+    report_json = audit_dir / "report.json"
+    with open(report_json, "w") as f:
+        json.dump(report_data, f, indent=2)
+
+    # Write human-readable report
+    report_md = audit_dir / "report.md"
+    with open(report_md, "w") as f:
+        f.write("# Script Audit Report\n\n")
+        f.write(f"**Timestamp:** {timestamp}\n")
+        f.write(f"**Total Scripts:** {len(script_files)}\n\n")
+        f.write("## Summary\n\n")
+        f.write(f"- **Keep:** {len(keep_scripts)} scripts\n")
+        f.write(f"- **Upgrade:** {len(upgrade_scripts)} scripts\n")
+        f.write(f"- **Remove:** {len(remove_scripts)} scripts\n\n")
+
+        if remove_scripts:
+            f.write(f"## Scripts to Remove ({len(remove_scripts)})\n\n")
+            for script in remove_scripts:
+                result = next(
+                    r for r in audit_results if Path(r["path"]) == script
+                )
+                f.write(f"### {script.name}\n")
+                f.write(f"**Path:** `{script}`\n")
+                f.write("**Issues:**\n")
+                for pattern in result["patterns"]:
+                    f.write(f"- {pattern['description']}\n")
+                f.write("\n")
+
+        if upgrade_scripts:
+            f.write(f"## Scripts to Upgrade ({len(upgrade_scripts)})\n\n")
+            for script in upgrade_scripts:
+                result = next(
+                    r for r in audit_results if Path(r["path"]) == script
+                )
+                f.write(f"### {script.name}\n")
+                f.write(f"**Path:** `{script}`\n")
+                f.write("**Issues:**\n")
+                for pattern in result["patterns"]:
+                    f.write(f"- {pattern['description']}\n")
+                f.write("\n")
+
+    if not fix:
+        typer.echo(f"\n📄 Audit complete. Report: {report_md}", err=True)
+        typer.echo("   Use --fix to apply changes", err=True)
+        return
+
+    # Apply fixes
+    legacy_dir = Path("scripts/_legacy") / timestamp
+    changes_made = 0
+
+    if remove_scripts:
+        legacy_dir.mkdir(parents=True, exist_ok=True)
+
+        for script in remove_scripts:
+            # Move to legacy directory
+            legacy_dest = legacy_dir / script.name
+            typer.echo(f"📦 Moving {script.name} -> {legacy_dest}", err=True)
+            shutil.move(script, legacy_dest)
+
+            # Create stub that exits with error
+            stub_content = f"""#!/bin/bash
+# LEGACY SCRIPT REMOVED - Use Python CLI instead
+echo "❌ This script has been removed. Use 'trailblazer --help' for current commands."
+echo "   Archived to: scripts/_legacy/{timestamp}/{script.name}"
+exit 1
+"""
+            with open(script, "w") as f:
+                f.write(stub_content)
+            script.chmod(0o755)
+            changes_made += 1
+
+    if upgrade_scripts:
+        for script in upgrade_scripts:
+            # For now, just mark them for manual upgrade
+            # In a real implementation, we'd rewrite them as thin CLI wrappers
+            typer.echo(
+                f"🔧 Marking {script.name} for upgrade (manual intervention needed)",
+                err=True,
+            )
+
+            # Add a comment at the top indicating it needs upgrade
+            try:
+                with open(script, "r") as f:
+                    content = f.read()
+
+                upgrade_comment = f"""# WARNING: This script contains legacy patterns and should be upgraded
+# See: {report_md}
+# Use only Python CLI commands: trailblazer --help
+
+"""
+                if not content.startswith("# WARNING:"):
+                    with open(script, "w") as f:
+                        f.write(upgrade_comment + content)
+                    changes_made += 1
+            except Exception as e:
+                typer.echo(
+                    f"⚠️  Failed to mark {script} for upgrade: {e}", err=True
+                )
+
+    # Update report with changes made
+    report_data["changes_applied"] = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "removed_count": len(remove_scripts),
+        "upgraded_count": len(upgrade_scripts),
+        "total_changes": changes_made,
+    }
+
+    with open(report_json, "w") as f:
+        json.dump(report_data, f, indent=2)
+
+    typer.echo("\n✅ Script audit complete", err=True)
+    typer.echo(f"   Changes made: {changes_made}", err=True)
+    typer.echo(f"   Report: {report_md}", err=True)
+    if remove_scripts:
+        typer.echo(f"   Legacy scripts: {legacy_dir}", err=True)
 
 
 if __name__ == "__main__":

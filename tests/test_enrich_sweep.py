@@ -200,9 +200,9 @@ class TestEnrichSweepCLI:
                 "log.out",
             ]
             for filename in expected_files:
-                assert (sweep_dir / filename).exists(), (
-                    f"{filename} should exist"
-                )
+                assert (
+                    sweep_dir / filename
+                ).exists(), f"{filename} should exist"
 
             # Check ready_for_chunk.txt
             ready_content = (

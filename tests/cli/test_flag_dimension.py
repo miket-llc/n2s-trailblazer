@@ -129,6 +129,6 @@ class TestFlagDimension:
                 # Check that we don't have "dimensions" in flag names
                 for context in dimension_contexts:
                     if "--" in context:  # This is a flag line
-                        assert "--dimensions" not in context, (
-                            f"Found --dimensions in {cmd}: {context}"
-                        )
+                        assert (
+                            "--dimensions" not in context
+                        ), f"Found --dimensions in {cmd}: {context}"

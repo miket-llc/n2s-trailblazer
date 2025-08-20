@@ -329,9 +329,12 @@ class DataIntegrityChecker:
         report: Dict[str, Any] = {
             "run_id": self.run_id,
             "check_timestamp": "2025-08-15T21:40:00Z",  # Would be dynamic
-            "overall_status": "passed"
-            if len([i for i in self.issues if i["severity"] == "error"]) == 0
-            else "failed",
+            "overall_status": (
+                "passed"
+                if len([i for i in self.issues if i["severity"] == "error"])
+                == 0
+                else "failed"
+            ),
             "checks": {
                 "traceability": traceability_results,
                 "schema_validation": schema_results,

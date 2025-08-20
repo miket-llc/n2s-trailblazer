@@ -70,9 +70,9 @@ def extract_media_from_adf(adf: Optional[dict]) -> List[MediaInfo]:
                 media_items.append(
                     MediaInfo(
                         order=order_counter,
-                        media_type="image"
-                        if attrs.get("type") == "file"
-                        else "media",
+                        media_type=(
+                            "image" if attrs.get("type") == "file" else "media"
+                        ),
                         filename=filename,
                         attachment_id=attachment_id,
                         download_url=attrs.get("url"),
@@ -104,9 +104,9 @@ def extract_media_from_adf(adf: Optional[dict]) -> List[MediaInfo]:
             media_items.append(
                 MediaInfo(
                     order=order_counter,
-                    media_type="image"
-                    if attrs.get("type") == "file"
-                    else "media",
+                    media_type=(
+                        "image" if attrs.get("type") == "file" else "media"
+                    ),
                     filename=filename,
                     attachment_id=attachment_id,
                     download_url=attrs.get("url"),

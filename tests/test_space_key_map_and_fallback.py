@@ -103,9 +103,9 @@ def test_space_key_url_fallback_various_formats():
             client, space_key_cache, "12345", url, space_key_unknown_count
         )
 
-        assert result == expected_key, (
-            f"URL {url} should extract key {expected_key}"
-        )
+        assert (
+            result == expected_key
+        ), f"URL {url} should extract key {expected_key}"
         assert space_key_cache["12345"] == expected_key
 
 

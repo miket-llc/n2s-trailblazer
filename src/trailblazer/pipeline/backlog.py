@@ -142,14 +142,16 @@ def claim_run_for_chunking(
             emit_backlog_event("runs.claim.recovered", count=cursor.rowcount)
 
         # Claim next available run
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT run_id, source, normalized_at, total_docs
             FROM processed_runs
             WHERE status IN ('normalized', 'reset')
             ORDER BY normalized_at ASC
             FOR UPDATE SKIP LOCKED
             LIMIT 1
-        """)
+        """
+        )
 
         run = cursor.fetchone()
         if not run:
@@ -257,14 +259,16 @@ def claim_run_for_embedding(
             emit_backlog_event("runs.claim.recovered", count=cursor.rowcount)
 
         # Claim next available run
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT run_id, source, normalized_at, total_docs, total_chunks
             FROM processed_runs
             WHERE status IN ('chunked', 'reset')
             ORDER BY normalized_at ASC
             FOR UPDATE SKIP LOCKED
             LIMIT 1
-        """)
+        """
+        )
 
         run = cursor.fetchone()
         if not run:
@@ -354,25 +358,29 @@ def get_backlog_summary(phase: str) -> Dict[str, Any]:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
         # Get summary statistics
-        cursor.execute(f"""
+        cursor.execute(
+            f"""
             SELECT
                 COUNT(*) as total,
                 MIN(normalized_at) as earliest,
                 MAX(normalized_at) as latest
             FROM processed_runs
             WHERE status IN {status_filter}
-        """)
+        """
+        )
 
         summary = dict(cursor.fetchone())
 
         # Get sample run_ids
-        cursor.execute(f"""
+        cursor.execute(
+            f"""
             SELECT run_id
             FROM processed_runs
             WHERE status IN {status_filter}
             ORDER BY normalized_at ASC
             LIMIT 10
-        """)
+        """
+        )
 
         sample_runs = [row["run_id"] for row in cursor.fetchall()]
 

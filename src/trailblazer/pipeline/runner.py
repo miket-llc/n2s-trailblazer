@@ -353,9 +353,9 @@ def _execute_phase(
                     "chunks_file": str(chunks_file),
                     "input_file": str(input_file),
                     "normalized_file": str(normalized_file),
-                    "enriched_file": str(enriched_file)
-                    if enriched_file.exists()
-                    else None,
+                    "enriched_file": (
+                        str(enriched_file) if enriched_file.exists() else None
+                    ),
                 },
             }
         )

@@ -52,8 +52,8 @@ class TestChunkerCLIIntegration:
         run_dir = self.create_test_run(run_id)
 
         # Mock phase_dir to return our test directory
-        mock_phase_dir.side_effect = (
-            lambda rid, phase: run_dir / phase if phase else run_dir
+        mock_phase_dir.side_effect = lambda rid, phase: (
+            run_dir / phase if phase else run_dir
         )
 
         # Run chunk command with defaults
@@ -73,8 +73,8 @@ class TestChunkerCLIIntegration:
         run_id = "test_run_002"
         run_dir = self.create_test_run(run_id)
 
-        mock_phase_dir.side_effect = (
-            lambda rid, phase: run_dir / phase if phase else run_dir
+        mock_phase_dir.side_effect = lambda rid, phase: (
+            run_dir / phase if phase else run_dir
         )
 
         # Run chunk command with custom parameters
@@ -105,8 +105,8 @@ class TestChunkerCLIIntegration:
         run_id = "test_run_003"
         run_dir = self.create_test_run(run_id)
 
-        mock_phase_dir.side_effect = (
-            lambda rid, phase: run_dir / phase if phase else run_dir
+        mock_phase_dir.side_effect = lambda rid, phase: (
+            run_dir / phase if phase else run_dir
         )
 
         # Test with invalid (negative) parameters
@@ -123,8 +123,8 @@ class TestChunkerCLIIntegration:
         run_id = "nonexistent_run"
 
         # Mock to return non-existent path
-        mock_phase_dir.side_effect = (
-            lambda rid, phase: Path("/nonexistent") / rid / phase
+        mock_phase_dir.side_effect = lambda rid, phase: (
+            Path("/nonexistent") / rid / phase
             if phase
             else Path("/nonexistent") / rid
         )
@@ -144,8 +144,8 @@ class TestChunkerCLIIntegration:
             parents=True, exist_ok=True
         )  # Create run dir but no input files
 
-        mock_phase_dir.side_effect = (
-            lambda rid, phase: run_dir / phase if phase else run_dir
+        mock_phase_dir.side_effect = lambda rid, phase: (
+            run_dir / phase if phase else run_dir
         )
 
         result = self.runner.invoke(app, ["chunk", run_id])
@@ -160,8 +160,8 @@ class TestChunkerCLIIntegration:
         run_id = "test_run_005"
         run_dir = self.create_test_run(run_id)
 
-        mock_phase_dir.side_effect = (
-            lambda rid, phase: run_dir / phase if phase else run_dir
+        mock_phase_dir.side_effect = lambda rid, phase: (
+            run_dir / phase if phase else run_dir
         )
 
         # Test with progress enabled (default)
@@ -177,8 +177,8 @@ class TestChunkerCLIIntegration:
         run_id = "test_run_006"
         run_dir = self.create_test_run(run_id)
 
-        mock_phase_dir.side_effect = (
-            lambda rid, phase: run_dir / phase if phase else run_dir
+        mock_phase_dir.side_effect = lambda rid, phase: (
+            run_dir / phase if phase else run_dir
         )
 
         # Test with progress disabled
@@ -194,8 +194,8 @@ class TestChunkerCLIIntegration:
         run_id = "test_run_007"
         run_dir = self.create_test_run(run_id)
 
-        mock_phase_dir.side_effect = (
-            lambda rid, phase: run_dir / phase if phase else run_dir
+        mock_phase_dir.side_effect = lambda rid, phase: (
+            run_dir / phase if phase else run_dir
         )
 
         result = self.runner.invoke(app, ["chunk", run_id])
@@ -268,8 +268,8 @@ class TestChunkerCLIIntegration:
                 + "\n"
             )
 
-        mock_phase_dir.side_effect = (
-            lambda rid, phase: run_dir / phase if phase else run_dir
+        mock_phase_dir.side_effect = lambda rid, phase: (
+            run_dir / phase if phase else run_dir
         )
 
         result = self.runner.invoke(app, ["chunk", run_id])
@@ -294,8 +294,8 @@ class TestChunkerCLIIntegration:
                 + "\n"
             )
 
-        mock_phase_dir.side_effect = (
-            lambda rid, phase: run_dir / phase if phase else run_dir
+        mock_phase_dir.side_effect = lambda rid, phase: (
+            run_dir / phase if phase else run_dir
         )
 
         result = self.runner.invoke(app, ["chunk", run_id])
@@ -311,8 +311,8 @@ class TestChunkerCLIIntegration:
         run_id = "test_run_010"
         run_dir = self.create_test_run(run_id)
 
-        mock_phase_dir.side_effect = (
-            lambda rid, phase: run_dir / phase if phase else run_dir
+        mock_phase_dir.side_effect = lambda rid, phase: (
+            run_dir / phase if phase else run_dir
         )
 
         # Create a scenario that might cause chunking to fail

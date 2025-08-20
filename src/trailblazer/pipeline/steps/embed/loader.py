@@ -336,6 +336,26 @@ def load_chunks_to_db(
     else:
         embedder = get_embedding_provider(provider_name)
 
+    # Hard guard: assert dimension=1536 at runtime (per requirements)
+    actual_dimension = getattr(embedder, "dim", None) or getattr(
+        embedder, "dimension", None
+    )
+    if actual_dimension is None:
+        # Try to get dimension from a test embedding
+        try:
+            test_embedding = embedder.embed_texts(["test"])
+            if test_embedding:
+                actual_dimension = len(test_embedding[0])
+        except Exception:
+            pass
+
+    if actual_dimension is not None and actual_dimension != 1536:
+        raise ValueError(
+            f"Dimension mismatch: expected 1536, got {actual_dimension}. "
+            f"Use --dimension 1536 (singular) everywhere per requirements. "
+            f"Provider: {embedder.provider_name}, Model: {getattr(embedder, 'model', 'unknown')}"
+        )
+
     # Initialize session
     session_factory = get_session_factory()
 
@@ -396,9 +416,9 @@ def load_chunks_to_db(
             max_chunks=max_chunks,
             changed_only=changed_only,
             metadata={
-                "changed_docs_count": len(changed_docs)
-                if changed_docs is not None
-                else None,
+                "changed_docs_count": (
+                    len(changed_docs) if changed_docs is not None else None
+                ),
             },
         )
 
@@ -446,9 +466,11 @@ def load_chunks_to_db(
                     "docs={task.fields[docs]} chunks={task.fields[chunks]}"
                 ),
                 TimeElapsedColumn(),
-                console=progress_renderer.console
-                if progress_renderer.enabled
-                else None,
+                console=(
+                    progress_renderer.console
+                    if progress_renderer.enabled
+                    else None
+                ),
             ) as progress:
                 task = (
                     progress.add_task(
@@ -518,7 +540,7 @@ def load_chunks_to_db(
                         if changed_docs is not None:
                             docs_changed += 1
 
-                        # Upsert document if we have metadata
+                        # Upsert document - use metadata if available, otherwise bootstrap
                         if doc_id in doc_metadata:
                             record = doc_metadata[doc_id]
                             content_hash = _compute_content_hash(record)
@@ -575,6 +597,85 @@ def load_chunks_to_db(
                                     doc_id=doc_id,
                                     content_sha256=content_hash,
                                     reason="unchanged",
+                                )
+                        else:
+                            # Document bootstrap: create minimal Document from chunk traceability
+                            # This handles cases where enriched.jsonl is missing/mismatched
+                            text_md = chunk_record.get("text_md", "")
+
+                            # Extract traceability info from chunk
+                            traceability = chunk_record.get("traceability", {})
+                            title = (
+                                traceability.get("title")
+                                or f"Document {doc_id}"
+                            )
+                            url = traceability.get("url")
+                            source_system = traceability.get(
+                                "source_system", "unknown"
+                            )
+                            space_key = traceability.get("space_key")
+
+                            # Create deterministic content hash from text_md
+                            content_hash = hashlib.sha256(
+                                text_md.encode("utf-8")
+                            ).hexdigest()
+
+                            # Check if document already exists
+                            from ....db.engine import Document
+
+                            existing_doc = (
+                                session.query(Document)
+                                .filter_by(doc_id=doc_id)
+                                .first()
+                            )
+
+                            if not existing_doc:
+                                # Bootstrap minimal document record
+                                doc_data = {
+                                    "doc_id": doc_id,
+                                    "source_system": source_system,
+                                    "title": title,
+                                    "space_key": space_key,
+                                    "url": url,
+                                    "created_at": None,  # Unknown
+                                    "updated_at": None,  # Unknown
+                                    "content_sha256": content_hash,
+                                    "meta": {
+                                        "bootstrapped": True,  # Mark as bootstrapped
+                                        "labels": traceability.get(
+                                            "labels", []
+                                        ),
+                                        "space": traceability.get(
+                                            "space", space_key
+                                        ),
+                                    },
+                                }
+
+                                upsert_document(session, doc_data)
+                                docs_embedded += 1
+                                emit_event(
+                                    "doc.bootstrap",
+                                    doc_id=doc_id,
+                                    content_sha256=content_hash,
+                                    reason="missing_enriched_metadata",
+                                )
+                            else:
+                                # Document exists, check if content changed
+                                if existing_doc.content_sha256 != content_hash:
+                                    # Update content hash
+                                    existing_doc.content_sha256 = content_hash
+                                    session.commit()
+                                    emit_event(
+                                        "doc.update",
+                                        doc_id=doc_id,
+                                        content_sha256=content_hash,
+                                        reason="content_changed",
+                                    )
+                                docs_skipped += 1
+                                emit_event(
+                                    "doc.skip",
+                                    doc_id=doc_id,
+                                    reason="already_exists",
                                 )
 
                     chunks_total += 1
