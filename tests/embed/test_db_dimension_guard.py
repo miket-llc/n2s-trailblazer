@@ -55,7 +55,7 @@ def test_dimension_guard_rejects_wrong_dimension(mock_session_factory):
         temp_path = Path(temp_dir)
         run_id = "test_wrong_dimension"
 
-        chunks_file = create_test_run(temp_path, run_id)
+        create_test_run(temp_path, run_id)
 
         # Patch dependencies
         with (
@@ -72,7 +72,6 @@ def test_dimension_guard_rejects_wrong_dimension(mock_session_factory):
                 return_value=mock_embedder,
             ),
         ):
-
             # Should raise ValueError with clear message
             with pytest.raises(ValueError) as exc_info:
                 load_chunks_to_db(
@@ -104,7 +103,7 @@ def test_dimension_guard_accepts_correct_dimension(mock_session_factory):
         temp_path = Path(temp_dir)
         run_id = "test_correct_dimension"
 
-        chunks_file = create_test_run(temp_path, run_id)
+        create_test_run(temp_path, run_id)
 
         # Patch dependencies
         with (
@@ -123,7 +122,6 @@ def test_dimension_guard_accepts_correct_dimension(mock_session_factory):
             patch("trailblazer.core.progress.get_progress") as mock_progress,
             patch("trailblazer.obs.events.EventEmitter") as mock_event_emitter,
         ):
-
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
@@ -163,7 +161,7 @@ def test_dimension_guard_fallback_to_test_embedding(mock_session_factory):
         temp_path = Path(temp_dir)
         run_id = "test_fallback_detection"
 
-        chunks_file = create_test_run(temp_path, run_id)
+        create_test_run(temp_path, run_id)
 
         # Patch dependencies
         with (
@@ -182,7 +180,6 @@ def test_dimension_guard_fallback_to_test_embedding(mock_session_factory):
             patch("trailblazer.core.progress.get_progress") as mock_progress,
             patch("trailblazer.obs.events.EventEmitter") as mock_event_emitter,
         ):
-
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
@@ -224,7 +221,7 @@ def test_dimension_guard_fallback_wrong_dimension(mock_session_factory):
         temp_path = Path(temp_dir)
         run_id = "test_fallback_wrong"
 
-        chunks_file = create_test_run(temp_path, run_id)
+        create_test_run(temp_path, run_id)
 
         # Patch dependencies
         with (
@@ -241,7 +238,6 @@ def test_dimension_guard_fallback_wrong_dimension(mock_session_factory):
                 return_value=mock_embedder,
             ),
         ):
-
             # Should raise ValueError after detecting wrong dimension
             with pytest.raises(ValueError) as exc_info:
                 load_chunks_to_db(
@@ -270,7 +266,7 @@ def test_dimension_guard_test_embedding_fails_gracefully(mock_session_factory):
         temp_path = Path(temp_dir)
         run_id = "test_fallback_fails"
 
-        chunks_file = create_test_run(temp_path, run_id)
+        create_test_run(temp_path, run_id)
 
         # Patch dependencies
         with (
@@ -289,7 +285,6 @@ def test_dimension_guard_test_embedding_fails_gracefully(mock_session_factory):
             patch("trailblazer.core.progress.get_progress") as mock_progress,
             patch("trailblazer.obs.events.EventEmitter") as mock_event_emitter,
         ):
-
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
@@ -327,7 +322,7 @@ def test_dimension_guard_uses_dimension_attribute_over_dim(
         temp_path = Path(temp_dir)
         run_id = "test_dimension_priority"
 
-        chunks_file = create_test_run(temp_path, run_id)
+        create_test_run(temp_path, run_id)
 
         # Patch dependencies
         with (
@@ -346,7 +341,6 @@ def test_dimension_guard_uses_dimension_attribute_over_dim(
             patch("trailblazer.core.progress.get_progress") as mock_progress,
             patch("trailblazer.obs.events.EventEmitter") as mock_event_emitter,
         ):
-
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
@@ -378,7 +372,7 @@ def test_dimension_guard_explicit_dimension_override():
         temp_path = Path(temp_dir)
         run_id = "test_explicit_dimension"
 
-        chunks_file = create_test_run(temp_path, run_id)
+        create_test_run(temp_path, run_id)
 
         # Patch to create embedder with wrong dimension
         with (
@@ -391,7 +385,6 @@ def test_dimension_guard_explicit_dimension_override():
                 return_value=mock_embedder,
             ),
         ):
-
             # Should raise ValueError when creating embedder with wrong dimension
             with pytest.raises(ValueError) as exc_info:
                 load_chunks_to_db(

@@ -308,9 +308,9 @@ class TestStreamSeparation:
                         # Found our event
                         return
                 # If no event found, fail
-                assert (
-                    False
-                ), f"Expected event 'test.event' not found in output: {output}"
+                assert False, (
+                    f"Expected event 'test.event' not found in output: {output}"
+                )
             except json.JSONDecodeError:
                 assert False, f"Output is not valid JSON: {output}"
         else:

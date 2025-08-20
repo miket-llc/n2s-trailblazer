@@ -30,9 +30,9 @@ def test_no_new_preflight_scripts():
                         text=True,
                     )
                     if result.stdout.strip():  # File is modified or new
-                        assert (
-                            False
-                        ), f"Script {script_file} contains forbidden term '{term}' and has been modified/added"
+                        assert False, (
+                            f"Script {script_file} contains forbidden term '{term}' and has been modified/added"
+                        )
 
 
 def test_no_bash_zsh_files_for_preflight():
@@ -45,6 +45,6 @@ def test_no_bash_zsh_files_for_preflight():
                 content = script_file.read_text()
                 for term in forbidden_terms:
                     if term in content:
-                        assert (
-                            False
-                        ), f"Shell script {script_file} contains forbidden preflight logic: '{term}'"
+                        assert False, (
+                            f"Shell script {script_file} contains forbidden preflight logic: '{term}'"
+                        )

@@ -60,7 +60,7 @@ def diagnose_blocked_runs(plan_bundle_dir: str) -> Dict[str, Any]:
     # Analyze each blocked run
     blocked_reasons = []
     reason_counts = {}
-    reason_examples = {}
+    reason_examples: dict[str, str] = {}
 
     for run_id in blocked_runs:
         # Check if preflight.json exists for this run

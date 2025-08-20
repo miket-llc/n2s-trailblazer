@@ -4,7 +4,7 @@ import pytest
 import tempfile
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from trailblazer.pipeline.steps.embed.preflight import run_plan_preflight
 
@@ -196,16 +196,16 @@ def test_plan_ready_1780_structural_blocking_only(
 
             # Verify READY count is exactly 1780 (±0)
             ready_runs_count = result["ready_runs"]
-            assert (
-                ready_runs_count == 1780
-            ), f"Expected exactly 1780 READY runs, got {ready_runs_count}"
+            assert ready_runs_count == 1780, (
+                f"Expected exactly 1780 READY runs, got {ready_runs_count}"
+            )
 
             # Verify total runs processed
             total_runs = result["total_runs_planned"]
             blocked_runs_count = result["blocked_runs"]
-            assert (
-                total_runs == ready_runs_count + blocked_runs_count
-            ), f"Total runs mismatch: {total_runs} != {ready_runs_count} + {blocked_runs_count}"
+            assert total_runs == ready_runs_count + blocked_runs_count, (
+                f"Total runs mismatch: {total_runs} != {ready_runs_count} + {blocked_runs_count}"
+            )
 
             # Verify all blocked runs have only structural reasons
             valid_structural_reasons = [
@@ -225,17 +225,17 @@ def test_plan_ready_1780_structural_blocking_only(
                 reason = run_data.get("reason", "")
 
                 # Must not contain QUALITY_GATE
-                assert (
-                    "QUALITY_GATE" not in reason
-                ), f"QUALITY_GATE found in blocked run {run_data['rid']}: {reason}"
+                assert "QUALITY_GATE" not in reason, (
+                    f"QUALITY_GATE found in blocked run {run_data['rid']}: {reason}"
+                )
 
                 # Must contain at least one valid structural reason
                 reason_parts = [
                     r.strip() for r in reason.split(",") if r.strip()
                 ]
-                assert (
-                    reason_parts
-                ), f"Blocked run {run_data['rid']} has no reason"
+                assert reason_parts, (
+                    f"Blocked run {run_data['rid']} has no reason"
+                )
 
                 for reason_part in reason_parts:
                     found_valid = any(
@@ -257,9 +257,9 @@ def test_plan_ready_1780_structural_blocking_only(
                 plan_dirs = list(
                     (temp_path / "var" / "plan_preflight").glob("*")
                 )
-                assert (
-                    len(plan_dirs) == 1
-                ), f"Expected 1 plan directory, found {len(plan_dirs)}"
+                assert len(plan_dirs) == 1, (
+                    f"Expected 1 plan directory, found {len(plan_dirs)}"
+                )
                 output_dir = plan_dirs[0]
 
             ready_file = output_dir / "ready.txt"
@@ -276,9 +276,9 @@ def test_plan_ready_1780_structural_blocking_only(
                     if line.strip() and not line.startswith("#")
                 ]
 
-            assert (
-                len(ready_lines) == 1780
-            ), f"ready.txt should contain exactly 1780 lines, got {len(ready_lines)}"
+            assert len(ready_lines) == 1780, (
+                f"ready.txt should contain exactly 1780 lines, got {len(ready_lines)}"
+            )
 
             # Verify blocked.txt format and reasons
             with open(blocked_file, "r") as f:
@@ -292,9 +292,9 @@ def test_plan_ready_1780_structural_blocking_only(
                 if "#" in line:
                     run_path, reason = line.split("#", 1)
                     reason = reason.strip()
-                    assert (
-                        "QUALITY_GATE" not in reason
-                    ), f"QUALITY_GATE found in blocked.txt: {line}"
+                    assert "QUALITY_GATE" not in reason, (
+                        f"QUALITY_GATE found in blocked.txt: {line}"
+                    )
 
         finally:
             # Restore original paths function

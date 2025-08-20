@@ -1091,7 +1091,7 @@ def embed_load_cmd(
         _check_dimension_compatibility(provider, dimension)
 
     from ..db.engine import get_db_url
-    from ..pipeline.steps.embed.loader import load_normalized_to_db
+    from ..pipeline.steps.embed.loader import load_chunks_to_db
 
     if not run_id and not input_file:
         raise typer.BadParameter("Either --run-id or --input must be provided")
@@ -1108,9 +1108,9 @@ def embed_load_cmd(
     typer.echo(f"Provider: {provider}")
 
     try:
-        metrics = load_normalized_to_db(
+        metrics = load_chunks_to_db(
             run_id=run_id,
-            input_file=input_file,
+            chunks_file=input_file,
             provider_name=provider,
             model=model,
             dimension=dimension,
@@ -2171,9 +2171,7 @@ def _generate_enrichment_assurance_md(stats: dict, output_path: Path) -> None:
 ## Next Steps
 
 Run `trailblazer embed load --run-id {run_id}` to embed the enriched documents into the vector database.
-""".format(
-        run_id=stats["run_id"]
-    )
+""".format(run_id=stats["run_id"])
 
     output_path.write_text(content, encoding="utf-8")
 
@@ -3258,7 +3256,7 @@ def embed_corpus_cmd(
         _check_dimension_compatibility(provider, dimension)
 
     from ..core.paths import runs, logs, progress as progress_dir
-    from ..pipeline.steps.embed.loader import load_normalized_to_db
+    from ..pipeline.steps.embed.loader import load_chunks_to_db
     import json
     import time
     from datetime import datetime, timezone
@@ -3409,7 +3407,7 @@ def embed_corpus_cmd(
                 batch_start_time = time.time()
 
                 try:
-                    metrics = load_normalized_to_db(
+                    metrics = load_chunks_to_db(
                         run_id=run_id,
                         provider_name=provider,
                         model=model,
@@ -3474,7 +3472,7 @@ def embed_corpus_cmd(
             run_start_time = time.time()
 
             try:
-                metrics = load_normalized_to_db(
+                metrics = load_chunks_to_db(
                     run_id=run_id,
                     provider_name=provider,
                     model=model,
@@ -3626,240 +3624,6 @@ def embed_reembed_if_changed_cmd(
 
 
 # OLD PREFLIGHT COMMAND REMOVED - USE plan-preflight INSTEAD
-
-
-# @embed_app.command("preflight") - REMOVED - BROKEN LOGIC
-def _old_embed_preflight_cmd_REMOVED(
-    run: str = typer.Argument(
-        ..., help="Run ID to validate for embedding preflight"
-    ),
-    provider: Optional[str] = typer.Option(
-        None,
-        "--provider",
-        help="Embedding provider (openai, sentencetransformers)",
-    ),
-    model: Optional[str] = typer.Option(
-        None,
-        "--model",
-        help="Model name (e.g., text-embedding-3-small)",
-    ),
-    dim: Optional[int] = typer.Option(
-        None,
-        "--dim",
-        help="Embedding dimension (e.g., 512, 1024, 1536)",
-    ),
-) -> None:
-    """
-    Validate a run is ready for embedding with preflight checks.
-
-    Validates that:
-    - Enriched and chunk files exist and have content
-    - Tokenizer is available
-    - Provider/model/dimension are resolved
-    - Chunk statistics are computed
-
-    Writes preflight.json with validation results and stats.
-    """
-    import json
-    import statistics
-    from datetime import datetime, timezone
-    from ..core.paths import runs
-    from ..core.config import SETTINGS
-
-    # Resolve provider/model/dim from CLI args, env, or defaults
-    resolved_provider = provider or SETTINGS.EMBED_PROVIDER or "openai"
-    resolved_model = model or SETTINGS.EMBED_MODEL or "text-embedding-3-small"
-    resolved_dim = dim or SETTINGS.EMBED_DIMENSIONS or 1536
-
-    typer.echo(f"🔍 Preflight check for run: {run}", err=True)
-    typer.echo(
-        f"Provider: {resolved_provider}, Model: {resolved_model}, Dimension: {resolved_dim}",
-        err=True,
-    )
-
-    # Validate run directory exists
-    run_dir = runs() / run
-    if not run_dir.exists():
-        typer.echo(f"❌ Run directory not found: {run_dir}", err=True)
-        raise typer.Exit(1)
-
-    # Check enriched.jsonl
-    enriched_file = run_dir / "enrich" / "enriched.jsonl"
-    if not enriched_file.exists():
-        typer.echo(f"❌ Enriched file not found: {enriched_file}", err=True)
-        typer.echo("Run 'trailblazer enrich <RID>' first", err=True)
-        raise typer.Exit(1)
-
-    # Count lines in enriched file
-    with open(enriched_file) as f:
-        enriched_lines = sum(1 for line in f if line.strip())
-
-    if enriched_lines == 0:
-        typer.echo(f"❌ Enriched file is empty: {enriched_file}", err=True)
-        raise typer.Exit(1)
-
-    typer.echo(f"✓ Enriched file: {enriched_lines} documents", err=True)
-
-    # Check chunks.ndjson
-    chunks_file = run_dir / "chunk" / "chunks.ndjson"
-    if not chunks_file.exists():
-        typer.echo(f"❌ Chunks file not found: {chunks_file}", err=True)
-        typer.echo("Run chunking phase first", err=True)
-        raise typer.Exit(1)
-
-    # Load and analyze chunks
-    chunks = []
-    with open(chunks_file) as f:
-        for line in f:
-            if line.strip():
-                chunk_data = json.loads(line.strip())
-                chunks.append(chunk_data)
-
-    if not chunks:
-        typer.echo(f"❌ Chunks file is empty: {chunks_file}", err=True)
-        raise typer.Exit(1)
-
-    typer.echo(f"✓ Chunks file: {len(chunks)} chunks", err=True)
-
-    # Verify tokenizer availability
-    try:
-        import tiktoken
-
-        tokenizer_version = tiktoken.__version__
-        typer.echo(f"✓ Tokenizer: tiktoken v{tokenizer_version}", err=True)
-    except ImportError:
-        typer.echo(
-            "❌ Tokenizer not available: tiktoken not installed", err=True
-        )
-        raise typer.Exit(1)
-
-    # Compute chunk statistics
-    token_counts = [chunk.get("token_count", 0) for chunk in chunks]
-    if not token_counts or all(t == 0 for t in token_counts):
-        typer.echo("❌ No valid token counts found in chunks", err=True)
-        raise typer.Exit(1)
-
-    # Compute P95 manually since statistics.quantile is not available in all Python versions
-    sorted_tokens = sorted(token_counts)
-    p95_index = int(0.95 * len(sorted_tokens))
-    p95_value = sorted_tokens[min(p95_index, len(sorted_tokens) - 1)]
-
-    token_stats = {
-        "count": len(token_counts),
-        "min": min(token_counts),
-        "median": int(statistics.median(token_counts)),
-        "p95": p95_value,
-        "max": max(token_counts),
-        "total": sum(token_counts),
-    }
-
-    typer.echo(
-        f"✓ Token stats: {token_stats['count']} chunks, {token_stats['min']}-{token_stats['max']} tokens (median: {token_stats['median']})",
-        err=True,
-    )
-
-    # Check quality distribution from chunk assurance
-    chunk_assurance_file = run_dir / "chunk" / "chunk_assurance.json"
-    quality_distribution = None
-    quality_check_passed = True
-    quality_failure_reason = None
-
-    if chunk_assurance_file.exists():
-        try:
-            with open(chunk_assurance_file) as f:
-                assurance_data = json.load(f)
-                quality_distribution = assurance_data.get(
-                    "qualityDistribution"
-                )
-
-            if quality_distribution:
-                below_threshold_pct = quality_distribution.get(
-                    "belowThresholdPct", 0.0
-                )
-                max_below_threshold_pct = quality_distribution.get(
-                    "maxBelowThresholdPct", 0.20
-                )
-                min_quality = quality_distribution.get("minQuality", 0.60)
-
-                typer.echo(
-                    f"✓ Quality distribution: P50={quality_distribution.get('p50', 0.0)}, "
-                    f"P90={quality_distribution.get('p90', 0.0)}, "
-                    f"Below threshold: {below_threshold_pct:.1%}",
-                    err=True,
-                )
-
-                if below_threshold_pct > max_below_threshold_pct:
-                    quality_check_passed = False
-                    quality_failure_reason = (
-                        f"Quality gate failure: {below_threshold_pct:.1%} of documents "
-                        f"have quality_score < {min_quality} (max allowed: {max_below_threshold_pct:.1%})"
-                    )
-                    typer.echo(f"❌ {quality_failure_reason}", err=True)
-                else:
-                    typer.echo(
-                        f"✓ Quality gate passed: {below_threshold_pct:.1%} below threshold (max: {max_below_threshold_pct:.1%})",
-                        err=True,
-                    )
-            else:
-                typer.echo(
-                    "⚠️  No quality distribution found (enrichment may not have been run)",
-                    err=True,
-                )
-        except Exception as e:
-            typer.echo(
-                f"⚠️  Failed to read quality distribution: {e}", err=True
-            )
-    else:
-        typer.echo("⚠️  No chunk assurance file found", err=True)
-
-    # Fail preflight if quality check failed
-    if not quality_check_passed:
-        typer.echo(
-            "\n💡 To fix: Run 'trailblazer enrich <RID> --min-quality <lower_threshold>' "
-            "or improve document quality before embedding",
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    # Create preflight directory and write results
-    preflight_dir = run_dir / "preflight"
-    preflight_dir.mkdir(exist_ok=True)
-
-    preflight_data = {
-        "status": "success",
-        "run_id": run,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "counts": {
-            "enriched_docs": enriched_lines,
-            "chunks": len(chunks),
-        },
-        "tokenStats": token_stats,
-        "qualityDistribution": quality_distribution,
-        "qualityCheck": {
-            "passed": quality_check_passed,
-            "reason": quality_failure_reason,
-        },
-        "provider": resolved_provider,
-        "model": resolved_model,
-        "dimension": resolved_dim,
-        "dimensions": resolved_dim,  # transitional alias for compatibility
-        "notes": [
-            f"Validated {enriched_lines} enriched documents",
-            f"Validated {len(chunks)} chunks with token range {token_stats['min']}-{token_stats['max']}",
-            f"Tokenizer: tiktoken v{tokenizer_version}",
-            f"Quality gate: {'PASSED' if quality_check_passed else 'FAILED'}",
-        ],
-    }
-
-    preflight_file = preflight_dir / "preflight.json"
-    with open(preflight_file, "w") as f:
-        json.dump(preflight_data, f, indent=2)
-
-    typer.echo(f"✅ Preflight complete: {preflight_file}", err=True)
-    typer.echo(
-        f"Run ready for embedding with {resolved_provider}/{resolved_model} at dimension {resolved_dim}",
-        err=True,
-    )
 
 
 @embed_app.command("dispatch")
@@ -4045,22 +3809,7 @@ def embed_plan_preflight_cmd(
     dimension: Optional[int] = typer.Option(
         None,
         "--dimension",
-        help="Embedding dimension (e.g., 512, 1024, 1536)",
-    ),
-    price_per_1k: Optional[float] = typer.Option(
-        None,
-        "--price-per-1k",
-        help="Price per 1K tokens (USD) for cost estimation",
-    ),
-    tps_per_worker: Optional[float] = typer.Option(
-        None,
-        "--tps-per-worker",
-        help="Tokens per second per worker for time estimation",
-    ),
-    workers: Optional[int] = typer.Option(
-        None,
-        "--workers",
-        help="Number of workers for time estimation",
+        help="Embedding dimension (always 1536 per requirements)",
     ),
     out_dir: str = typer.Option(
         "var/plan_preflight/",
@@ -4081,21 +3830,13 @@ def embed_plan_preflight_cmd(
     """
     Run preflight checks for all runs in a plan file.
 
-    Uses advisory quality gates by default - aggregates on embeddable_docs
-    rather than quality percentages. Only blocks runs for structural issues
-    or when embeddable_docs < min_embed_docs.
+    Uses advisory quality gates - only blocks runs for structural issues
+    or when embeddable_docs < min_embed_docs. Quality is purely advisory.
 
     Writes doc_skiplist.json for each run with quality-based skips.
-
-    Exit codes:
-    - 0: Success (even if some runs are blocked)
-    - 1: Fatal error (missing plan file, no runs, CLI misuse)
     """
-    import json
-    from datetime import datetime
-    from pathlib import Path
-    from ..core.paths import runs
     from ..core.config import SETTINGS
+    from ..pipeline.steps.embed.preflight import run_plan_preflight
 
     # Resolve provider/model/dimension from CLI args, env, or defaults
     resolved_provider = provider or SETTINGS.EMBED_PROVIDER or "openai"
@@ -4109,224 +3850,38 @@ def embed_plan_preflight_cmd(
         err=True,
     )
 
-    # Check plan file exists
-    plan_path = Path(plan_file)
-    if not plan_path.exists():
-        typer.echo(f"❌ Plan file not found: {plan_file}", err=True)
-        raise typer.Exit(1)
-
-    # Read plan file and parse run IDs
-    run_entries = []
-    with open(plan_path, "r") as f:
-        for line_num, line in enumerate(f, 1):
-            line = line.strip()
-            # Skip blank lines and comments
-            if not line or line.startswith("#"):
-                continue
-
-            # Support both formats:
-            # 1. "run_id:chunk_count" (original format)
-            # 2. "var/runs/run_id" (chunk sweep output format)
-            if ":" in line:
-                # Original format: run_id:chunk_count
-                run_id, chunk_count_str = line.split(":", 1)
-                run_id = run_id.strip()
-                chunk_count_str = chunk_count_str.strip()
-
-                try:
-                    chunk_count = int(chunk_count_str)
-                except ValueError:
-                    typer.echo(
-                        f"⚠️  Skipping line {line_num} with invalid chunk count: {line}",
-                        err=True,
-                    )
-                    continue
-            elif line.startswith("var/runs/"):
-                # Chunk sweep format: var/runs/run_id
-                run_id = Path(line).name
-                # Auto-detect chunk count from chunks.ndjson file
-                chunks_file = runs() / run_id / "chunk" / "chunks.ndjson"
-                if chunks_file.exists():
-                    try:
-                        with open(chunks_file, "r") as cf:
-                            chunk_count = sum(
-                                1 for cline in cf if cline.strip()
-                            )
-                    except Exception:
-                        chunk_count = 0
-                else:
-                    chunk_count = 0
-            else:
-                # Neither format recognized
-                typer.echo(
-                    f"⚠️  Skipping invalid line {line_num}: {line} (expected 'run_id:count' or 'var/runs/run_id')",
-                    err=True,
-                )
-                continue
-
-            run_entries.append((run_id, chunk_count))
-
-    if not run_entries:
-        typer.echo(
-            f"❌ No valid runs found in plan file: {plan_file}", err=True
+    try:
+        # Call the library function (proper architecture)
+        result = run_plan_preflight(
+            plan_file=plan_file,
+            provider=resolved_provider,
+            model=resolved_model,
+            dimension=resolved_dimension,
+            min_embed_docs=min_embed_docs,
+            quality_advisory=quality_advisory,
+            out_dir=out_dir,
         )
+
+        # Report results
+        typer.echo("\n📊 Plan Preflight Complete", err=True)
+        typer.echo(f"✅ Ready: {result['ready_runs']} runs", err=True)
+        typer.echo(f"❌ Blocked: {result['blocked_runs']} runs", err=True)
+        typer.echo(
+            f"📄 Total embeddable docs: {result['total_embeddable_docs']:,}", err=True
+        )
+        typer.echo(f"📄 Total skipped docs: {result['total_skipped_docs']:,}", err=True)
+        
+        # Find the output directory from the result
+        output_dirs = list(Path(out_dir).glob("*"))
+        if output_dirs:
+            latest_dir = max(output_dirs, key=lambda p: p.stat().st_mtime)
+            typer.echo(f"📁 Reports written to: {latest_dir}", err=True)
+
+        typer.echo("✅ Plan preflight completed successfully", err=True)
+
+    except Exception as e:
+        typer.echo(f"❌ Plan preflight failed: {e}", err=True)
         raise typer.Exit(1)
-
-    typer.echo(f"📊 Found {len(run_entries)} runs in plan", err=True)
-
-    # Create timestamped output directory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = Path(out_dir) / timestamp
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    typer.echo(f"📁 Output directory: {output_dir}", err=True)
-
-    # Initialize collections for results
-    runs_data = []
-    ready_runs = []
-    blocked_runs = []
-    log_entries = []
-
-    # Process each run using NEW advisory preflight logic
-    from ..pipeline.steps.embed.preflight import run_preflight_check
-
-    for run_id, expected_chunk_count in run_entries:
-        typer.echo(f"🔍 Processing run: {run_id}", err=True)
-        log_entries.append(f"Processing run: {run_id}")
-
-        # Run NEW preflight for this run (no subprocess!)
-        try:
-            preflight_result = run_preflight_check(
-                run_id=run_id,
-                provider=resolved_provider,
-                model=resolved_model,
-                dimension=resolved_dimension,
-                min_embed_docs=min_embed_docs,
-                quality_advisory=quality_advisory,
-            )
-
-            # Process NEW preflight result
-            doc_totals = preflight_result["docTotals"]
-            status = preflight_result["status"]
-            reasons = preflight_result["reasons"]
-
-            log_entries.append(f"Preflight result for {run_id}: {status}")
-
-            # Calculate tokens for this run
-            chunks_file = runs() / run_id / "chunk" / "chunks.ndjson"
-            run_tokens = 0
-            chunk_count = 0
-            if chunks_file.exists():
-                try:
-                    with open(chunks_file, "r") as f:
-                        for line in f:
-                            if line.strip():
-                                chunk = json.loads(line.strip())
-                                run_tokens += chunk.get("token_count", 0)
-                                chunk_count += 1
-                except Exception:
-                    pass
-
-            # Create run data based on NEW preflight result
-            run_data = {
-                "rid": run_id,
-                "status": status,
-                "reason": ", ".join(reasons) if reasons else "",
-                "docs_total": doc_totals["all"],
-                "docs_embeddable": doc_totals["embeddable"],
-                "docs_skipped": doc_totals["skipped"],
-                "chunks": chunk_count,
-                "tokens": run_tokens,
-                "quality_p50": preflight_result["quality"].get("p50", 0),
-                "quality_below_threshold_pct": preflight_result["quality"].get(
-                    "belowThresholdPct", 0
-                ),
-            }
-
-            # Classify run
-            if status == "READY":
-                ready_runs.append(run_id)
-                log_entries.append(
-                    f"  READY: {doc_totals['embeddable']} embeddable docs"
-                )
-            else:
-                blocked_runs.append(run_id)
-                log_entries.append(f"  BLOCKED: {', '.join(reasons)}")
-
-            runs_data.append(run_data)
-
-        except Exception as e:
-            typer.echo(
-                f"❌ Failed to run preflight for {run_id}: {e}", err=True
-            )
-            log_entries.append(f"Failed to run preflight for {run_id}: {e}")
-
-            # Add to blocked with error reason
-            blocked_runs.append(run_id)
-            runs_data.append(
-                {
-                    "rid": run_id,
-                    "status": "BLOCKED",
-                    "reason": f"PREFLIGHT_ERROR: {str(e)}",
-                    "docs_total": 0,
-                    "docs_embeddable": 0,
-                    "docs_skipped": 0,
-                    "chunks": 0,
-                    "tokens": 0,
-                    "quality_p50": 0,
-                    "quality_below_threshold_pct": 0,
-                }
-            )
-            continue
-
-    # Calculate totals from NEW results
-    total_embeddable_docs = sum(run["docs_embeddable"] for run in runs_data)
-    total_skipped_docs = sum(run["docs_skipped"] for run in runs_data)
-    total_tokens = sum(run["tokens"] for run in runs_data)
-
-    # Create aggregated data with NEW structure
-    plan_data = {
-        "timestamp": timestamp,
-        "provider": resolved_provider,
-        "model": resolved_model,
-        "dimension": resolved_dimension,
-        "parameters": {
-            "min_embed_docs": min_embed_docs,
-            "quality_advisory": quality_advisory,
-            "price_per_1k": price_per_1k,
-            "tps_per_worker": tps_per_worker,
-            "workers": workers,
-        },
-        "summary": {
-            "total_runs": len(run_entries),
-            "ready_runs": len(ready_runs),
-            "blocked_runs": len(blocked_runs),
-            "total_embeddable_docs": total_embeddable_docs,
-            "total_skipped_docs": total_skipped_docs,
-            "total_tokens": total_tokens,
-        },
-        "runs": runs_data,
-    }
-
-    # Write outputs using the helper function from my preflight module
-    from ..pipeline.steps.embed.preflight import _write_plan_preflight_outputs
-
-    _write_plan_preflight_outputs(
-        output_dir, plan_data, ready_runs, blocked_runs, runs_data
-    )
-
-    # Final summary
-    typer.echo("\n📊 Plan Preflight Complete", err=True)
-    typer.echo(f"✅ Ready: {len(ready_runs)} runs", err=True)
-    typer.echo(f"❌ Blocked: {len(blocked_runs)} runs", err=True)
-    typer.echo(
-        f"📄 Total embeddable docs: {total_embeddable_docs:,}", err=True
-    )
-    typer.echo(f"📄 Total skipped docs: {total_skipped_docs:,}", err=True)
-    typer.echo(f"📁 Reports written to: {output_dir}", err=True)
-
-    # Always exit 0 - this is a reporting tool
-    typer.echo("✅ Plan preflight completed successfully", err=True)
 
 
 @embed_app.command("plan-diagnose")
@@ -4498,7 +4053,7 @@ def embed_status_cmd() -> None:
 def embed_clean_preflight_cmd(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be cleaned without doing it"
-    )
+    ),
 ) -> None:
     """Purge bad preflight artifacts (safely archive, never delete)."""
     import shutil

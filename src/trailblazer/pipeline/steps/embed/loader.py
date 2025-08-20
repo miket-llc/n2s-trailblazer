@@ -343,9 +343,10 @@ def load_chunks_to_db(
     if actual_dimension is None:
         # Try to get dimension from a test embedding
         try:
-            test_embedding = embedder.embed_texts(["test"])
-            if test_embedding:
-                actual_dimension = len(test_embedding[0])
+            if hasattr(embedder, "embed_texts"):
+                test_embedding = embedder.embed_texts(["test"])
+                if test_embedding:
+                    actual_dimension = len(test_embedding[0])
         except Exception:
             pass
 
@@ -766,12 +767,13 @@ def load_chunks_to_db(
                         ).seconds
                         >= 30
                     ):
-                        progress.update(
-                            task,
-                            description="📄 Processing chunks...",
-                            docs=docs_total,
-                            chunks=chunks_total,
-                        )
+                        if task is not None:
+                            progress.update(
+                                task,
+                                description="📄 Processing chunks...",
+                                docs=docs_total,
+                                chunks=chunks_total,
+                            )
                         last_progress_time = datetime.now(timezone.utc)
 
                         # Emit heartbeat
@@ -803,12 +805,13 @@ def load_chunks_to_db(
                 )
 
             # Final progress update
-            progress.update(
-                task,
-                description="✅ Complete",
-                docs=docs_total,
-                chunks=chunks_total,
-            )
+            if task is not None:
+                progress.update(
+                    task,
+                    description="✅ Complete",
+                    docs=docs_total,
+                    chunks=chunks_total,
+                )
 
         # Commit all changes
         session.commit()

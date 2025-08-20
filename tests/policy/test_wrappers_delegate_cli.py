@@ -76,18 +76,17 @@ def test_wrappers_delegate_to_current_cli():
         if Path(f).is_file() and f.endswith((".sh", ".bash"))
     ]
 
-    # Define current CLI command patterns
-    valid_cli_patterns = {
-        "embed_run": r"trailblazer embed run",
-        "embed_plan_preflight": r"trailblazer embed plan-preflight",
-        "embed_dispatch": r"trailblazer embed dispatch",
-        "chunk_run": r"trailblazer chunk run",
-        "ingest_confluence": r"trailblazer ingest confluence",
-        "normalize_from_ingest": r"trailblazer normalize from-ingest",
-        "enrich": r"trailblazer enrich",
-        "db_commands": r"trailblazer db \w+",
-        "admin_commands": r"trailblazer admin \w+",
-    }
+    # Define current CLI command patterns (for future use)
+    # "embed_run": r"trailblazer embed run",
+    # "embed_plan_preflight": r"trailblazer embed plan-preflight",
+    # "embed_dispatch": r"trailblazer embed dispatch",
+    # "chunk_run": r"trailblazer chunk run",
+    # "ingest_confluence": r"trailblazer ingest confluence",
+    # "normalize_from_ingest": r"trailblazer normalize from-ingest",
+    # "enrich": r"trailblazer enrich",
+    # "db_commands": r"trailblazer db \w+",
+    # "admin_commands": r"trailblazer admin \w+",
+    # }
 
     # Define deprecated patterns that should not be used
     deprecated_patterns = {

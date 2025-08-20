@@ -211,9 +211,9 @@ class TestChunkAuditIntegration:
 
         # Verify no chunks exceed token limit
         for chunk in updated_chunks:
-            assert (
-                chunk["token_count"] <= 800
-            ), f"Chunk {chunk['chunk_id']} still exceeds limit: {chunk['token_count']}"
+            assert chunk["token_count"] <= 800, (
+                f"Chunk {chunk['chunk_id']} still exceeds limit: {chunk['token_count']}"
+            )
 
         # Should have more chunks than before (due to splitting)
         assert len(updated_chunks) > 3
@@ -298,9 +298,9 @@ class TestChunkAuditIntegration:
         with open(final_oversize_file) as f:
             final_oversize_data = json.load(f)
 
-        assert (
-            len(final_oversize_data) == 0
-        ), "Should have no oversize chunks after rechunking"
+        assert len(final_oversize_data) == 0, (
+            "Should have no oversize chunks after rechunking"
+        )
 
     def test_chunk_audit_empty_runs(self):
         """Test chunk audit with no runs or no chunk files."""
@@ -419,9 +419,9 @@ Final paragraph with more content."""
         # Verify all chunks comply with hard cap
         for chunk in chunks:
             actual_tokens = count_tokens(chunk.text_md)
-            assert (
-                actual_tokens <= 150
-            ), f"Chunk {chunk.chunk_id} has {actual_tokens} tokens"
+            assert actual_tokens <= 150, (
+                f"Chunk {chunk.chunk_id} has {actual_tokens} tokens"
+            )
             assert hasattr(chunk, "split_strategy")
             assert chunk.split_strategy in [
                 "heading",

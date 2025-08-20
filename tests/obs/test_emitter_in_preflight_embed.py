@@ -70,7 +70,6 @@ def test_preflight_uses_event_emitter():
                 "trailblazer.pipeline.steps.embed.preflight.EventEmitter"
             ) as mock_event_emitter,
         ):
-
             # Set up mock EventEmitter
             mock_emitter_instance = MagicMock()
             mock_event_emitter.return_value.__enter__ = MagicMock(
@@ -133,7 +132,6 @@ def test_plan_preflight_uses_event_emitter():
                 "trailblazer.pipeline.steps.embed.preflight.EventEmitter"
             ) as mock_event_emitter,
         ):
-
             # Set up mock EventEmitter for both preflight calls and plan-preflight
             mock_emitter_instance = MagicMock()
             mock_event_emitter.return_value.__enter__ = MagicMock(
@@ -163,9 +161,9 @@ def test_plan_preflight_uses_event_emitter():
                     plan_preflight_call = call
                     break
 
-            assert (
-                plan_preflight_call is not None
-            ), "EventEmitter should be called for plan-preflight"
+            assert plan_preflight_call is not None, (
+                "EventEmitter should be called for plan-preflight"
+            )
             assert plan_preflight_call[1]["phase"] == "embed"
             assert plan_preflight_call[1]["component"] == "plan_preflight"
 
@@ -215,7 +213,6 @@ def test_embed_loader_uses_event_emitter():
             patch("trailblazer.core.progress.get_progress") as mock_progress,
             patch("trailblazer.obs.events.EventEmitter") as mock_event_emitter,
         ):
-
             # Set up mocks
             mock_progress.return_value.enabled = False
             mock_emitter_instance = MagicMock()
@@ -271,7 +268,6 @@ def test_event_emitter_consistent_fields():
                 "trailblazer.pipeline.steps.embed.preflight.EventEmitter"
             ) as mock_event_emitter,
         ):
-
             # Set up mock to capture events
             mock_emitter_instance = MagicMock()
             mock_event_emitter.return_value.__enter__ = MagicMock(
@@ -296,7 +292,9 @@ def test_event_emitter_consistent_fields():
             start_kwargs = (
                 start_call[1]
                 if start_call[1]
-                else start_call[0][0] if start_call[0] else {}
+                else start_call[0][0]
+                if start_call[0]
+                else {}
             )
 
             # Should have standard embedding parameters
@@ -343,7 +341,6 @@ def test_event_emitter_error_handling(mock_tokenizer):
                 "trailblazer.pipeline.steps.embed.preflight.EventEmitter"
             ) as mock_event_emitter,
         ):
-
             mock_emitter_instance = MagicMock()
             mock_event_emitter.return_value.__enter__ = MagicMock(
                 return_value=mock_emitter_instance

@@ -1,11 +1,9 @@
 """Test clean-preflight command functionality."""
 
 import json
-import shutil
 from pathlib import Path
 from unittest.mock import patch
 import pytest
-import tempfile
 import os
 
 from trailblazer.cli.main import embed_clean_preflight_cmd

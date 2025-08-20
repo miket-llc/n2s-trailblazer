@@ -35,9 +35,7 @@ class TestJSONLSchema:
             mock_session_factory.return_value.__enter__.return_value = (
                 mock_session
             )
-            mock_session.query.return_value.filter_by.return_value.first.return_value = (
-                None
-            )
+            mock_session.query.return_value.filter_by.return_value.first.return_value = None
             mock_session.get.return_value = None
 
             # Create test chunks file
@@ -84,18 +82,18 @@ class TestJSONLSchema:
 
                     # Check stage-specific fields
                     if event.get("stage") == "embed":
-                        assert (
-                            "provider" in event
-                        ), "Embed event missing provider"
-                        assert (
-                            "dimension" in event
-                        ), "Embed event missing dimension"
+                        assert "provider" in event, (
+                            "Embed event missing provider"
+                        )
+                        assert "dimension" in event, (
+                            "Embed event missing dimension"
+                        )
 
                     # Check timestamp format (ISO 8601)
                     ts = event["ts"]
-                    assert "T" in ts and (
-                        "Z" in ts or "+" in ts
-                    ), f"Invalid timestamp format: {ts}"
+                    assert "T" in ts and ("Z" in ts or "+" in ts), (
+                        f"Invalid timestamp format: {ts}"
+                    )
 
     def test_chunk_logging_schema(self):
         """Test that chunk stage uses unified logging schema."""
@@ -123,9 +121,9 @@ class TestJSONLSchema:
                 if args:
                     event_type = args[0]
                     # Should follow unified naming pattern
-                    assert (
-                        "chunk." in event_type
-                    ), f"Event type should be namespaced: {event_type}"
+                    assert "chunk." in event_type, (
+                        f"Event type should be namespaced: {event_type}"
+                    )
 
     def test_logging_field_consistency(self):
         """Test that logging fields are consistent across stages."""
@@ -147,12 +145,12 @@ class TestJSONLSchema:
         assert "ts" in required_fields, "Timestamp should be required"
         assert "stage" in required_fields, "Stage should be required"
         assert "op" in required_fields, "Operation should be required"
-        assert (
-            "provider" in optional_fields
-        ), "Provider should be optional field"
-        assert (
-            "dimension" in optional_fields
-        ), "Dimension should be optional field"
+        assert "provider" in optional_fields, (
+            "Provider should be optional field"
+        )
+        assert "dimension" in optional_fields, (
+            "Dimension should be optional field"
+        )
 
     def test_event_level_values(self):
         """Test that event levels use standard values."""
@@ -175,9 +173,7 @@ class TestJSONLSchema:
             mock_session_factory.return_value.__enter__.return_value = (
                 mock_session
             )
-            mock_session.query.return_value.filter_by.return_value.first.return_value = (
-                None
-            )
+            mock_session.query.return_value.filter_by.return_value.first.return_value = None
             mock_session.get.return_value = None
 
             chunks_file = self.temp_path / "test_chunks.ndjson"
@@ -208,9 +204,9 @@ class TestJSONLSchema:
                 for event in events:
                     if "level" in event:
                         level = event["level"]
-                        assert (
-                            level in valid_levels
-                        ), f"Invalid event level: {level}"
+                        assert level in valid_levels, (
+                            f"Invalid event level: {level}"
+                        )
 
     def test_stage_naming_consistency(self):
         """Test that stage names are consistent."""
@@ -233,9 +229,7 @@ class TestJSONLSchema:
             mock_session_factory.return_value.__enter__.return_value = (
                 mock_session
             )
-            mock_session.query.return_value.filter_by.return_value.first.return_value = (
-                None
-            )
+            mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
             chunks_file = self.temp_path / "test_chunks.ndjson"
             chunks_file.write_text(
@@ -265,9 +259,9 @@ class TestJSONLSchema:
                 for event in events:
                     if "stage" in event:
                         stage = event["stage"]
-                        assert (
-                            stage in valid_stages
-                        ), f"Invalid stage name: {stage}"
+                        assert stage in valid_stages, (
+                            f"Invalid stage name: {stage}"
+                        )
 
     def test_operation_naming_convention(self):
         """Test that operation names follow consistent convention."""

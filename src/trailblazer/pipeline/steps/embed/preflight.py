@@ -561,5 +561,5 @@ def _write_plan_preflight_outputs(
         f.write(f"Plan preflight completed at {plan_result['timestamp']}\n")
         f.write(f"Ready: {len(ready_runs)}, Blocked: {len(blocked_runs)}\n")
         f.write(
-            f"Total embeddable docs: {plan_result['summary']['total_embeddable_docs']}\n"
+            f"Total embeddable docs: {plan_result['total_embeddable_docs']}\n"
         )

@@ -207,9 +207,9 @@ class TestEnrichChunkPreflightFlow:
                         except SystemExit as e:
                             preflight_passed = e.code == 0
 
-                        assert (
-                            preflight_passed
-                        ), "Healthy sample should pass preflight"
+                        assert preflight_passed, (
+                            "Healthy sample should pass preflight"
+                        )
 
     def test_poor_quality_sample_fails_preflight(self):
         """Test that a poor quality sample fails preflight checks."""
@@ -324,9 +324,9 @@ class TestEnrichChunkPreflightFlow:
                         except SystemExit as e:
                             preflight_failed = e.code != 0
 
-                        assert (
-                            preflight_failed
-                        ), "Poor quality sample should fail preflight"
+                        assert preflight_failed, (
+                            "Poor quality sample should fail preflight"
+                        )
 
     def test_enriched_sample_output_format(self):
         """Test that enriched.jsonl sample has the expected format."""
