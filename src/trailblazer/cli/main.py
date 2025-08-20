@@ -4252,6 +4252,7 @@ def admin_script_audit_cmd(
     import re
     from datetime import datetime, timezone
     from pathlib import Path
+    from typing import cast, List, Dict, Any
     import json
     import shutil
 
@@ -4402,18 +4403,21 @@ def admin_script_audit_cmd(
 
     if remove_scripts:
         typer.echo("\n🚨 Scripts to remove:", err=True)
-        for script in remove_scripts[:10]:  # Show first 10
+        for script in cast(List[Path], remove_scripts[:10]):  # Show first 10
             script_result = [
-                p for p in audit_results if Path(p["path"]) == script
+                p
+                for p in audit_results
+                if Path(cast(str, p["path"])) == script
             ][0]
+            patterns = cast(List[Dict[str, Any]], script_result["patterns"])
             typer.echo(
-                f"   - {script.name}: {len(script_result['patterns'])} issues",
+                f"   - {script.name}: {len(patterns)} issues",
                 err=True,
             )
 
     if upgrade_scripts:
         typer.echo("\n🔧 Scripts to upgrade:", err=True)
-        for script in upgrade_scripts[:10]:  # Show first 10
+        for script in cast(List[Path], upgrade_scripts[:10]):  # Show first 10
             typer.echo(f"   - {script.name}", err=True)
 
     if dry_run:
@@ -4454,27 +4458,33 @@ def admin_script_audit_cmd(
 
         if remove_scripts:
             f.write(f"## Scripts to Remove ({len(remove_scripts)})\n\n")
-            for script in remove_scripts:
+            for script in cast(List[Path], remove_scripts):
                 result = next(
-                    r for r in audit_results if Path(r["path"]) == script
+                    r
+                    for r in audit_results
+                    if Path(cast(str, r["path"])) == script
                 )
                 f.write(f"### {script.name}\n")
                 f.write(f"**Path:** `{script}`\n")
                 f.write("**Issues:**\n")
-                for pattern in result["patterns"]:
+                patterns = cast(List[Dict[str, Any]], result["patterns"])
+                for pattern in patterns:
                     f.write(f"- {pattern['description']}\n")
                 f.write("\n")
 
         if upgrade_scripts:
             f.write(f"## Scripts to Upgrade ({len(upgrade_scripts)})\n\n")
-            for script in upgrade_scripts:
+            for script in cast(List[Path], upgrade_scripts):
                 result = next(
-                    r for r in audit_results if Path(r["path"]) == script
+                    r
+                    for r in audit_results
+                    if Path(cast(str, r["path"])) == script
                 )
                 f.write(f"### {script.name}\n")
                 f.write(f"**Path:** `{script}`\n")
                 f.write("**Issues:**\n")
-                for pattern in result["patterns"]:
+                patterns = cast(List[Dict[str, Any]], result["patterns"])
+                for pattern in patterns:
                     f.write(f"- {pattern['description']}\n")
                 f.write("\n")
 

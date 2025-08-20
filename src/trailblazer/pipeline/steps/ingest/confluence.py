@@ -1310,7 +1310,7 @@ def ingest_confluence(
     # Print console warning if space_key resolution failed
     if total_unknown_count > 0:
         try:
-            from ...obs.events import emit_event
+            from ...obs.events import emit_event  # type: ignore[import-untyped]
 
             emit_event(
                 "ingest.warn",

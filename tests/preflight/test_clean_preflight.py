@@ -77,8 +77,10 @@ def create_plan_bundle(
         json.dump(plan_data, f, indent=2)
 
     # Create ready.txt and blocked.txt
-    ready_count = plan_data["ready_runs"]
-    blocked_count = plan_data["blocked_runs"]
+    from typing import cast
+
+    ready_count = cast(int, plan_data["ready_runs"])
+    blocked_count = cast(int, plan_data["blocked_runs"])
 
     if is_bad and bad_reason == "count_mismatch":
         # Intentionally create wrong counts
