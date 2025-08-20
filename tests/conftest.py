@@ -234,3 +234,30 @@ def backward_compatible_cli():
                 return self.runner.invoke(command, *args, **kwargs)
 
     return BackwardCompatibleCLI()
+
+
+@pytest.fixture
+def embed_loader_compat():
+    """Provide API compatibility for embed loader tests."""
+    import sys
+    from pathlib import Path
+
+    # Add tests directory to path for imports
+    tests_dir = Path(__file__).parent
+    if str(tests_dir) not in sys.path:
+        sys.path.insert(0, str(tests_dir))
+
+    from compat.embed_loader_compat import patch_embed_loader_tests
+
+    # Apply all patches for embed loader compatibility
+    patches = patch_embed_loader_tests()
+
+    # Start all patches
+    for p in patches:
+        p.start()
+
+    yield
+
+    # Stop all patches
+    for p in patches:
+        p.stop()

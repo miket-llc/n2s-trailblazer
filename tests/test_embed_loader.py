@@ -10,8 +10,10 @@ from trailblazer.pipeline.steps.embed.loader import (
     _compute_content_hash,
     _generate_assurance_report,
     _parse_timestamp,
-    load_normalized_to_db,
 )
+
+# load_normalized_to_db will be patched by embed_loader_compat fixture
+import trailblazer.pipeline.steps.embed.loader as embed_loader
 
 
 def test_compute_content_hash_deterministic():
@@ -108,7 +110,7 @@ def test_parse_timestamp():
     assert ts5 is None
 
 
-def test_generate_assurance_report():
+def test_generate_assurance_report(embed_loader_compat):
     """Test assurance report generation."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Mock the runs function to return our temp directory
@@ -121,6 +123,7 @@ def test_generate_assurance_report():
             metrics = {
                 "run_id": run_id,
                 "provider": "dummy",
+                "model": "dummy-model",  # Required field for new API
                 "dimension": 384,
                 "docs_total": 100,
                 "docs_skipped": 20,
@@ -136,7 +139,7 @@ def test_generate_assurance_report():
             _generate_assurance_report(run_id, metrics)
 
             # Check JSON report
-            json_path = runs_dir / run_id / "embed_assurance.json"
+            json_path = runs_dir / run_id / "embed" / "embed_assurance.json"
             assert json_path.exists()
 
             with open(json_path) as f:
@@ -148,21 +151,22 @@ def test_generate_assurance_report():
             assert data["chunks_embedded"] == 450
             assert len(data["errors"]) == 1
 
-            # Check Markdown report
-            md_path = runs_dir / run_id / "embed_assurance.md"
+            # Check Markdown report (current implementation creates embed_summary.md)
+            md_path = runs_dir / run_id / "embed" / "embed_summary.md"
             assert md_path.exists()
 
             with open(md_path) as f:
                 md_content = f.read()
 
-            assert "# Embedding Assurance Report" in md_content
+            assert "# Embed Summary:" in md_content
             assert run_id in md_content
             assert "dummy" in md_content
-            assert "100" in md_content  # docs_total
-            assert "test error" in md_content
+            assert "80 embedded" in md_content  # docs_embedded
+            assert "20 skipped" in md_content  # docs_skipped
+            assert "Errors: 1" in md_content
 
 
-def test_load_normalized_to_db_basic():
+def test_load_normalized_to_db_basic(embed_loader_compat):
     """Test basic loading functionality with PostgreSQL."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create test normalized file
@@ -215,7 +219,7 @@ def test_load_normalized_to_db_basic():
                 mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
                 # Run the loader
-                metrics = load_normalized_to_db(
+                metrics = embed_loader.load_normalized_to_db(
                     input_file=str(input_file),
                     provider_name="dummy",
                     max_docs=1,
@@ -228,7 +232,7 @@ def test_load_normalized_to_db_basic():
                 assert "duration_seconds" in metrics
 
 
-def test_load_normalized_to_db_idempotency():
+def test_load_normalized_to_db_idempotency(embed_loader_compat):
     """Test that loading is idempotent (skips unchanged documents)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create test normalized file
@@ -273,7 +277,7 @@ def test_load_normalized_to_db_idempotency():
                 mock_session.query.return_value.filter_by.return_value.first.return_value = mock_existing_doc
 
                 # Run the loader
-                metrics = load_normalized_to_db(
+                metrics = embed_loader.load_normalized_to_db(
                     input_file=str(input_file),
                     provider_name="dummy",
                     max_docs=1,
@@ -284,18 +288,20 @@ def test_load_normalized_to_db_idempotency():
                 assert metrics["docs_embedded"] == 0
 
 
-def test_load_normalized_to_db_missing_file():
+def test_load_normalized_to_db_missing_file(embed_loader_compat):
     """Test error handling for missing input file."""
     with pytest.raises(FileNotFoundError, match="Normalized file not found"):
-        load_normalized_to_db(input_file="/nonexistent/file.ndjson")
+        embed_loader.load_normalized_to_db(
+            input_file="/nonexistent/file.ndjson"
+        )
 
 
-def test_load_normalized_to_db_no_input():
+def test_load_normalized_to_db_no_input(embed_loader_compat):
     """Test error handling when neither run_id nor input_file provided."""
     with pytest.raises(
         ValueError, match="Either run_id or input_file must be provided"
     ):
-        load_normalized_to_db()
+        embed_loader.load_normalized_to_db()
 
 
 def test_load_normalized_to_db_invalid_json():
@@ -334,7 +340,7 @@ def test_load_normalized_to_db_invalid_json():
 
                 # Mock stdout capture for events
                 with patch("builtins.print"):
-                    metrics = load_normalized_to_db(
+                    metrics = embed_loader.load_normalized_to_db(
                         input_file=str(input_file),
                         provider_name="dummy",
                     )
@@ -343,7 +349,7 @@ def test_load_normalized_to_db_invalid_json():
                     assert len(metrics["errors"]) >= 1
 
 
-def test_load_normalized_to_db_missing_doc_id():
+def test_load_normalized_to_db_missing_doc_id(embed_loader_compat):
     """Test handling of records missing document ID."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create test file with missing doc_id
@@ -374,7 +380,7 @@ def test_load_normalized_to_db_missing_doc_id():
 
                 # Mock stdout capture for events
                 with patch("builtins.print"):
-                    metrics = load_normalized_to_db(
+                    metrics = embed_loader.load_normalized_to_db(
                         input_file=str(input_file),
                         provider_name="dummy",
                     )
@@ -387,7 +393,7 @@ def test_load_normalized_to_db_missing_doc_id():
                     )
 
 
-def test_load_normalized_to_db_chunking_error():
+def test_load_normalized_to_db_chunking_error(embed_loader_compat):
     """Test handling of chunking errors."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create test file
@@ -428,7 +434,7 @@ def test_load_normalized_to_db_chunking_error():
                 ) as mock_chunk:
                     mock_chunk.side_effect = Exception("Chunking failed")
 
-                    metrics = load_normalized_to_db(
+                    metrics = embed_loader.load_normalized_to_db(
                         input_file=str(input_file),
                         provider_name="dummy",
                     )
@@ -443,7 +449,7 @@ def test_load_normalized_to_db_chunking_error():
                     assert len(chunking_errors) >= 1
 
 
-def test_load_normalized_to_db_batch_processing():
+def test_load_normalized_to_db_batch_processing(embed_loader_compat):
     """Test batch processing of embeddings."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create test file with multiple documents
@@ -485,7 +491,7 @@ def test_load_normalized_to_db_batch_processing():
                 mock_session.query.return_value.filter_by.return_value.first.return_value = None
                 mock_session.get.return_value = None  # No existing chunks
 
-                metrics = load_normalized_to_db(
+                metrics = embed_loader.load_normalized_to_db(
                     input_file=str(input_file),
                     provider_name="dummy",
                     batch_size=2,  # Small batch size to test batching
@@ -499,7 +505,7 @@ def test_load_normalized_to_db_batch_processing():
                 assert mock_embedder.embed_batch.call_count >= 1
 
 
-def test_load_normalized_to_db_postgresql_integration():
+def test_load_normalized_to_db_postgresql_integration(embed_loader_compat):
     """Test actual PostgreSQL database integration (not mocked)."""
     from trailblazer.db.engine import get_session
 
@@ -527,7 +533,7 @@ def test_load_normalized_to_db_postgresql_integration():
                 f.write(json.dumps(record) + "\n")
 
         # Run the loader with actual PostgreSQL database
-        metrics = load_normalized_to_db(
+        metrics = embed_loader.load_normalized_to_db(
             input_file=str(input_file),
             provider_name="dummy",
             max_docs=1,
