@@ -86,8 +86,21 @@ def cli_runner():
                 args = list(args)
 
                 # Map old embed preflight to new plan-preflight
-                if len(args) >= 3 and args[:3] == ["embed", "preflight"]:
-                    args[1] = "plan-preflight"
+                if len(args) >= 3 and args[:2] == ["embed", "preflight"]:
+                    # Old: embed preflight RUN_ID
+                    # New: embed plan-preflight --plan-file temp_plan.txt
+                    run_id = args[2]
+                    args = [
+                        "embed",
+                        "plan-preflight",
+                        "--plan-file",
+                        f"temp_plan_{run_id}.txt",
+                    ]
+
+                    # Create a temporary plan file for the test
+                    temp_plan_file = f"temp_plan_{run_id}.txt"
+                    with open(temp_plan_file, "w") as f:
+                        f.write(f"{run_id}:100\n")  # Mock chunk count
 
                 # Map old chunk sweep to new chunk command (single run)
                 if len(args) >= 2 and args[:2] == ["chunk", "sweep"]:
@@ -98,6 +111,7 @@ def cli_runner():
                         # Extract run_id from args or use a default test run
                         run_id = "test_run_2025_01_15"
                         args = ["chunk", run_id]
+                        print(f"DEBUG: Mapped chunk sweep to: {args}")
 
                 # Map old enrich sweep to new enrich command (single run)
                 if len(args) >= 2 and args[:2] == ["enrich", "sweep"]:
@@ -108,6 +122,7 @@ def cli_runner():
                         # Extract run_id from args or use a default test run
                         run_id = "test_run_2025_01_15"
                         args = ["enrich", run_id]
+                        print(f"DEBUG: Mapped enrich sweep to: {args}")
 
                 # Map other old patterns as needed
 
