@@ -26,7 +26,9 @@ def test_db_doctor_postgres_healthy():
         ):
             with patch("trailblazer.db.engine.get_session") as mock_session:
                 # Mock the session and query result for embedding dimensions
-                mock_session.return_value.__enter__.return_value.execute.return_value = []
+                mock_session.return_value.__enter__.return_value.execute.return_value = (
+                    []
+                )
 
                 runner = CliRunner()
                 result = runner.invoke(app, ["db", "doctor"])
@@ -164,7 +166,9 @@ def test_db_doctor_with_embedding_dimensions():
         ):
             with patch("trailblazer.db.engine.get_session") as mock_session:
                 # Mock finding some embedding dimensions
-                mock_result = mock_session.return_value.__enter__.return_value.execute.return_value
+                mock_result = (
+                    mock_session.return_value.__enter__.return_value.execute.return_value
+                )
                 mock_result.__iter__.return_value = [(384,), (768,)]
 
                 runner = CliRunner()

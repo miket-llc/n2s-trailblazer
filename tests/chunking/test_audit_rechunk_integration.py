@@ -157,9 +157,9 @@ class TestAuditRechunkIntegration:
         if oversize_file.exists():
             with open(oversize_file) as f:
                 oversize_data = json.load(f)
-            assert len(oversize_data) == 0, (
-                "Should have no oversize chunks after rechunking"
-            )
+            assert (
+                len(oversize_data) == 0
+            ), "Should have no oversize chunks after rechunking"
 
         # Check that chunks were actually updated
         chunks_file = (
@@ -169,15 +169,15 @@ class TestAuditRechunkIntegration:
             chunks = [json.loads(line) for line in f if line.strip()]
 
         # Should now have multiple smaller chunks instead of one large one
-        assert len(chunks) > 1, (
-            "Should have split large chunk into multiple chunks"
-        )
+        assert (
+            len(chunks) > 1
+        ), "Should have split large chunk into multiple chunks"
 
         # All chunks should be within token limit
         from trailblazer.pipeline.steps.chunk.boundaries import count_tokens
 
         for chunk in chunks:
             actual_tokens = count_tokens(chunk["text_md"])
-            assert actual_tokens <= 800, (
-                f"Chunk still exceeds limit: {actual_tokens} tokens"
-            )
+            assert (
+                actual_tokens <= 800
+            ), f"Chunk still exceeds limit: {actual_tokens} tokens"

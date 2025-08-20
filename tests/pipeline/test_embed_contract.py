@@ -133,7 +133,9 @@ class TestEmbedContract:
         # Mock database session
         mock_session = MagicMock()
         mock_session_factory.return_value.__enter__.return_value = mock_session
-        mock_session.query.return_value.filter_by.return_value.first.return_value = None
+        mock_session.query.return_value.filter_by.return_value.first.return_value = (
+            None
+        )
         mock_session.get.return_value = None
 
         run_id = "test-run-with-chunks"
@@ -200,7 +202,9 @@ class TestEmbedContract:
             mock_session_factory.return_value.__enter__.return_value = (
                 mock_session
             )
-            mock_session.query.return_value.filter_by.return_value.first.return_value = None
+            mock_session.query.return_value.filter_by.return_value.first.return_value = (
+                None
+            )
             mock_session.get.return_value = None
 
             result = self.runner.invoke(

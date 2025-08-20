@@ -31,16 +31,16 @@ def test_ingest_cli_help_no_db_logs():
 
             # Check logs for any DB-related messages
             log_content = log_capture.getvalue()
-            assert "engine" not in log_content.lower(), (
-                f"Found DB engine logs: {log_content}"
-            )
-            assert "database" not in log_content.lower(), (
-                f"Found database logs: {log_content}"
-            )
+            assert (
+                "engine" not in log_content.lower()
+            ), f"Found DB engine logs: {log_content}"
+            assert (
+                "database" not in log_content.lower()
+            ), f"Found database logs: {log_content}"
             # No database operations should occur during ingest
-            assert "postgresql" not in log_content.lower(), (
-                f"Found database logs: {log_content}"
-            )
+            assert (
+                "postgresql" not in log_content.lower()
+            ), f"Found database logs: {log_content}"
 
     finally:
         # Restore original logging state

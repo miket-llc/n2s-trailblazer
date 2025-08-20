@@ -109,11 +109,10 @@ def diagnose_blocked_runs(plan_bundle_dir: str) -> Dict[str, Any]:
         # Count reasons
         if normalized_reason not in reason_counts:
             reason_counts[normalized_reason] = 0
-            reason_examples[normalized_reason] = []
+            reason_examples[normalized_reason] = run_id
 
         reason_counts[normalized_reason] += 1
-        if len(reason_examples[normalized_reason]) < 5:  # Keep top 5 examples
-            reason_examples[normalized_reason].append(run_id)
+        # reason_examples just keeps the first example for simplicity
 
     # Create diagnostic result
     result = {

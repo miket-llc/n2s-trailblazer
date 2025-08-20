@@ -2171,7 +2171,9 @@ def _generate_enrichment_assurance_md(stats: dict, output_path: Path) -> None:
 ## Next Steps
 
 Run `trailblazer embed load --run-id {run_id}` to embed the enriched documents into the vector database.
-""".format(run_id=stats["run_id"])
+""".format(
+        run_id=stats["run_id"]
+    )
 
     output_path.write_text(content, encoding="utf-8")
 
@@ -4312,9 +4314,9 @@ def admin_script_audit_cmd(
     audit_dir = Path(f"var/script_audit/{timestamp}")
 
     audit_results = []
-    remove_scripts = []
-    upgrade_scripts = []
-    keep_scripts = []
+    remove_scripts: List[Path] = []
+    upgrade_scripts: List[Path] = []
+    keep_scripts: List[Path] = []
 
     typer.echo(f"📁 Scanning {len(script_files)} script files...", err=True)
 

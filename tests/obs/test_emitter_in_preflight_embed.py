@@ -161,9 +161,9 @@ def test_plan_preflight_uses_event_emitter():
                     plan_preflight_call = call
                     break
 
-            assert plan_preflight_call is not None, (
-                "EventEmitter should be called for plan-preflight"
-            )
+            assert (
+                plan_preflight_call is not None
+            ), "EventEmitter should be called for plan-preflight"
             assert plan_preflight_call[1]["phase"] == "embed"
             assert plan_preflight_call[1]["component"] == "plan_preflight"
 
@@ -292,9 +292,7 @@ def test_event_emitter_consistent_fields():
             start_kwargs = (
                 start_call[1]
                 if start_call[1]
-                else start_call[0][0]
-                if start_call[0]
-                else {}
+                else start_call[0][0] if start_call[0] else {}
             )
 
             # Should have standard embedding parameters

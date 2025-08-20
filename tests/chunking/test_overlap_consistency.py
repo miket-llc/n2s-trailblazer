@@ -58,9 +58,9 @@ It continues the pattern of having substantial text for overlap verification.
             overlap_words = current_end_words.intersection(next_start_words)
 
             # At least some words should overlap
-            assert len(overlap_words) > 0, (
-                f"No overlap found between chunks {i} and {i + 1}"
-            )
+            assert (
+                len(overlap_words) > 0
+            ), f"No overlap found between chunks {i} and {i + 1}"
 
 
 def test_overlap_honored_on_sentence_splits():
@@ -252,9 +252,9 @@ def test_overlap_on_table_splits():
                     expected_pipes = pipe_counts[0]
                     for count in pipe_counts:
                         # Allow some variation for header separators
-                        assert abs(count - expected_pipes) <= 1, (
-                            f"Inconsistent table structure: {pipe_counts}"
-                        )
+                        assert (
+                            abs(count - expected_pipes) <= 1
+                        ), f"Inconsistent table structure: {pipe_counts}"
 
 
 def test_overlap_on_token_window_splits():
@@ -310,9 +310,9 @@ def test_overlap_on_token_window_splits():
                     overlap_count += 1
 
             # Should have some overlap
-            assert overlap_count > 0, (
-                f"No overlap found in token-window split between chunks {i} and {i + 1}"
-            )
+            assert (
+                overlap_count > 0
+            ), f"No overlap found in token-window split between chunks {i} and {i + 1}"
 
 
 def test_no_overlap_when_no_split_needed():

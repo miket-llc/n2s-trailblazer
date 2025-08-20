@@ -109,7 +109,9 @@ def test_bootstrap_doc_missing_enriched(mock_session_factory, mock_embedder):
     mock_factory, mock_session = mock_session_factory
 
     # Mock database queries to simulate no existing document
-    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    mock_session.query.return_value.filter_by.return_value.first.return_value = (
+        None
+    )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -159,9 +161,9 @@ def test_bootstrap_doc_missing_enriched(mock_session_factory, mock_embedder):
             )
 
             # Should successfully embed the chunk
-            assert result["chunks_embedded"] == 1, (
-                f"Expected 1 chunk embedded, got {result['chunks_embedded']}"
-            )
+            assert (
+                result["chunks_embedded"] == 1
+            ), f"Expected 1 chunk embedded, got {result['chunks_embedded']}"
 
             # Verify document was bootstrapped
             mock_upsert_doc.assert_called_once()
@@ -204,7 +206,9 @@ def test_bootstrap_doc_mismatched_enriched(
     mock_factory, mock_session = mock_session_factory
 
     # Mock database queries to simulate no existing document
-    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    mock_session.query.return_value.filter_by.return_value.first.return_value = (
+        None
+    )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -256,9 +260,9 @@ def test_bootstrap_doc_mismatched_enriched(
             )
 
             # Should successfully embed the chunk
-            assert result["chunks_embedded"] == 1, (
-                f"Expected 1 chunk embedded, got {result['chunks_embedded']}"
-            )
+            assert (
+                result["chunks_embedded"] == 1
+            ), f"Expected 1 chunk embedded, got {result['chunks_embedded']}"
 
             # Verify document was bootstrapped (not using enriched.jsonl data)
             mock_upsert_doc.assert_called_once()
@@ -278,7 +282,9 @@ def test_bootstrap_doc_minimal_traceability(
 ):
     """Test document bootstrap with minimal traceability information."""
     mock_factory, mock_session = mock_session_factory
-    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    mock_session.query.return_value.filter_by.return_value.first.return_value = (
+        None
+    )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -368,7 +374,9 @@ def test_bootstrap_doc_existing_document_updates_hash(
     # Mock existing document with different content hash
     mock_existing_doc = MagicMock()
     mock_existing_doc.content_sha256 = "old_hash_value"
-    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_existing_doc
+    mock_session.query.return_value.filter_by.return_value.first.return_value = (
+        mock_existing_doc
+    )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -437,7 +445,9 @@ def test_bootstrap_doc_no_traceability_chunk_id_fallback(
 ):
     """Test bootstrap when chunk has no traceability but chunk_id can be parsed."""
     mock_factory, mock_session = mock_session_factory
-    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    mock_session.query.return_value.filter_by.return_value.first.return_value = (
+        None
+    )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)

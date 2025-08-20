@@ -459,9 +459,7 @@ def ingest_confluence(
         first_space_key = (
             space_keys[0]
             if space_keys
-            else list(space_key_by_id.values())[0]
-            if space_key_by_id
-            else None
+            else list(space_key_by_id.values())[0] if space_key_by_id else None
         )
         if first_space_key:
             state_file = state_base / f"{first_space_key}_state.json"
@@ -545,9 +543,9 @@ def ingest_confluence(
     space_details_cache: Dict[str, Dict] = {}  # Cache space details
     space_stats: Dict[str, Dict] = {}  # space_key -> stats
     last_highwater: Optional[datetime] = None
-    space_key_unknown_count: Dict[
-        str, int
-    ] = {}  # Track failed space_key resolutions
+    space_key_unknown_count: Dict[str, int] = (
+        {}
+    )  # Track failed space_key resolutions
 
     # Open CSV writers
     with (
@@ -589,11 +587,7 @@ def ingest_confluence(
             nonlocal written_pages, written_attachments, last_highwater
             nonlocal link_stats, links_data, attachments_manifest_data
             nonlocal media_data, edges_data, labels_data, breadcrumbs_data
-            nonlocal \
-                content_hash_collisions, \
-                media_refs_total, \
-                labels_total, \
-                ancestors_total
+            nonlocal content_hash_collisions, media_refs_total, labels_total, ancestors_total
             page_dict = p.model_dump(mode="json")
 
             # Add new body representation fields
