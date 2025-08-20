@@ -363,9 +363,10 @@ process_run() {
 
     echo "[Worker ${worker_id}] 🚀 Processing run: ${run_id}" | tee -a "${worker_log}"
 
-    # Check if run is already processed (only for regular embed mode)
-    if [[ "$SKIP_UNCHANGED" != "true" && -f "var/runs/${run_id}/embed/embed_assurance.json" ]]; then
-        echo "[Worker ${worker_id}] ✅ Run ${run_id} already embedded, skipping" | tee -a "${worker_log}"
+    # Only skip already-embedded runs when explicitly requested
+    # Default policy: full re-embed all runs; opt-in: incremental skip mode
+    if [[ "$SKIP_UNCHANGED" == "true" && -f "var/runs/${run_id}/embed/embed_assurance.json" ]]; then
+        echo "[Worker ${worker_id}] ✅ Run ${run_id} unchanged (embed_assurance present), skipping" | tee -a "${worker_log}"
         return 0
     fi
 
