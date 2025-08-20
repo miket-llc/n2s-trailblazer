@@ -168,9 +168,10 @@ if [[ -n "$PLAN_PREFLIGHT_SOURCE_DIR" ]]; then
     PLAN_JSON="${PLAN_PREFLIGHT_SOURCE_DIR}/plan_preflight.json"
     if [[ -f "$PLAN_JSON" ]]; then
         # Extract summary info from JSON using basic tools (avoid jq dependency)
-        READY_COUNT=$(grep -o '"runsReady":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || echo "0")
-        BLOCKED_COUNT=$(grep -o '"runsBlocked":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || echo "0")
-        EST_TOKENS=$(grep -o '"tokens":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || echo "0")
+        # Prefer new schema keys, fallback to legacy keys
+        READY_COUNT=$(grep -o '"ready_runs":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || grep -o '"runsReady":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || echo "0")
+        BLOCKED_COUNT=$(grep -o '"blocked_runs":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || grep -o '"runsBlocked":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || echo "0")
+        EST_TOKENS=$(grep -o '"total_tokens":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || grep -o '"tokens":[0-9]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || echo "0")
         EST_COST=$(grep -o '"estCostUSD":[0-9.]*' "$PLAN_JSON" 2>/dev/null | cut -d: -f2 || echo "0")
 
         echo "  Plan totals: ready=${READY_COUNT}, blocked=${BLOCKED_COUNT}"

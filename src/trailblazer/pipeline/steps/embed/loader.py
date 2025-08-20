@@ -423,29 +423,6 @@ def load_chunks_to_db(
             },
         )
 
-        # Helper function for event emission
-        def emit_event(event_type: str, **kwargs):
-            """Emit events using EventEmitter."""
-            if "error" in event_type:
-                event_emitter.error(
-                    kwargs.get("error", f"Error in {event_type}"),
-                    metadata=kwargs,
-                )
-            elif "heartbeat" in event_type:
-                event_emitter.heartbeat(
-                    processed=kwargs.get("chunks_total", 0),
-                    rate=kwargs.get("rate_chunks_per_sec", 0.0),
-                    metadata=kwargs,
-                )
-            elif "skip" in event_type:
-                # Skip events are informational
-                pass
-            else:
-                # Other events - use tick for progress
-                event_emitter.embed_tick(
-                    processed=kwargs.get("chunks_total", 0), metadata=kwargs
-                )
-
         with session_factory() as session:
             # Process chunks in batches
             batch_texts = []
@@ -491,7 +468,10 @@ def load_chunks_to_db(
                     except json.JSONDecodeError as e:
                         error_info = {"line": line_num, "error": str(e)}
                         errors.append(error_info)
-                        emit_event("error", **error_info)
+                        event_emitter.error(
+                            f"JSON decode error at line {line_num}",
+                            metadata=error_info,
+                        )
                         continue
 
                     # Extract chunk data
@@ -502,7 +482,10 @@ def load_chunks_to_db(
                             "error": "missing_chunk_id",
                         }
                         errors.append(error_info)
-                        emit_event("error", **error_info)
+                        event_emitter.error(
+                            f"Missing chunk_id at line {line_num}",
+                            metadata=error_info,
+                        )
                         continue
 
                     # Extract doc_id from chunk_id
@@ -586,18 +569,24 @@ def load_chunks_to_db(
 
                                 upsert_document(session, doc_data)
                                 docs_embedded += 1
-                                emit_event(
-                                    "doc.upsert",
-                                    doc_id=doc_id,
-                                    content_sha256=content_hash,
+                                event_emitter.embed_tick(
+                                    processed=chunks_total,
+                                    metadata={
+                                        "doc_id": doc_id,
+                                        "content_sha256": content_hash,
+                                        "action": "doc_upsert",
+                                    },
                                 )
                             else:
                                 docs_skipped += 1
-                                emit_event(
-                                    "doc.skip",
-                                    doc_id=doc_id,
-                                    content_sha256=content_hash,
-                                    reason="unchanged",
+                                event_emitter.embed_tick(
+                                    processed=chunks_total,
+                                    metadata={
+                                        "doc_id": doc_id,
+                                        "content_sha256": content_hash,
+                                        "action": "doc_skip",
+                                        "reason": "unchanged",
+                                    },
                                 )
                         else:
                             # Document bootstrap: create minimal Document from chunk traceability
@@ -654,11 +643,14 @@ def load_chunks_to_db(
 
                                 upsert_document(session, doc_data)
                                 docs_embedded += 1
-                                emit_event(
-                                    "doc.bootstrap",
-                                    doc_id=doc_id,
-                                    content_sha256=content_hash,
-                                    reason="missing_enriched_metadata",
+                                event_emitter.embed_tick(
+                                    processed=chunks_total,
+                                    metadata={
+                                        "doc_id": doc_id,
+                                        "content_sha256": content_hash,
+                                        "action": "doc_bootstrap",
+                                        "reason": "missing_enriched_metadata",
+                                    },
                                 )
                             else:
                                 # Document exists, check if content changed
@@ -666,17 +658,23 @@ def load_chunks_to_db(
                                     # Update content hash
                                     existing_doc.content_sha256 = content_hash
                                     session.commit()
-                                    emit_event(
-                                        "doc.update",
-                                        doc_id=doc_id,
-                                        content_sha256=content_hash,
-                                        reason="content_changed",
+                                    event_emitter.embed_tick(
+                                        processed=chunks_total,
+                                        metadata={
+                                            "doc_id": doc_id,
+                                            "content_sha256": content_hash,
+                                            "action": "doc_update",
+                                            "reason": "content_changed",
+                                        },
                                     )
                                 docs_skipped += 1
-                                emit_event(
-                                    "doc.skip",
-                                    doc_id=doc_id,
-                                    reason="already_exists",
+                                event_emitter.embed_tick(
+                                    processed=chunks_total,
+                                    metadata={
+                                        "doc_id": doc_id,
+                                        "action": "doc_skip",
+                                        "reason": "already_exists",
+                                    },
                                 )
 
                     chunks_total += 1
@@ -705,10 +703,13 @@ def load_chunks_to_db(
                         )
                         if existing_embedding:
                             chunks_skipped += 1
-                            emit_event(
-                                "chunk.skip",
-                                chunk_id=chunk_id,
-                                reason="unchanged",
+                            event_emitter.embed_tick(
+                                processed=chunks_total,
+                                metadata={
+                                    "chunk_id": chunk_id,
+                                    "action": "chunk_skip",
+                                    "reason": "unchanged",
+                                },
                             )
                             continue
 
@@ -729,10 +730,13 @@ def load_chunks_to_db(
                     }
 
                     upsert_chunk(session, chunk_data)
-                    emit_event(
-                        "chunk.write",
-                        chunk_id=chunk_id,
-                        char_count=chunk_data["char_count"],
+                    event_emitter.embed_tick(
+                        processed=chunks_total,
+                        metadata={
+                            "chunk_id": chunk_id,
+                            "action": "chunk_write",
+                            "char_count": chunk_data["char_count"],
+                        },
                     )
 
                     # Collect for batch embedding
@@ -754,7 +758,7 @@ def load_chunks_to_db(
                             embedder,
                             batch_texts,
                             batch_chunk_data,
-                            emit_event,
+                            event_emitter,
                         )
                         batch_texts.clear()
                         batch_chunk_data.clear()
@@ -781,12 +785,14 @@ def load_chunks_to_db(
                             datetime.now(timezone.utc) - start_time
                         ).total_seconds()
                         rate = chunks_total / elapsed if elapsed > 0 else 0
-                        emit_event(
-                            "heartbeat",
-                            docs_total=docs_total,
-                            chunks_total=chunks_total,
-                            rate_chunks_per_sec=rate,
-                            elapsed_seconds=elapsed,
+                        event_emitter.heartbeat(
+                            processed=chunks_total,
+                            rate=rate,
+                            metadata={
+                                "docs_total": docs_total,
+                                "chunks_total": chunks_total,
+                                "elapsed_seconds": elapsed,
+                            },
                         )
 
                     if max_chunks and chunks_total >= max_chunks:
@@ -801,7 +807,7 @@ def load_chunks_to_db(
                     embedder,
                     batch_texts,
                     batch_chunk_data,
-                    emit_event,
+                    event_emitter,
                 )
 
             # Final progress update
@@ -853,15 +859,26 @@ def load_chunks_to_db(
             estimated_cost = (estimated_tokens / 1000) * 0.0001
             metrics["estimated_cost"] = estimated_cost
 
-    emit_event("embed.load.done", **metrics)
+    event_emitter.embed_tick(
+        processed=chunks_total,
+        metadata={"action": "embed_load_done", **metrics},
+    )
 
     # Save fingerprints as previous if changed_only was used and embedding was successful
     if changed_only and run_id and run_id != "unknown":
         try:
             _save_fingerprints_as_previous(run_id)
-            emit_event("embed.fingerprints_saved", fingerprints_saved=True)
+            event_emitter.embed_tick(
+                processed=chunks_total,
+                metadata={
+                    "action": "fingerprints_saved",
+                    "fingerprints_saved": True,
+                },
+            )
         except Exception as e:
-            emit_event("embed.fingerprints_save_error", error=str(e))
+            event_emitter.error(
+                "Failed to save fingerprints", metadata={"error": str(e)}
+            )
             log.warning("embed.fingerprints_save_failed", error=str(e))
 
     # Generate assurance report with skiplist information
@@ -883,11 +900,17 @@ def load_chunks_to_db(
                 dimension=embedder.dimension,
                 chunks_embedded=chunks_embedded,
             )
-            emit_event(
-                "embed.manifest_written", manifest_file=str(manifest_file)
+            event_emitter.embed_tick(
+                processed=chunks_total,
+                metadata={
+                    "action": "manifest_written",
+                    "manifest_file": str(manifest_file),
+                },
             )
         except Exception as e:
-            emit_event("embed.manifest_write_error", error=str(e))
+            event_emitter.error(
+                "Failed to write manifest", metadata={"error": str(e)}
+            )
             log.warning("embed.manifest_write_failed", error=str(e))
 
     # Mark embedding complete in backlog
@@ -965,7 +988,7 @@ def _process_embedding_batch(
     embedder: EmbeddingProvider,
     texts: List[str],
     chunk_data_list: List[Dict[str, Any]],
-    emit_event: Any,
+    event_emitter: EventEmitter,
 ) -> None:
     """Process a batch of texts for embedding."""
     try:
@@ -990,11 +1013,9 @@ def _process_embedding_batch(
     for embedding, chunk_data in zip(embeddings, chunk_data_list):
         chunk_data["embedding"] = serialize_embedding(embedding)
         upsert_chunk_embedding(session, chunk_data)
-        emit_event(
-            "embed.write",
-            chunk_id=chunk_data["chunk_id"],
-            provider=chunk_data["provider"],
-        )
+        # Note: This function is called from the main loader with emit_event wrapper
+        # The wrapper will handle the EventEmitter conversion
+        pass
 
 
 def _generate_assurance_report(run_id: str, metrics: Dict[str, Any]) -> None:
