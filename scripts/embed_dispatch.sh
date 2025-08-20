@@ -76,9 +76,10 @@ while [[ $# -gt 0 ]]; do
             echo "  4. Fall back to var/temp_runs_to_embed.txt"
             echo
             echo "Examples:"
-            echo "  $0 --plan-preflight-dir var/plan_preflight/20250118_143022/"
-            echo "  $0 --plan-file my_plan.txt --skip-unchanged"
-            echo "  $0 --qa-dir var/retrieval_qc/20250118_143022/ --notes \"Production deployment\""
+echo "  $0 --plan-preflight-dir var/plan_preflight/20250118_143022/"
+echo "  $0 --plan-file my_plan.txt"
+echo "  $0 --qa-dir var/retrieval_qc/20250118_143022/ --notes \"Production deployment\""
+echo "  $0 --plan-file my_plan.txt --skip-unchanged  # Optional incremental mode"
             exit 0
             ;;
         *)
@@ -285,7 +286,7 @@ while IFS= read -r run_id; do
 
     # Remove any trailing colon and chunk count if present
     run_id="${run_id%%:*}"
-    
+
     # Handle both formats: "var/runs/run_id" and just "run_id"
     if [[ "$run_id" == var/runs/* ]]; then
         run_id="${run_id#var/runs/}"

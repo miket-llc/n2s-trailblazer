@@ -301,7 +301,7 @@ trailblazer embed plan-preflight \
 
 - **Batch validation**: Runs `trailblazer embed preflight` for each run in your plan file
 - **Ready/blocked classification**: Identifies which runs are ready for embedding vs blocked
-- **Failure reason detection**: Categorizes common failure modes (MISSING_ENRICH, MISSING_CHUNKS, QUALITY_GATE, etc.)
+- **Failure reason detection**: Categorizes common failure modes (MISSING_ENRICH, MISSING_CHUNKS, etc.)
 - **Cost estimation**: Optional pricing calculations if `--price-per-1k` provided
 - **Time estimation**: Optional duration estimates if `--tps-per-worker` and `--workers` provided
 - **Multiple output formats**: JSON, CSV, Markdown reports plus ready.txt and blocked.txt lists
@@ -338,11 +338,10 @@ trailblazer embed plan-preflight \
   --provider openai --model text-embedding-3-small --dimension 1536 \
   --price-per-1k 0.00002 --tps-per-worker 1000 --workers 2
 
-# 2. Dispatch from that plan (with optional QA archival and skip-unchanged optimization)
+# 2. Dispatch from that plan (with optional QA archival)
 scripts/embed_dispatch.sh \
   --plan-preflight-dir var/plan_preflight/<TS>/ \
   --qa-dir var/retrieval_qc/<TS>/ \
-  --skip-unchanged \
   --notes "Production deployment"
 
 # 3. Monitor progress
@@ -353,7 +352,7 @@ scripts/monitoring/monitor_embedding.sh
 
 - **Plan source resolution**: Automatically uses latest plan-preflight or specify with `--plan-preflight-dir`
 - **Provenance archival**: Archives complete plan-preflight bundle and optional QA results
-- **Skip unchanged runs**: Uses `reembed-if-changed` to avoid unnecessary work when `--skip-unchanged` set
+- **Skip unchanged runs**: Uses `reembed-if-changed` to avoid unnecessary work when `--skip-unchanged` set (optional)
 - **Per-RID safety**: Always runs preflight checks before processing each run
 - **Full traceability**: Creates `dispatch_manifest.json` with provider/model/dimension, git commit, timestamps
 
@@ -366,7 +365,7 @@ Options:
   --plan-preflight-dir <DIR>  Use plan from <DIR>/ready.txt
   --plan-file <FILE>          Use specific plan file  
   --qa-dir <DIR>              Archive QA results from directory
-  --skip-unchanged            Use reembed-if-changed to skip unchanged runs
+  --skip-unchanged            Use reembed-if-changed to skip unchanged runs (optional incremental mode)
   --notes "<TEXT>"            Add operator notes to manifest
   --workers <N>               Number of parallel workers (default: 2)
 ```
@@ -384,7 +383,7 @@ This ensures only runs that pass preflight validation are dispatched, with full 
 
 - **MISSING_ENRICH** → run `trailblazer enrich run --run <RID>`
 - **MISSING_CHUNKS** → run `trailblazer chunk run --run <RID>`
-- **QUALITY_GATE** → re-run enrich with `--min-quality` lowered (carefully) or fix source docs
+- **Quality issues** → Quality is advisory only; not a run-blocker
 - **TOKENIZER_MISSING** → install/ensure tokenizer in ops venv
 - **CONFIG_INVALID** → ensure provider/model/dimension set in env or flags
 
