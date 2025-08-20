@@ -211,12 +211,19 @@ def temp_run_dir_structure():
     """Create a temporary run directory with current expected structure."""
     import tempfile
     from pathlib import Path
+    import os
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
-        # Create current expected directory structure
-        runs_dir = temp_path / "runs"
+        # Change to temp directory to create var/runs structure
+        original_cwd = os.getcwd()
+        os.chdir(temp_path)
+
+        # Create current expected directory structure: var/runs/<run_id>
+        var_dir = temp_path / "var"
+        var_dir.mkdir()
+        runs_dir = var_dir / "runs"
         runs_dir.mkdir()
 
         # Create a sample run
@@ -248,6 +255,9 @@ def temp_run_dir_structure():
             "run_id": run_id,
             "run_dir": run_dir,
         }
+
+        # Restore original working directory
+        os.chdir(original_cwd)
 
 
 @pytest.fixture
