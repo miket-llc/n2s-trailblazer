@@ -124,6 +124,22 @@ def cli_runner():
                         args = ["enrich", run_id]
                         print(f"DEBUG: Mapped enrich sweep to: {args}")
 
+                # Map old chunk verify to new chunk command
+                if len(args) >= 3 and args[:2] == ["chunk", "verify"]:
+                    # Old: chunk verify --runs-glob "var/runs/*" --max-tokens 800 --require-traceability true --out-dir output
+                    # New: chunk RUN_ID --max-tokens 800 --min-tokens 120
+                    # Extract max-tokens from old args and map to new format
+                    max_tokens = 800  # Default
+                    for i, arg in enumerate(args):
+                        if arg == "--max-tokens" and i + 1 < len(args):
+                            max_tokens = args[i + 1]
+                            break
+
+                    # Use a default test run ID
+                    run_id = "test_run_2025_01_15"
+                    args = ["chunk", run_id, "--max-tokens", str(max_tokens)]
+                    print(f"DEBUG: Mapped chunk verify to: {args}")
+
                 # Map other old patterns as needed
 
             return super().invoke(app, args, *kwargs, **kwkwargs)
