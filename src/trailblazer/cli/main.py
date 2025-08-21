@@ -3178,6 +3178,72 @@ def logs_doctor():
         raise typer.Exit(1)
 
 
+@embed_app.command("run")
+def embed_run_cmd(
+    run_id: str = typer.Argument(..., help="Run ID to embed"),
+    provider: str = typer.Option(
+        "openai",
+        "--provider",
+        help="Embedding provider (only openai supported)",
+    ),
+    model: str = typer.Option(
+        "text-embedding-3-small",
+        "--model",
+        help="Model name (e.g., text-embedding-3-small)",
+    ),
+    dimension: int = typer.Option(
+        1536,
+        "--dimension",
+        help="Embedding dimension (must be 1536)",
+    ),
+    batch_size: int = typer.Option(
+        50,
+        "--batch-size",
+        help="Batch size for embedding generation",
+    ),
+) -> None:
+    """Embed a single run using the working simple loader."""
+    # Run database preflight check first
+    _run_db_preflight_check()
+
+    if provider != "openai":
+        typer.echo("❌ Only OpenAI provider is supported", err=True)
+        raise typer.Exit(1)
+
+    if dimension != 1536:
+        typer.echo("❌ Only 1536 dimensions supported", err=True)
+        raise typer.Exit(1)
+
+    try:
+        from ..pipeline.steps.embed.simple_loader import simple_embed_run
+
+        typer.echo(
+            f"🔄 Embedding run {run_id} with {provider}/{model} (dim={dimension})"
+        )
+
+        assurance = simple_embed_run(
+            run_id=run_id,
+            provider=provider,
+            model=model,
+            dimension=dimension,
+            batch_size=batch_size,
+        )
+
+        typer.echo(
+            f"✅ Embedded {assurance['chunks_embedded']} chunks from {assurance['docs_embedded']} documents"
+        )
+        typer.echo(f"⏱️  Duration: {assurance['duration_seconds']:.2f} seconds")
+
+        if assurance["errors"]:
+            typer.echo(
+                f"⚠️  {len(assurance['errors'])} errors occurred", err=True
+            )
+
+    except Exception as e:
+        typer.echo(f"❌ Embed failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
 @embed_app.command("corpus")
 def embed_corpus_cmd(
     provider: str = typer.Option(
@@ -3196,7 +3262,7 @@ def embed_corpus_cmd(
         help="Embedding dimension (singular, always 1536 per requirements)",
     ),
     batch_size: int = typer.Option(
-        1000,
+        50,
         "--batch",
         help="Batch size for embedding generation (max chunks per batch)",
     ),
@@ -3241,329 +3307,96 @@ def embed_corpus_cmd(
     _run_db_preflight_check()
 
     # Validate provider
-    if provider == "dummy":
-        typer.echo(
-            "❌ Dummy provider not allowed for corpus embedding", err=True
-        )
-        typer.echo(
-            "Use --provider openai or --provider sentencetransformers",
-            err=True,
-        )
+    if provider != "openai":
+        typer.echo("❌ Only OpenAI provider is supported", err=True)
         raise typer.Exit(1)
 
-    # Check dimension compatibility unless we're doing a full re-embed
-    if not reembed_all:
-        _check_dimension_compatibility(provider, dimension)
+    if dimension != 1536:
+        typer.echo("❌ Only 1536 dimensions supported", err=True)
+        raise typer.Exit(1)
 
-    from ..core.paths import runs, logs, progress as progress_dir
-    from ..pipeline.steps.embed.loader import load_chunks_to_db
-    import json
-    import time
+    from ..core.paths import runs
+    from ..pipeline.steps.embed.simple_loader import simple_embed_run
     from datetime import datetime, timezone
 
-    # Setup paths
+    # Simple working corpus embedding using our proven approach
+    typer.echo(
+        f"🚀 Starting corpus embedding with {provider}/{model} (dim={dimension})"
+    )
+
+    # Get all runs with chunks
     runs_dir = runs()
-    logs_dir = logs() / "embedding"
-    progress_file = progress_dir() / "embedding.json"
+    runs_with_chunks = []
 
-    # Ensure directories exist
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    progress_dir().mkdir(parents=True, exist_ok=True)
-
-    # Setup logging
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = logs_dir / f"corpus_embedding_{timestamp}.log"
-
-    def log_message(msg: str, level: str = "INFO"):
-        timestamp = datetime.now(timezone.utc).isoformat()
-        formatted_msg = f"{timestamp} [{level}] {msg}"
-        print(formatted_msg)
-        with open(log_file, "a") as f:
-            f.write(formatted_msg + "\n")
-
-    log_message("🚀 Starting corpus embedding", "INFO")
-    log_message(
-        f"Provider: {provider}, Model: {model}, Dimension: {dimension}",
-        "INFO",
-    )
-    log_message(
-        f"Batch size: {batch_size}, Large run threshold: {large_run_threshold}",
-        "INFO",
-    )
-    log_message(
-        f"Re-embed all: {reembed_all}, Changed only: {changed_only}", "INFO"
-    )
-    log_message(f"Log file: {log_file}", "INFO")
-
-    # Get list of runs
-    normalized_runs = []
     for run_dir in runs_dir.iterdir():
-        if run_dir.is_dir():
-            normalized_file = run_dir / "normalize" / "normalized.ndjson"
-            if normalized_file.exists():
-                normalized_runs.append(run_dir.name)
+        if run_dir.is_dir() and (run_dir / "chunk" / "chunks.ndjson").exists():
+            runs_with_chunks.append(run_dir.name)
 
-    normalized_runs.sort()
-    total_runs = len(normalized_runs)
+    runs_with_chunks.sort()
 
-    if total_runs == 0:
-        log_message("❌ No normalized runs found", "ERROR")
-        raise typer.Exit(1)
-
-    log_message(f"Found {total_runs} normalized runs", "INFO")
-
-    # Find starting position if resuming
-    start_index = 0
     if resume_from:
         try:
-            start_index = normalized_runs.index(resume_from)
-            log_message(
-                f"Resuming from run: {resume_from} (index {start_index})",
-                "INFO",
-            )
+            start_index = runs_with_chunks.index(resume_from)
+            runs_with_chunks = runs_with_chunks[start_index:]
+            typer.echo(f"📍 Resuming from: {resume_from}")
         except ValueError:
-            log_message(f"❌ Resume run '{resume_from}' not found", "ERROR")
+            typer.echo(f"❌ Resume run '{resume_from}' not found", err=True)
             raise typer.Exit(1)
 
-    # Apply max_runs limit
     if max_runs:
-        end_index = min(start_index + max_runs, total_runs)
-        runs_to_process = normalized_runs[start_index:end_index]
-        log_message(
-            f"Processing {len(runs_to_process)} runs (limited by --max-runs)",
-            "INFO",
-        )
-    else:
-        runs_to_process = normalized_runs[start_index:]
-        log_message(f"Processing {len(runs_to_process)} runs", "INFO")
+        runs_with_chunks = runs_with_chunks[:max_runs]
 
-    # Initialize progress tracking
-    progress_data = {
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "total_runs": len(runs_to_process),
-        "processed_runs": 0,
-        "successful_runs": 0,
-        "failed_runs": 0,
-        "total_docs": 0,
-        "total_chunks": 0,
-        "total_embeddings": 0,
-        "estimated_cost": 0.0,
-        "current_run": None,
-        "status": "running",
-    }
+    total_runs = len(runs_with_chunks)
+    typer.echo(f"📊 Found {total_runs} runs with chunks to embed")
 
-    def update_progress():
-        with open(progress_file, "w") as f:
-            json.dump(progress_data, f, indent=2)
+    if total_runs == 0:
+        typer.echo("❌ No runs with chunks found", err=True)
+        raise typer.Exit(1)
 
-    update_progress()
-
-    # Process each run
+    # Process each run using our simple working approach
     success_count = 0
     failure_count = 0
     total_docs_embedded = 0
     total_chunks_embedded = 0
-    total_estimated_cost = 0.0
+    start_time = datetime.now(timezone.utc)
 
-    start_time = time.time()
+    for i, run_id in enumerate(runs_with_chunks, 1):
+        typer.echo(f"🔄 [{i}/{total_runs}] {run_id}")
 
-    for i, run_id in enumerate(runs_to_process):
-        current_run_num = start_index + i + 1
-        progress_data["current_run"] = run_id
-        progress_data["processed_runs"] = current_run_num
-        update_progress()
-
-        log_message("")
-        log_message(
-            f"🔥 [{current_run_num}/{len(runs_to_process)}] Processing: {run_id}",
-            "INFO",
-        )
-
-        # Check if this is a large run that needs batching
-        chunks_file = runs_dir / run_id / "chunk" / "chunks.ndjson"
-        chunk_count = 0
-        if chunks_file.exists():
-            with open(chunks_file) as f:
-                chunk_count = sum(1 for _ in f)
-
-        if chunk_count > large_run_threshold:
-            log_message(
-                f"📊 Large run detected: {run_id} ({chunk_count:,} chunks)",
-                "INFO",
-            )
-            batches_needed = (chunk_count + batch_size - 1) // batch_size
-            log_message(f"  Batches needed: {batches_needed}", "INFO")
-
-            # Process in batches
-            batch_success = 0
-            batch_failure = 0
-
-            for batch_num in range(1, batches_needed + 1):
-                log_message(
-                    f"  🔥 Processing batch {batch_num}/{batches_needed}",
-                    "INFO",
-                )
-
-                batch_start_time = time.time()
-
-                try:
-                    metrics = load_chunks_to_db(
-                        run_id=run_id,
-                        provider_name=provider,
-                        model=model,
-                        dimension=dimension,
-                        batch_size=batch_size,
-                        max_chunks=batch_size,
-                        changed_only=changed_only,
-                        reembed_all=reembed_all,
-                        dry_run_cost=dry_run_cost,
-                    )
-
-                    batch_duration = time.time() - batch_start_time
-                    log_message(
-                        f"  ✅ Batch {batch_num}/{batches_needed} completed ({batch_duration:.1f}s)",
-                        "INFO",
-                    )
-                    log_message(
-                        f"    Chunks: {metrics.get('chunks_embedded', 0)} embedded",
-                        "INFO",
-                    )
-                    batch_success += 1
-
-                    # Update totals
-                    total_docs_embedded += metrics.get("docs_embedded", 0)
-                    total_chunks_embedded += metrics.get("chunks_embedded", 0)
-                    if metrics.get("estimated_cost"):
-                        total_estimated_cost += metrics.get(
-                            "estimated_cost", 0
-                        )
-
-                except Exception as e:
-                    batch_duration = time.time() - batch_start_time
-                    log_message(
-                        f"  ❌ Batch {batch_num}/{batches_needed} failed ({batch_duration:.1f}s): {e}",
-                        "ERROR",
-                    )
-                    batch_failure += 1
-
-                # Brief pause between batches
-                time.sleep(2)
-
-            if batch_failure == 0:
-                log_message(
-                    f"✅ SUCCESS: {run_id} (all {batches_needed} batches completed)",
-                    "INFO",
-                )
-                success_count += 1
-            else:
-                log_message(
-                    f"❌ PARTIAL FAILURE: {run_id} ({batch_failure}/{batches_needed} batches failed)",
-                    "ERROR",
-                )
-                failure_count += 1
-
-        else:
-            # Process single run
-            log_message(
-                f"📄 Processing single run: {run_id} ({chunk_count:,} chunks)",
-                "INFO",
+        try:
+            assurance = simple_embed_run(
+                run_id=run_id,
+                provider=provider,
+                model=model,
+                dimension=dimension,
+                batch_size=batch_size,
             )
 
-            run_start_time = time.time()
+            success_count += 1
+            total_docs_embedded += assurance["docs_embedded"]
+            total_chunks_embedded += assurance["chunks_embedded"]
 
-            try:
-                metrics = load_chunks_to_db(
-                    run_id=run_id,
-                    provider_name=provider,
-                    model=model,
-                    dimension=dimension,
-                    batch_size=batch_size,
-                    changed_only=changed_only,
-                    reembed_all=reembed_all,
-                    dry_run_cost=dry_run_cost,
-                )
-
-                run_duration = time.time() - run_start_time
-                log_message(
-                    f"✅ SUCCESS: {run_id} completed ({run_duration:.1f}s)",
-                    "INFO",
-                )
-                log_message(
-                    f"  Documents: {metrics.get('docs_embedded', 0)} embedded",
-                    "INFO",
-                )
-                log_message(
-                    f"  Chunks: {metrics.get('chunks_embedded', 0)} embedded",
-                    "INFO",
-                )
-                success_count += 1
-
-                # Update totals
-                total_docs_embedded += metrics.get("docs_embedded", 0)
-                total_chunks_embedded += metrics.get("chunks_embedded", 0)
-                if metrics.get("estimated_cost"):
-                    total_estimated_cost += metrics.get("estimated_cost", 0)
-
-            except Exception as e:
-                run_duration = time.time() - run_start_time
-                log_message(
-                    f"❌ FAILED: {run_id} ({run_duration:.1f}s): {e}", "ERROR"
-                )
-                failure_count += 1
-
-        # Update progress
-        progress_data["successful_runs"] = success_count
-        progress_data["failed_runs"] = failure_count
-        progress_data["total_docs"] = total_docs_embedded
-        progress_data["total_chunks"] = total_chunks_embedded
-        progress_data["total_embeddings"] = total_chunks_embedded
-        progress_data["estimated_cost"] = total_estimated_cost
-        update_progress()
-
-        # Periodic health check
-        if current_run_num % 100 == 0:
-            log_message(
-                f"🔍 Health check after {current_run_num} runs...", "INFO"
+            typer.echo(
+                f"  ✅ {assurance['chunks_embedded']} chunks, {assurance['docs_embedded']} docs ({assurance['duration_seconds']:.1f}s)"
             )
-            try:
-                from ..db.engine import check_db_health
 
-                check_db_health()
-                log_message("✅ Database health check passed", "INFO")
-            except Exception as e:
-                log_message(f"⚠️ Database health check warning: {e}", "WARN")
+        except Exception as e:
+            failure_count += 1
+            typer.echo(f"  ❌ Failed: {e}")
+            continue
 
     # Final summary
-    total_duration = time.time() - start_time
-    progress_data["status"] = "completed"
-    progress_data["completed_at"] = datetime.now(timezone.utc).isoformat()
-    progress_data["total_duration_seconds"] = total_duration
-    update_progress()
-
-    log_message("")
-    log_message("🎉 CORPUS EMBEDDING COMPLETE!", "INFO")
-    log_message("=" * 50, "INFO")
-    log_message(f"Total runs processed: {len(runs_to_process)}", "INFO")
-    log_message(f"Successful: {success_count}", "INFO")
-    log_message(f"Failed: {failure_count}", "INFO")
-    log_message(
-        f"Success rate: {(success_count * 100 / len(runs_to_process)):.1f}%",
-        "INFO",
-    )
-    log_message(f"Total documents embedded: {total_docs_embedded:,}", "INFO")
-    log_message(f"Total chunks embedded: {total_chunks_embedded:,}", "INFO")
-    log_message(f"Total estimated cost: ${total_estimated_cost:.4f}", "INFO")
-    log_message(f"Total duration: {total_duration:.1f}s", "INFO")
-    log_message(f"Progress file: {progress_file}", "INFO")
-    log_message(f"Log file: {log_file}", "INFO")
+    duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+    typer.echo("\n🎉 Corpus embedding complete!")
+    typer.echo(f"✅ {success_count} successful runs")
+    typer.echo(f"❌ {failure_count} failed runs")
+    typer.echo(f"📊 {total_chunks_embedded} total chunks embedded")
+    typer.echo(f"📄 {total_docs_embedded} total documents")
+    typer.echo(f"⏱️  Total duration: {duration:.1f} seconds")
 
     if failure_count > 0:
-        log_message(
-            "❌ Some runs failed. Check the log file for details.", "ERROR"
-        )
+        typer.echo(f"⚠️  {failure_count} runs failed", err=True)
         raise typer.Exit(1)
-    else:
-        log_message("✅ All runs completed successfully!", "INFO")
 
 
 @embed_app.command("reembed-if-changed")

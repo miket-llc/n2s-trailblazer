@@ -67,6 +67,12 @@ def get_engine():
                 "Run 'make db.up' then 'trailblazer db doctor' to get started."
             )
 
+        # Fix URL format for SQLAlchemy 2.0 + psycopg
+        if db_url.startswith("postgresql://") and "+psycopg" not in db_url:
+            db_url = db_url.replace("postgresql://", "postgresql+psycopg://")
+        elif db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql+psycopg://")
+
         _engine = create_engine(db_url, future=True)
     return _engine
 
