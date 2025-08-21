@@ -59,5 +59,18 @@ strict_optional = true
 
 [tool.pytest.ini_options]
 markers = [
-    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests (can use SQLite/mocks)",
+    "integration: marks tests as integration tests (need real database)",
+    "pgvector: marks tests as requiring pgvector extension",
+    "no_db: marks tests as not needing any database",
 ]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-v",
+    "--tb=short"
+]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

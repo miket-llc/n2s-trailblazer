@@ -14,6 +14,9 @@ from trailblazer.db.engine import (
     deserialize_embedding,
 )
 
+# Mark all tests in this file as requiring pgvector
+pytestmark = pytest.mark.pgvector
+
 
 def test_database_models_import():
     """Test that database models can be imported."""

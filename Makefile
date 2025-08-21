@@ -1,4 +1,4 @@
-.PHONY: setup lint test fmt md check-md ci db.up db.down db.wait reembed.openai reembed.openai.pilot reembed.openai.all embed.monitor embed.kill enrich.all
+.PHONY: setup lint test fmt md check-md ci db.up db.down db.wait reembed.openai reembed.openai.pilot reembed.openai.all embed.monitor embed.kill enrich.all test-unit test-integration test-pgvector test-fast
 
 setup:
 	python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]" && pre-commit install
@@ -13,8 +13,24 @@ lint:
 	mypy src
 	npx markdownlint "**/*.md" --ignore "var/**" --ignore "archive/**" --config .markdownlint.json
 
+# Test targets with proper categorization
 test:
 	TB_TESTING=1 TRAILBLAZER_DB_URL="postgresql+psycopg2://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer" pytest -q
+
+test-unit:
+	TB_TESTING=1 pytest -m "unit" -q
+
+test-integration:
+	TB_TESTING=1 TB_TESTING_INTEGRATION=1 pytest -m "integration" -q
+
+test-pgvector:
+	TB_TESTING=1 TB_TESTING_PGVECTOR=1 pytest -m "pgvector" -q
+
+test-fast:
+	TB_TESTING=1 pytest -m "not pgvector and not integration" -q
+
+test-all:
+	TB_TESTING=1 TB_TESTING_PGVECTOR=1 pytest -q
 
 md:
 	npx markdownlint "**/*.md" --ignore "var/**" --ignore "archive/**" --fix --config .markdownlint.json
@@ -23,7 +39,7 @@ check-md:
 	npx markdownlint "**/*.md" --ignore "var/**" --ignore "archive/**" --config .markdownlint.json
 
 ci:
-	make fmt && make lint && make test && make check-md
+	make fmt && make lint && make test-all && make check-md
 
 # Database targets
 db.up:

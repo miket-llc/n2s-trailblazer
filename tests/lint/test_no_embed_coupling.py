@@ -5,6 +5,9 @@ import os
 import pytest
 from pathlib import Path
 
+# Mark all tests in this file as not needing database
+pytestmark = pytest.mark.no_db
+
 
 def test_no_embed_coupling():
     """Fail if chunk package imports anything from trailblazer.pipeline.steps.embed or similar."""

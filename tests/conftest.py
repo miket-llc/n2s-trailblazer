@@ -6,14 +6,25 @@ from unittest.mock import patch
 
 @pytest.fixture(scope="session")
 def test_db_url():
-    """Provide test database URL using the existing Docker container."""
-    # Use the existing trailblazer PostgreSQL container
-    return "postgresql+psycopg2://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer"
+    """Provide appropriate test database URL based on test requirements."""
+    import os
+
+    # Check if we need pgvector (full PostgreSQL)
+    if os.environ.get("TB_TESTING_PGVECTOR") == "1":
+        return "postgresql+psycopg2://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer"
+
+    # Check if we need real database (integration tests)
+    elif os.environ.get("TB_TESTING_INTEGRATION") == "1":
+        return "postgresql+psycopg2://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer"
+
+    # Default to SQLite for fast unit tests
+    else:
+        return "sqlite:///:memory:"
 
 
 @pytest.fixture(autouse=True)
 def setup_test_db(test_db_url, monkeypatch, request):
-    """Set up test database URL for all tests that need it."""
+    """Set up test database based on test requirements."""
     import os
 
     # Skip database setup for tests that don't need it
@@ -22,16 +33,26 @@ def setup_test_db(test_db_url, monkeypatch, request):
             yield
             return
 
-    # Skip database setup if TB_TESTING=1 is not set (for simple unit tests)
-    if os.environ.get("TB_TESTING") != "1":
-        # For tests that don't explicitly need database, skip setup
-        test_name = request.node.name
-        if any(
-            keyword in test_name.lower()
-            for keyword in ["coupling", "lint", "boundaries"]
+    # Skip database setup for unit tests if not explicitly requested
+    if hasattr(request.node, "get_closest_marker"):
+        if request.node.get_closest_marker("unit") and not os.environ.get(
+            "TB_TESTING_UNIT_DB"
         ):
             yield
             return
+
+    # Determine if we need database setup
+    needs_db = (
+        os.environ.get("TB_TESTING") == "1"
+        or os.environ.get("TB_TESTING_PGVECTOR") == "1"
+        or os.environ.get("TB_TESTING_INTEGRATION") == "1"
+        or request.node.get_closest_marker("pgvector")
+        or request.node.get_closest_marker("integration")
+    )
+
+    if not needs_db:
+        yield
+        return
 
     try:
         from trailblazer.db import engine as engine_module
@@ -41,7 +62,13 @@ def setup_test_db(test_db_url, monkeypatch, request):
         monkeypatch.setenv("TRAILBLAZER_DB_URL", test_db_url)
 
         # Reset global settings and engine to pick up new environment variable
-        config_module.SETTINGS = config_module.Settings()
+        # Pass the DB URL directly to avoid .env file interference
+        new_settings = config_module.Settings(TRAILBLAZER_DB_URL=test_db_url)
+        config_module.SETTINGS = new_settings
+
+        # Also patch the engine module's SETTINGS reference
+        monkeypatch.setattr(engine_module, "SETTINGS", new_settings)
+
         engine_module._engine = None
         engine_module._session_factory = None
 
@@ -66,6 +93,7 @@ def setup_test_db(test_db_url, monkeypatch, request):
         if (
             "connection refused" in str(e).lower()
             or "operational" in str(e).lower()
+            or "no such table" in str(e).lower()
         ):
             pytest.skip(f"Database not available: {e}")
         else:

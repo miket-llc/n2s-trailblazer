@@ -16,7 +16,11 @@ from sqlalchemy import (
     text,
 )
 
-from pgvector.sqlalchemy import Vector as VECTOR  # type: ignore[import-untyped]
+try:
+    from pgvector.sqlalchemy import Vector as VECTOR  # type: ignore[import-untyped]
+except ImportError:
+    # Fallback for SQLite testing - use Text type instead of Vector
+    from sqlalchemy import Text as VECTOR  # type: ignore[misc]
 from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.sql import func
@@ -53,14 +57,18 @@ def get_engine():
     """Get or create the SQLAlchemy engine.
 
     Raises:
-        ValueError: If database URL is not PostgreSQL.
+        ValueError: If database URL is not PostgreSQL (except in testing mode).
     """
     global _engine
     if _engine is None:
         db_url = get_db_url()
 
-        # Ensure we're using PostgreSQL
-        if not db_url.startswith("postgres"):
+        # Allow SQLite for testing, otherwise require PostgreSQL
+        is_testing = SETTINGS.TB_TESTING
+        is_sqlite = db_url.startswith("sqlite")
+        is_postgres = db_url.startswith("postgres")
+
+        if not is_postgres and not (is_testing and is_sqlite):
             raise ValueError(
                 "Only PostgreSQL is supported. "
                 "Set TRAILBLAZER_DB_URL to a PostgreSQL URL in your .env file. "

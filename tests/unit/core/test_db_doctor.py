@@ -1,10 +1,14 @@
 """Test database doctor command functionality."""
 
 import os
+import pytest
 from unittest.mock import patch
 from typer.testing import CliRunner
 
 from trailblazer.cli.main import app
+
+# Mark all tests in this file as unit tests
+pytestmark = pytest.mark.unit
 
 
 def test_db_doctor_postgres_healthy():
