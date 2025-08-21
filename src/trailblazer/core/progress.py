@@ -1,15 +1,16 @@
 """Progress rendering for TTY and CLI output separation with Rich observability."""
 
-import sys
 import os
+import sys
 import time
 from datetime import datetime
-from typing import Optional, TextIO, Dict, Any, List
+from typing import Any, TextIO
+
 from rich.console import Console
-from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
-from rich.table import Table
-from rich.panel import Panel
 from rich.live import Live
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
+from rich.table import Table
 
 
 def is_tty() -> bool:
@@ -33,9 +34,9 @@ class ProgressRenderer:
 
     def __init__(
         self,
-        enabled: Optional[bool] = None,
+        enabled: bool | None = None,
         quiet_pretty: bool = False,
-        file: Optional[TextIO] = None,
+        file: TextIO | None = None,
         no_color: bool = False,
     ):
         """
@@ -60,26 +61,26 @@ class ProgressRenderer:
         )
 
         # Progress tracking
-        self.start_time: Optional[float] = None
+        self.start_time: float | None = None
         self.last_heartbeat: float = 0
         self.last_update: float = 0
         self.page_count = 0
         self.attachment_count = 0
         self.space_count = 0
-        self.current_space: Optional[str] = None
+        self.current_space: str | None = None
         self.spaces_completed = 0
         self.error_count = 0
         self.retry_count = 0
-        self.last_api_status: Optional[str] = None
+        self.last_api_status: str | None = None
 
         # Rich progress bars
-        self.overall_progress: Optional[Progress] = None
-        self.space_progress: Optional[Progress] = None
+        self.overall_progress: Progress | None = None
+        self.space_progress: Progress | None = None
         self.overall_task = None
         self.space_task = None
 
         # Live display
-        self.live_display: Optional[Live] = None
+        self.live_display: Live | None = None
 
         # Heartbeat interval (30 seconds)
         self.heartbeat_interval = 30.0
@@ -89,8 +90,8 @@ class ProgressRenderer:
         run_id: str,
         spaces: int,
         since_mode: str = "none",
-        max_pages: Optional[int] = None,
-        estimated_pages: Optional[int] = None,
+        max_pages: int | None = None,
+        estimated_pages: int | None = None,
     ):
         """Print enhanced start banner with Rich formatting."""
         if not self.enabled or self.quiet_pretty:
@@ -110,13 +111,9 @@ class ProgressRenderer:
         if max_pages:
             banner_content.append(f"[bold]Max pages:[/bold] {max_pages}")
         if estimated_pages:
-            banner_content.append(
-                f"[bold]Estimated pages:[/bold] ~{estimated_pages}"
-            )
+            banner_content.append(f"[bold]Estimated pages:[/bold] ~{estimated_pages}")
 
-        banner_content.append(
-            f"[bold]Started:[/bold] {datetime.now().strftime('%H:%M:%S')}"
-        )
+        banner_content.append(f"[bold]Started:[/bold] {datetime.now().strftime('%H:%M:%S')}")
 
         panel = Panel(
             "\n".join(banner_content),
@@ -157,7 +154,7 @@ class ProgressRenderer:
 
     def resumability_evidence(
         self,
-        since: Optional[str] = None,
+        since: str | None = None,
         spaces: int = 0,
         pages_known: int = 0,
         estimated_to_fetch: int = 0,
@@ -176,9 +173,7 @@ class ProgressRenderer:
         ]
 
         if skipped_unchanged > 0:
-            evidence_lines.append(
-                f"[dim]Skipped unchanged:[/dim] {skipped_unchanged}"
-            )
+            evidence_lines.append(f"[dim]Skipped unchanged:[/dim] {skipped_unchanged}")
 
         panel = Panel(
             "\n".join(evidence_lines),
@@ -194,8 +189,8 @@ class ProgressRenderer:
         processed: int,
         rate: float,
         elapsed: float,
-        eta: Optional[float] = None,
-        last_api_status: Optional[str] = None,
+        eta: float | None = None,
+        last_api_status: str | None = None,
         retries: int = 0,
     ):
         """Display heartbeat line every 30 seconds."""
@@ -222,13 +217,9 @@ class ProgressRenderer:
             f"{eta_str}{api_str}{retry_str}"
         )
 
-        self.console.print(
-            f"[dim]{datetime.now().strftime('%H:%M:%S')}[/dim] {heartbeat_text}"
-        )
+        self.console.print(f"[dim]{datetime.now().strftime('%H:%M:%S')}[/dim] {heartbeat_text}")
 
-    def attachment_verification_error(
-        self, page_id: str, expected: int, actual: int
-    ):
+    def attachment_verification_error(self, page_id: str, expected: int, actual: int):
         """Display attachment count mismatch error."""
         if not self.enabled:
             return
@@ -245,22 +236,16 @@ class ProgressRenderer:
     def finish_banner(
         self,
         run_id: str,
-        space_stats: Dict[str, Dict[str, Any]],
+        space_stats: dict[str, dict[str, Any]],
         elapsed: float,
     ):
         """Print enhanced finish banner with Rich formatting."""
         if not self.enabled or self.quiet_pretty:
             return
 
-        total_pages = sum(
-            stats.get("pages", 0) for stats in space_stats.values()
-        )
-        total_attachments = sum(
-            stats.get("attachments", 0) for stats in space_stats.values()
-        )
-        total_empty = sum(
-            stats.get("empty_bodies", 0) for stats in space_stats.values()
-        )
+        total_pages = sum(stats.get("pages", 0) for stats in space_stats.values())
+        total_attachments = sum(stats.get("attachments", 0) for stats in space_stats.values())
+        total_empty = sum(stats.get("empty_bodies", 0) for stats in space_stats.values())
 
         # Calculate rate
         rate = total_pages / elapsed if elapsed > 0 else 0
@@ -274,19 +259,13 @@ class ProgressRenderer:
         ]
 
         if total_empty > 0:
-            summary_lines.append(
-                f"[bold yellow]Empty bodies:[/bold yellow] {total_empty}"
-            )
+            summary_lines.append(f"[bold yellow]Empty bodies:[/bold yellow] {total_empty}")
 
         if self.error_count > 0:
-            summary_lines.append(
-                f"[bold red]Errors:[/bold red] {self.error_count}"
-            )
+            summary_lines.append(f"[bold red]Errors:[/bold red] {self.error_count}")
 
         if self.retry_count > 0:
-            summary_lines.append(
-                f"[bold orange]Retries:[/bold orange] {self.retry_count}"
-            )
+            summary_lines.append(f"[bold orange]Retries:[/bold orange] {self.retry_count}")
 
         panel = Panel(
             "\n".join(summary_lines),
@@ -326,7 +305,7 @@ class ProgressRenderer:
 
             self.console.print(table)
 
-    def spaces_table(self, spaces: List[Dict[str, Any]]):
+    def spaces_table(self, spaces: list[dict[str, Any]]):
         """Print Rich table of spaces being ingested."""
         if not self.enabled or self.quiet_pretty or not spaces:
             return
@@ -358,9 +337,9 @@ class ProgressRenderer:
         page_id: str,
         title: str,
         attachments: int,
-        updated_at: Optional[str] = None,
+        updated_at: str | None = None,
         throttle_every: int = 1,
-        content_bytes: Optional[int] = None,
+        _content_bytes: int | None = None,
     ):
         """Show enhanced progress update for a page with Rich formatting."""
         if not self.enabled:
@@ -385,9 +364,7 @@ class ProgressRenderer:
 
         # Truncate long titles and IDs for display
         title_display = title[:40] + "..." if len(title) > 43 else title
-        page_id_display = (
-            page_id[:12] + "..." if len(page_id) > 15 else page_id
-        )
+        page_id_display = page_id[:12] + "..." if len(page_id) > 15 else page_id
         updated_display = updated_at[:19] if updated_at else "unknown"
 
         # Create progress line with Rich formatting
@@ -425,16 +402,14 @@ class ProgressRenderer:
         )
         self.console.print(resume_text)
 
-    def one_line_summary(
-        self, run_id: str, pages: int, attachments: int, elapsed: float
-    ) -> str:
+    def one_line_summary(self, run_id: str, pages: int, attachments: int, elapsed: float) -> str:
         """Generate one-line human-readable summary."""
         rate = pages / elapsed if elapsed > 0 else 0
         return f"{run_id}: {pages} pages, {attachments} attachments in {elapsed:.1f}s ({rate:.1f} pages/s)"
 
 
 # Global progress renderer instance
-_progress: Optional[ProgressRenderer] = None
+_progress: ProgressRenderer | None = None
 
 
 def get_progress() -> ProgressRenderer:
@@ -446,13 +421,11 @@ def get_progress() -> ProgressRenderer:
 
 
 def init_progress(
-    enabled: Optional[bool] = None,
+    enabled: bool | None = None,
     quiet_pretty: bool = False,
     no_color: bool = False,
 ) -> ProgressRenderer:
     """Initialize the global progress renderer with Rich observability features."""
     global _progress
-    _progress = ProgressRenderer(
-        enabled=enabled, quiet_pretty=quiet_pretty, no_color=no_color
-    )
+    _progress = ProgressRenderer(enabled=enabled, quiet_pretty=quiet_pretty, no_color=no_color)
     return _progress

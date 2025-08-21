@@ -4,7 +4,8 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, TextIO, Dict, Any
+from typing import Any, TextIO
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -19,8 +20,8 @@ class StatusTracker:
         phase: str,
         component: str,
         no_color: bool = False,
-        file: Optional[TextIO] = None,
-        log_dir: Optional[str] = None,
+        file: TextIO | None = None,
+        log_dir: str | None = None,
     ):
         self.run_id = run_id
         self.phase = phase
@@ -47,7 +48,7 @@ class StatusTracker:
             force_terminal=False,
         )
 
-    def start_banner(self, title: Optional[str] = None, **metadata):
+    def start_banner(self, title: str | None = None, **metadata):
         """Print start banner with run info."""
         title = title or f"{self.phase.title()} Starting"
 
@@ -81,9 +82,9 @@ class StatusTracker:
     def progress_banner(
         self,
         processed: int,
-        total: Optional[int] = None,
-        rate: Optional[float] = None,
-        eta: Optional[str] = None,
+        total: int | None = None,
+        rate: float | None = None,
+        eta: str | None = None,
         status_message: str = "Processing",
         **metrics,
     ):
@@ -113,7 +114,7 @@ class StatusTracker:
         if metrics:
             content.append("\nMetrics:\n", style="bold white")
             for key, value in metrics.items():
-                if isinstance(value, (int, float)):
+                if isinstance(value, int | float):
                     content.append(f"  {key}: {value:,}\n", style="dim")
                 else:
                     content.append(f"  {key}: {value}\n", style="dim")
@@ -148,9 +149,7 @@ class StatusTracker:
 
         self.console.print(panel)
 
-    def error_banner(
-        self, message: str, error_type: Optional[str] = None, **context
-    ):
+    def error_banner(self, message: str, error_type: str | None = None, **context):
         """Print error banner."""
         content = Text()
         content.append("❌ Error\n", style="bold red")
@@ -172,7 +171,7 @@ class StatusTracker:
 
         self.console.print(panel)
 
-    def completion_banner(self, summary: Dict[str, Any]):
+    def completion_banner(self, summary: dict[str, Any]):
         """Print completion banner with final summary."""
         elapsed = time.time() - self.start_time
 
@@ -194,7 +193,7 @@ class StatusTracker:
                         f"  {key.replace('_', ' ').title()}: {value:,}\n",
                         style="white",
                     )
-                elif isinstance(value, (int, float)):
+                elif isinstance(value, int | float):
                     content.append(
                         f"  {key.replace('_', ' ').title()}: {value}\n",
                         style="dim",

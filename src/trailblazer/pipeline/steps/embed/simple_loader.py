@@ -6,7 +6,7 @@ Replaces the broken complex loader with our proven working approach.
 import json
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 import openai
 import psycopg2
@@ -21,9 +21,9 @@ def simple_embed_run(
     model: str = "text-embedding-3-small",
     dimension: int = 1536,
     batch_size: int = 50,
-    openai_api_key: Optional[str] = None,
-    db_url: Optional[str] = None,
-) -> Dict[str, Any]:
+    openai_api_key: str | None = None,
+    db_url: str | None = None,
+) -> dict[str, Any]:
     """
     Simple, working embed implementation that actually works.
 
@@ -70,9 +70,7 @@ def simple_embed_run(
         raise FileNotFoundError(f"Chunks file not found: {chunks_file}")
 
     # Set up event emitter
-    event_emitter = EventEmitter(
-        run_id=run_id, phase="embed", component="simple_loader"
-    )
+    event_emitter = EventEmitter(run_id=run_id, phase="embed", component="simple_loader")
 
     # Initialize metrics
     start_time = datetime.now(timezone.utc)
@@ -104,7 +102,7 @@ def simple_embed_run(
         try:
             # Read all chunks
             chunks = []
-            with open(chunks_file, "r", encoding="utf-8") as f:
+            with open(chunks_file, encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
                         chunk = json.loads(line.strip())
@@ -124,9 +122,7 @@ def simple_embed_run(
 
                 try:
                     # Get embeddings from OpenAI
-                    response = openai.embeddings.create(
-                        model=model, input=texts, dimensions=dimension
-                    )
+                    response = openai.embeddings.create(model=model, input=texts, dimensions=dimension)
 
                     # Insert into database
                     conn = psycopg2.connect(database_url)
@@ -138,8 +134,8 @@ def simple_embed_run(
                         # Upsert document
                         cur.execute(
                             """
-                            INSERT INTO documents (doc_id, source_system, title, url, content_sha256) 
-                            VALUES (%s, %s, %s, %s, %s) 
+                            INSERT INTO documents (doc_id, source_system, title, url, content_sha256)
+                            VALUES (%s, %s, %s, %s, %s)
                             ON CONFLICT (doc_id) DO NOTHING
                         """,
                             (
@@ -192,9 +188,7 @@ def simple_embed_run(
 
                     chunks_embedded += len(batch_chunks)
                     batch_docs = set(chunk["doc_id"] for chunk in batch_chunks)
-                    docs_embedded += len(
-                        batch_docs - {chunk["doc_id"] for chunk in chunks[:i]}
-                    )
+                    docs_embedded += len(batch_docs - {chunk["doc_id"] for chunk in chunks[:i]})
 
                     log.info(
                         "embed.batch_completed",
@@ -211,9 +205,7 @@ def simple_embed_run(
                         "error": str(e),
                     }
                     errors.append(error_info)
-                    log.error(
-                        "embed.batch_failed", run_id=run_id, **error_info
-                    )
+                    log.error("embed.batch_failed", run_id=run_id, **error_info)
                     continue
 
                 # Rate limiting
@@ -221,9 +213,7 @@ def simple_embed_run(
 
             # Calculate final metrics
             docs_embedded = len(doc_ids)  # All docs processed
-            duration = (
-                datetime.now(timezone.utc) - start_time
-            ).total_seconds()
+            duration = (datetime.now(timezone.utc) - start_time).total_seconds()
 
             # Create assurance file
             assurance = {

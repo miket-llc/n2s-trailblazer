@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
 from ..db.engine import (
+    Chunk,
     ChunkEmbedding,
     Document,
-    Chunk,
-    get_session_factory,
     deserialize_embedding,
+    get_session_factory,
 )
 from ..pipeline.steps.embed.provider import get_embedding_provider
 
@@ -28,9 +28,9 @@ def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
 
 def top_k(
     query_vec: np.ndarray,
-    candidates: List[Tuple[str, str, str, List[float], str, str]],
+    candidates: list[tuple[str, str, str, list[float], str, str]],
     k: int,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Compute top-k similar chunks with deterministic ordering.
 
@@ -60,7 +60,7 @@ def top_k(
         )
 
     # Sort by score desc, then doc_id, then chunk_id for deterministic ordering
-    def sort_key(x: Dict[str, Any]) -> Tuple[float, str, str]:
+    def sort_key(x: dict[str, Any]) -> tuple[float, str, str]:
         return (-x["score"], x["doc_id"], x["chunk_id"])
 
     scored_candidates.sort(key=sort_key)
@@ -73,9 +73,9 @@ class DenseRetriever:
 
     def __init__(
         self,
-        db_url: Optional[str] = None,
+        db_url: str | None = None,
         provider_name: str = "dummy",
-        dim: Optional[int] = None,
+        dim: int | None = None,
     ):
         """
         Initialize dense retriever.
@@ -122,8 +122,8 @@ class DenseRetriever:
     def fetch_candidates(
         self,
         provider: str,
-        limit: Optional[int] = None,
-    ) -> List[Tuple[str, str, str, List[float], str, str]]:
+        limit: int | None = None,
+    ) -> list[tuple[str, str, str, list[float], str, str]]:
         """
         Fetch candidate chunks with embeddings.
 
@@ -144,9 +144,7 @@ class DenseRetriever:
                     Document.title,
                     Document.url,
                 )
-                .join(
-                    ChunkEmbedding, Chunk.chunk_id == ChunkEmbedding.chunk_id
-                )
+                .join(ChunkEmbedding, Chunk.chunk_id == ChunkEmbedding.chunk_id)
                 .join(Document, Chunk.doc_id == Document.doc_id)
                 .filter(ChunkEmbedding.provider == provider)
                 .order_by(Chunk.doc_id, Chunk.ord)  # Deterministic ordering
@@ -179,7 +177,7 @@ class DenseRetriever:
         query_vec: np.ndarray,
         provider: str,
         top_k: int = 8,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Perform search using PostgreSQL + pgvector.
 
@@ -201,9 +199,7 @@ class DenseRetriever:
                     Document.title,
                     Document.url,
                 )
-                .join(
-                    ChunkEmbedding, Chunk.chunk_id == ChunkEmbedding.chunk_id
-                )
+                .join(ChunkEmbedding, Chunk.chunk_id == ChunkEmbedding.chunk_id)
                 .join(Document, Chunk.doc_id == Document.doc_id)
                 .filter(ChunkEmbedding.provider == provider)
                 .limit(top_k * 3)  # Get more candidates for proper ranking
@@ -222,9 +218,7 @@ class DenseRetriever:
                 )
 
                 if embedding_record:
-                    embedding_vec = np.array(
-                        deserialize_embedding(embedding_record.embedding)
-                    )
+                    embedding_vec = np.array(deserialize_embedding(embedding_record.embedding))
                     score = cosine_sim(query_vec, embedding_vec)
 
                     candidates.append(
@@ -239,13 +233,11 @@ class DenseRetriever:
                     )
 
             # Sort by score descending, then doc_id, chunk_id for deterministic ordering
-            candidates.sort(
-                key=lambda x: (-x["score"], x["doc_id"], x["chunk_id"])
-            )
+            candidates.sort(key=lambda x: (-x["score"], x["doc_id"], x["chunk_id"]))
 
             return candidates[:top_k]
 
-    def search(self, query: str, top_k: int = 8) -> List[Dict[str, Any]]:
+    def search(self, query: str, top_k: int = 8) -> list[dict[str, Any]]:
         """
         Search for similar chunks using dense retrieval.
 
@@ -264,9 +256,9 @@ class DenseRetriever:
 
 
 def create_retriever(
-    db_url: Optional[str] = None,
+    db_url: str | None = None,
     provider_name: str = "dummy",
-    dim: Optional[int] = None,
+    dim: int | None = None,
 ) -> DenseRetriever:
     """
     Factory function to create a DenseRetriever.

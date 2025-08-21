@@ -3,13 +3,14 @@
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Any
+
 from rich.console import Console
+from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from rich.layout import Layout
 
 
 class TrailblazerMonitor:
@@ -17,7 +18,7 @@ class TrailblazerMonitor:
 
     def __init__(
         self,
-        run_id: Optional[str] = None,
+        run_id: str | None = None,
         json_mode: bool = False,
         refresh_interval: float = 2.0,
     ):
@@ -26,19 +27,15 @@ class TrailblazerMonitor:
         self.refresh_interval = refresh_interval
 
         self.console = Console() if not json_mode else None
-        self.status_file = (
-            Path(f"var/status/{self.run_id}.json") if self.run_id else None
-        )
-        self.log_file = (
-            Path(f"var/logs/{self.run_id}.ndjson") if self.run_id else None
-        )
+        self.status_file = Path(f"var/status/{self.run_id}.json") if self.run_id else None
+        self.log_file = Path(f"var/logs/{self.run_id}.ndjson") if self.run_id else None
 
         # Tracking data
-        self.last_events: List[Dict[str, Any]] = []
-        self.error_history: List[Dict[str, Any]] = []
-        self.rate_history: List[float] = []
+        self.last_events: list[dict[str, Any]] = []
+        self.error_history: list[dict[str, Any]] = []
+        self.rate_history: list[float] = []
 
-    def _get_latest_run_id(self) -> Optional[str]:
+    def _get_latest_run_id(self) -> str | None:
         """Get the latest run ID from symlink."""
         latest_status = Path("var/status/latest.json")
         if latest_status.exists() and latest_status.is_symlink():
@@ -46,37 +43,37 @@ class TrailblazerMonitor:
             return target.stem
         return None
 
-    def _read_status(self) -> Optional[Dict[str, Any]]:
+    def _read_status(self) -> dict[str, Any] | None:
         """Read current status from status file."""
         if not self.status_file or not self.status_file.exists():
             return None
 
         try:
-            with open(self.status_file, "r") as f:
+            with open(self.status_file) as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             return None
 
-    def _read_recent_events(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def _read_recent_events(self, limit: int = 10) -> list[dict[str, Any]]:
         """Read recent events from log file."""
         if not self.log_file or not self.log_file.exists():
             return []
 
         events = []
         try:
-            with open(self.log_file, "r") as f:
+            with open(self.log_file) as f:
                 lines = f.readlines()
                 for line in lines[-limit:]:
                     try:
                         events.append(json.loads(line.strip()))
                     except json.JSONDecodeError:
                         continue
-        except IOError:
+        except OSError:
             pass
 
         return events
 
-    def _create_status_panel(self, status: Dict[str, Any]) -> Panel:
+    def _create_status_panel(self, status: dict[str, Any]) -> Panel:
         """Create status panel for TUI."""
         content = Text()
 
@@ -85,16 +82,12 @@ class TrailblazerMonitor:
             f"🎯 {status.get('phase', 'unknown').title()} Monitor\n",
             style="bold cyan",
         )
-        content.append(
-            f"Run ID: {status.get('run_id', 'unknown')}\n", style="white"
-        )
+        content.append(f"Run ID: {status.get('run_id', 'unknown')}\n", style="white")
         content.append(
             f"Updated: {status.get('timestamp', 'unknown')[:19]}\n",
             style="dim",
         )
-        content.append(
-            f"Elapsed: {status.get('elapsed_seconds', 0):,}s\n", style="yellow"
-        )
+        content.append(f"Elapsed: {status.get('elapsed_seconds', 0):,}s\n", style="yellow")
 
         # Progress
         processed = status.get("processed", 0)
@@ -118,15 +111,11 @@ class TrailblazerMonitor:
         workers = status.get("active_workers", 1)
         content.append(f"Workers: {workers}\n", style="cyan")
 
-        return Panel(
-            content, title="[bold blue]Status[/bold blue]", border_style="blue"
-        )
+        return Panel(content, title="[bold blue]Status[/bold blue]", border_style="blue")
 
-    def _create_metrics_table(self, status: Dict[str, Any]) -> Table:
+    def _create_metrics_table(self, status: dict[str, Any]) -> Table:
         """Create metrics table."""
-        table = Table(
-            title="Metrics", show_header=True, header_style="bold yellow"
-        )
+        table = Table(title="Metrics", show_header=True, header_style="bold yellow")
         table.add_column("Metric", style="white")
         table.add_column("Count", style="green", justify="right")
 
@@ -145,7 +134,7 @@ class TrailblazerMonitor:
 
         return table
 
-    def _create_events_panel(self, events: List[Dict[str, Any]]) -> Panel:
+    def _create_events_panel(self, events: list[dict[str, Any]]) -> Panel:
         """Create recent events panel."""
         content = Text()
 
@@ -170,13 +159,9 @@ class TrailblazerMonitor:
 
                 # Add context
                 if "space_key" in event:
-                    content.append(
-                        f"space={event['space_key']} ", style="cyan"
-                    )
+                    content.append(f"space={event['space_key']} ", style="cyan")
                 if "page_id" in event:
-                    content.append(
-                        f"page={event['page_id'][:12]}... ", style="blue"
-                    )
+                    content.append(f"page={event['page_id'][:12]}... ", style="blue")
                 if event.get("metadata", {}).get("message"):
                     content.append(
                         f"msg={event['metadata']['message'][:30]}...",
@@ -191,9 +176,7 @@ class TrailblazerMonitor:
             border_style="green",
         )
 
-    def _create_ascii_sparkline(
-        self, values: List[float], width: int = 40
-    ) -> str:
+    def _create_ascii_sparkline(self, values: list[float], width: int = 40) -> str:
         """Create simple ASCII sparkline."""
         if not values or len(values) < 2:
             return "█" * width
@@ -233,9 +216,7 @@ class TrailblazerMonitor:
             Layout(name="middle", size=8),
             Layout(name="bottom"),
         )
-        layout["middle"].split_row(
-            Layout(name="metrics"), Layout(name="trend")
-        )
+        layout["middle"].split_row(Layout(name="metrics"), Layout(name="trend"))
 
         try:
             with Live(layout, console=self.console, refresh_per_second=1):
@@ -247,28 +228,18 @@ class TrailblazerMonitor:
                         # Update rate history for sparkline
                         current_rate = status.get("rate_ema_1m", 0)
                         self.rate_history.append(current_rate)
-                        if (
-                            len(self.rate_history) > 60
-                        ):  # Keep last 60 data points
+                        if len(self.rate_history) > 60:  # Keep last 60 data points
                             self.rate_history.pop(0)
 
                         # Update layout
                         layout["top"].update(self._create_status_panel(status))
-                        layout["metrics"].update(
-                            self._create_metrics_table(status)
-                        )
-                        layout["bottom"].update(
-                            self._create_events_panel(events)
-                        )
+                        layout["metrics"].update(self._create_metrics_table(status))
+                        layout["bottom"].update(self._create_events_panel(events))
 
                         # Trend sparkline
-                        sparkline = self._create_ascii_sparkline(
-                            self.rate_history
-                        )
+                        sparkline = self._create_ascii_sparkline(self.rate_history)
                         trend_content = Text()
-                        trend_content.append(
-                            "Rate Trend (1m EMA)\n", style="bold white"
-                        )
+                        trend_content.append("Rate Trend (1m EMA)\n", style="bold white")
                         trend_content.append(f"{sparkline}\n", style="green")
                         trend_content.append(
                             f"Range: {min(self.rate_history):.1f} - {max(self.rate_history):.1f}",
@@ -283,9 +254,7 @@ class TrailblazerMonitor:
                             )
                         )
                     else:
-                        layout["top"].update(
-                            Panel("No status data available", style="red")
-                        )
+                        layout["top"].update(Panel("No status data available", style="red"))
 
                     time.sleep(self.refresh_interval)
 
@@ -307,22 +276,14 @@ class TrailblazerMonitor:
                 "run_id": status.get("run_id"),
                 "phase": status.get("phase"),
                 "timestamp": status.get("timestamp"),
-                "status": (
-                    "running"
-                    if status.get("remaining", 0) > 0
-                    else "completed"
-                ),
+                "status": ("running" if status.get("remaining", 0) > 0 else "completed"),
                 "progress": {
                     "processed": status.get("processed", 0),
                     "total_planned": status.get("total_planned"),
                     "remaining": status.get("remaining", 0),
                     "percentage": (
                         round(
-                            (
-                                status.get("processed", 0)
-                                / status.get("total_planned", 1)
-                            )
-                            * 100,
+                            (status.get("processed", 0) / status.get("total_planned", 1)) * 100,
                             1,
                         )
                         if status.get("total_planned")

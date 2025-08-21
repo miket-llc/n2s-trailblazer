@@ -1,20 +1,26 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test DITA ingest functionality."""
 
-import pytest
-from pathlib import Path
-import tempfile
 import json
+import tempfile
+from pathlib import Path
 
+import pytest
+
+from trailblazer.adapters.dita import MapDoc, MediaRef, TopicDoc
 from trailblazer.pipeline.steps.ingest.dita import (
-    ingest_dita,
+    _build_hierarchy_and_write_edges,
+    _create_dita_record,
     _find_dita_files,
     _should_include_file,
-    _create_dita_record,
-    _write_media_sidecars,
-    _build_hierarchy_and_write_edges,
     _write_labels_and_edges,
+    _write_media_sidecars,
+    ingest_dita,
 )
-from trailblazer.adapters.dita import TopicDoc, MapDoc, MediaRef
 
 # Mark all tests as integration tests (need database)
 pytestmark = pytest.mark.integration
@@ -126,17 +132,11 @@ def test_should_include_file():
 
     # Test custom include patterns
     assert _should_include_file(Path("test.dita"), include_patterns=["*.dita"])
-    assert not _should_include_file(
-        Path("test.xml"), include_patterns=["*.dita"]
-    )
+    assert not _should_include_file(Path("test.xml"), include_patterns=["*.dita"])
 
     # Test exclude patterns
-    assert not _should_include_file(
-        Path("test.dita"), exclude_patterns=["*.dita"]
-    )
-    assert not _should_include_file(
-        Path("temp/test.dita"), exclude_patterns=["temp/*"]
-    )
+    assert not _should_include_file(Path("test.dita"), exclude_patterns=["*.dita"])
+    assert not _should_include_file(Path("temp/test.dita"), exclude_patterns=["temp/*"])
 
 
 def test_find_dita_files(temp_dita_structure):
@@ -156,7 +156,7 @@ def test_find_dita_files(temp_dita_structure):
     assert "config.xml" not in file_names
 
     # Check we found exactly 3 files
-    assert len(files) == 3
+    assert len(files) == EXPECTED_COUNT_3
 
 
 def test_find_dita_files_with_patterns(temp_dita_structure):
@@ -211,9 +211,7 @@ def test_create_dita_record():
         st_ctime = 1609459200.0  # 2021-01-01
         st_mtime = 1609545600.0  # 2021-01-02
 
-    record = _create_dita_record(
-        topic, file_path, root_dir, MockStat(), "abc123"
-    )
+    record = _create_dita_record(topic, file_path, root_dir, MockStat(), "abc123")
 
     assert record["source_system"] == "dita"
     assert record["id"] == "topic:concepts/intro"
@@ -235,9 +233,7 @@ def test_ingest_dita_full_flow(temp_dita_structure):
     """Test complete DITA ingest flow."""
     with tempfile.TemporaryDirectory() as outdir:
         # Run ingest
-        metrics = ingest_dita(
-            outdir=outdir, root=str(temp_dita_structure), run_id="test-run-123"
-        )
+        metrics = ingest_dita(outdir=outdir, root=str(temp_dita_structure), run_id="test-run-123")
 
         # Check return metrics
         assert metrics["pages"] == 3  # 2 topics + 1 map
@@ -257,7 +253,7 @@ def test_ingest_dita_full_flow(temp_dita_structure):
             for line in f:
                 records.append(json.loads(line))
 
-        assert len(records) == 3
+        assert len(records) == EXPECTED_COUNT_3
 
         # Check we have the expected records
         record_ids = [r["id"] for r in records]
@@ -323,12 +319,10 @@ def test_write_media_sidecars():
             for line in f:
                 media_entries.append(json.loads(line))
 
-        assert len(media_entries) == 2
+        assert len(media_entries) == EXPECTED_COUNT_2
 
         # Check first media entry
-        image_entry = next(
-            e for e in media_entries if e["filename"] == "image1.png"
-        )
+        image_entry = next(e for e in media_entries if e["filename"] == "image1.png")
         assert image_entry["page_id"] == "topic:test"
         assert image_entry["order"] == 1
         assert image_entry["type"] == "image"
@@ -343,7 +337,7 @@ def test_write_media_sidecars():
             for line in f:
                 manifest_entries.append(json.loads(line))
 
-        assert len(manifest_entries) == 2
+        assert len(manifest_entries) == EXPECTED_COUNT_2
 
 
 def test_build_hierarchy_and_write_edges():
@@ -426,9 +420,7 @@ def test_build_hierarchy_and_write_edges():
             {"id": "topic:tasks/setup", "ancestors": [], "ancestor_count": 0},
         ]
 
-        ancestors_total = _build_hierarchy_and_write_edges(
-            outdir, [map_doc], [topic1, topic2], topic_records, root_dir
-        )
+        ancestors_total = _build_hierarchy_and_write_edges(outdir, [map_doc], [topic1, topic2], topic_records, root_dir)
 
         assert ancestors_total == 2
 
@@ -443,11 +435,9 @@ def test_build_hierarchy_and_write_edges():
 
         # Should have parent-child edges
         parent_edges = [e for e in edges if e["type"] == "PARENT_OF"]
-        assert len(parent_edges) == 2
+        assert len(parent_edges) == EXPECTED_COUNT_2
 
-        intro_edge = next(
-            e for e in parent_edges if e["dst"] == "topic:concepts/intro"
-        )
+        intro_edge = next(e for e in parent_edges if e["dst"] == "topic:concepts/intro")
         assert intro_edge["src"] == "map:user-guide"
 
         # Check breadcrumbs file
@@ -459,20 +449,16 @@ def test_build_hierarchy_and_write_edges():
             for line in f:
                 breadcrumbs.append(json.loads(line))
 
-        assert len(breadcrumbs) == 2
+        assert len(breadcrumbs) == EXPECTED_COUNT_2
 
-        intro_breadcrumb = next(
-            b for b in breadcrumbs if b["page_id"] == "topic:concepts/intro"
-        )
+        intro_breadcrumb = next(b for b in breadcrumbs if b["page_id"] == "topic:concepts/intro")
         assert intro_breadcrumb["breadcrumbs"] == [
             "User Guide",
             "Introduction",
         ]
 
         # Check that topic records were updated
-        intro_record = next(
-            r for r in topic_records if r["id"] == "topic:concepts/intro"
-        )
+        intro_record = next(r for r in topic_records if r["id"] == "topic:concepts/intro")
         assert intro_record["ancestors"] == ["User Guide"]
         assert intro_record["ancestor_count"] == 1
 
@@ -521,12 +507,10 @@ def test_write_labels_and_edges():
             for line in f:
                 labels.append(json.loads(line))
 
-        assert len(labels) == 3
+        assert len(labels) == EXPECTED_COUNT_3
 
-        topic_labels = [
-            label for label in labels if label["page_id"] == "topic:test"
-        ]
-        assert len(topic_labels) == 2
+        topic_labels = [label for label in labels if label["page_id"] == "topic:test"]
+        assert len(topic_labels) == EXPECTED_COUNT_2
 
         # Check edges file for label edges
         edges_file = outdir / "edges.jsonl"
@@ -538,7 +522,7 @@ def test_write_labels_and_edges():
                 edges.append(json.loads(line))
 
         label_edges = [e for e in edges if e["type"] == "LABELED_AS"]
-        assert len(label_edges) == 3
+        assert len(label_edges) == EXPECTED_COUNT_3
 
         intro_edge = next(e for e in label_edges if e["dst"] == "label:intro")
         assert intro_edge["src"] == "topic:test"
@@ -550,9 +534,7 @@ def test_ingest_dita_empty_directory():
         tempfile.TemporaryDirectory() as empty_dir,
         tempfile.TemporaryDirectory() as outdir,
     ):
-        metrics = ingest_dita(
-            outdir=outdir, root=empty_dir, run_id="test-empty"
-        )
+        metrics = ingest_dita(outdir=outdir, root=empty_dir, run_id="test-empty")
 
         # Should complete without error
         assert metrics["pages"] == 0
@@ -653,26 +635,16 @@ def test_ingest_dita_enhanced_metadata(temp_dita_structure):
                     link_records.append(json.loads(line))
 
         # Find links from the enhanced topic
-        enhanced_links = [
-            r for r in link_records if "enhanced_config" in r["from_page_id"]
-        ]
+        enhanced_links = [r for r in link_records if "enhanced_config" in r["from_page_id"]]
         assert len(enhanced_links) >= 3
 
         # Check external link
-        external_links = [
-            link
-            for link in enhanced_links
-            if link["target_type"] == "external"
-        ]
+        external_links = [link for link in enhanced_links if link["target_type"] == "external"]
         assert len(external_links) >= 1
-        assert any(
-            "docs.example.com" in link["target_url"] for link in external_links
-        )
+        assert any("docs.example.com" in link["target_url"] for link in external_links)
 
         # Check DITA internal link
-        dita_links = [
-            link for link in enhanced_links if link["target_type"] == "dita"
-        ]
+        dita_links = [link for link in enhanced_links if link["target_type"] == "dita"]
         assert len(dita_links) >= 1
 
         # Check key reference (look for keyref elements)
@@ -763,9 +735,7 @@ def test_aggregate_labels_and_metadata():
     source_path = "ellucian-documentation/gen_help/concepts/config.dita"
     map_context = {"map_titles": ["User Guide", "Admin Guide"]}
 
-    result = _aggregate_labels_and_metadata(
-        topic, source_path, root_dir, map_context
-    )
+    result = _aggregate_labels_and_metadata(topic, source_path, root_dir, map_context)
 
     # Check aggregated labels include all sources
     labels = result["labels"]

@@ -1,7 +1,13 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test idempotent re-embedding functionality."""
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from trailblazer.pipeline.steps.embed.loader import load_chunks_to_db
@@ -45,9 +51,7 @@ def test_idempotent_re_embed_same_run(tmp_path):
         mock_runs.return_value = tmp_path / "var" / "runs"
 
         # Mock the embedding provider
-        with patch(
-            "trailblazer.pipeline.steps.embed.loader.get_embedding_provider"
-        ) as mock_provider:
+        with patch("trailblazer.pipeline.steps.embed.loader.get_embedding_provider") as mock_provider:
             mock_embedder = MagicMock()
             mock_embedder.provider_name = "openai"
             mock_embedder.dimension = 1536
@@ -56,23 +60,15 @@ def test_idempotent_re_embed_same_run(tmp_path):
             mock_provider.return_value = mock_embedder
 
             # Mock database operations
-            with patch(
-                "trailblazer.pipeline.steps.embed.loader.get_session_factory"
-            ) as mock_session_factory:
+            with patch("trailblazer.pipeline.steps.embed.loader.get_session_factory") as mock_session_factory:
                 mock_session = MagicMock()
-                mock_session_factory.return_value.__enter__.return_value = (
-                    mock_session
-                )
+                mock_session_factory.return_value.__enter__.return_value = mock_session
 
                 # First embedding run
-                result1 = load_chunks_to_db(
-                    run_id=run_id, provider_name="dummy", dimension=1536
-                )
+                result1 = load_chunks_to_db(run_id=run_id, provider_name="dummy", dimension=1536)
 
                 # Second embedding run (same run, no skip flag)
-                result2 = load_chunks_to_db(
-                    run_id=run_id, provider_name="dummy", dimension=1536
-                )
+                result2 = load_chunks_to_db(run_id=run_id, provider_name="dummy", dimension=1536)
 
     # Verify both runs completed successfully
     assert result1["chunks_embedded"] == 2
@@ -118,9 +114,7 @@ def test_embed_assurance_json_consistency(tmp_path):
         mock_runs.return_value = tmp_path / "var" / "runs"
 
         # Mock the embedding provider
-        with patch(
-            "trailblazer.pipeline.steps.embed.loader.get_embedding_provider"
-        ) as mock_provider:
+        with patch("trailblazer.pipeline.steps.embed.loader.get_embedding_provider") as mock_provider:
             mock_embedder = MagicMock()
             mock_embedder.provider_name = "openai"
             mock_embedder.dimension = 1536
@@ -129,23 +123,15 @@ def test_embed_assurance_json_consistency(tmp_path):
             mock_provider.return_value = mock_embedder
 
             # Mock database operations
-            with patch(
-                "trailblazer.pipeline.steps.embed.loader.get_session_factory"
-            ) as mock_session_factory:
+            with patch("trailblazer.pipeline.steps.embed.loader.get_session_factory") as mock_session_factory:
                 mock_session = MagicMock()
-                mock_session_factory.return_value.__enter__.return_value = (
-                    mock_session
-                )
+                mock_session_factory.return_value.__enter__.return_value = mock_session
 
                 # First embedding run
-                load_chunks_to_db(
-                    run_id=run_id, provider_name="dummy", dimension=1536
-                )
+                load_chunks_to_db(run_id=run_id, provider_name="dummy", dimension=1536)
 
                 # Second embedding run
-                load_chunks_to_db(
-                    run_id=run_id, provider_name="dummy", dimension=1536
-                )
+                load_chunks_to_db(run_id=run_id, provider_name="dummy", dimension=1536)
 
     # Check that embed_assurance.json was created
     embed_dir = run_dir / "embed"
@@ -154,7 +140,7 @@ def test_embed_assurance_json_consistency(tmp_path):
     assurance_file = embed_dir / "embed_assurance.json"
     assert assurance_file.exists()
 
-    with open(assurance_file, "r") as f:
+    with open(assurance_file) as f:
         assurance_data = json.load(f)
 
     # Verify the assurance report has consistent data
@@ -162,6 +148,4 @@ def test_embed_assurance_json_consistency(tmp_path):
     assert assurance_data["provider"] == "dummy"
     assert assurance_data["dimension"] == 1536
     # Check that chunks were embedded in at least one of the runs
-    assert (
-        assurance_data["chunks_embedded"] >= 0
-    )  # Could be 0 if already embedded
+    assert assurance_data["chunks_embedded"] >= 0  # Could be 0 if already embedded

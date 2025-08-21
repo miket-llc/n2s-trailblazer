@@ -1,27 +1,26 @@
-from typing import Dict, List, Optional, TYPE_CHECKING
-from .dag import DEFAULT_PHASES, validate_phases
+from typing import TYPE_CHECKING, Optional
+
 from ..core.artifacts import new_run_id, phase_dir
 from ..core.logging import log
+from .dag import DEFAULT_PHASES, validate_phases
 
 if TYPE_CHECKING:
     from ..core.config import Settings
 
 
 def run(
-    phases: Optional[List[str]] = None,
+    phases: list[str] | None = None,
     dry_run: bool = False,
-    run_id: Optional[str] = None,
+    run_id: str | None = None,
     settings: Optional["Settings"] = None,
-    limit: Optional[int] = None,
+    limit: int | None = None,
 ) -> str:
     phases = validate_phases(phases or DEFAULT_PHASES)
 
     # Check if this should use backlog-based processing
     if not run_id and len(phases) == 1 and phases[0] in ("embed", "chunk"):
         # Default behavior: process from backlog
-        return run_from_backlog(
-            phases[0], dry_run=dry_run, settings=settings, limit=limit
-        )
+        return run_from_backlog(phases[0], dry_run=dry_run, settings=settings, limit=limit)
 
     # Traditional single-run mode
     rid = run_id or new_run_id()
@@ -42,7 +41,7 @@ def run_from_backlog(
     phase: str,
     dry_run: bool = False,
     settings: Optional["Settings"] = None,
-    limit: Optional[int] = None,
+    limit: int | None = None,
 ) -> str:
     """
     Process runs from the backlog for chunk or embed phases.
@@ -57,15 +56,13 @@ def run_from_backlog(
         Status message
     """
     from .backlog import (
-        get_backlog_summary,
         claim_run_for_chunking,
         claim_run_for_embedding,
+        get_backlog_summary,
     )
 
     if phase not in ("chunk", "embed"):
-        raise ValueError(
-            f"Backlog processing only supports chunk/embed, got: {phase}"
-        )
+        raise ValueError(f"Backlog processing only supports chunk/embed, got: {phase}")
 
     # Show backlog summary (structured log, no raw print)
     summary = get_backlog_summary(phase)
@@ -73,9 +70,7 @@ def run_from_backlog(
     sample_runs = summary["sample_run_ids"]
 
     if total == 0:
-        log.info(
-            f"{phase}.backlog.empty", message=f"No runs available for {phase}"
-        )
+        log.info(f"{phase}.backlog.empty", message=f"No runs available for {phase}")
         return f"No runs available for {phase}"
 
     earliest = summary.get("earliest", "unknown")
@@ -126,12 +121,10 @@ def run_from_backlog(
     return f"Processed {processed} runs for {phase}"
 
 
-def _execute_phase(
-    phase: str, out: str, settings: Optional["Settings"] = None, **kwargs
-) -> None:
+def _execute_phase(phase: str, out: str, settings: Optional["Settings"] = None, **kwargs) -> None:
     if phase == "ingest":
-        from .steps.ingest.confluence import ingest_confluence
         from ..core.config import SETTINGS
+        from .steps.ingest.confluence import ingest_confluence
 
         ingest_confluence(
             out,
@@ -146,15 +139,16 @@ def _execute_phase(
         normalize_from_ingest(outdir=out)
     elif phase == "chunk":
         # Chunk phase: process enriched or normalized docs into chunks using new chunking package
+        import hashlib
+        import json
+        from datetime import datetime, timezone
+        from pathlib import Path
+
+        from .steps.chunk.assurance import build_chunk_assurance
         from .steps.chunk.engine import (
             chunk_document,
             inject_media_placeholders,
         )
-        from .steps.chunk.assurance import build_chunk_assurance
-        import json
-        import hashlib
-        from datetime import datetime, timezone
-        from pathlib import Path
 
         # Extract run_id from output path (runs/<run_id>/chunk)
         run_id = out.split("/")[-2]
@@ -211,7 +205,7 @@ def _execute_phase(
             with open(input_file, "rb") as f:
                 input_hash = hashlib.sha256(f.read()).hexdigest()
 
-        with open(input_file, "r") as fin, open(chunks_file, "w") as fout:
+        with open(input_file) as fin, open(chunks_file, "w") as fout:
             for line_num, line in enumerate(fin, 1):
                 if not line.strip():
                     continue
@@ -239,18 +233,10 @@ def _execute_phase(
                         section_map = record.get("section_map", [])
 
                         # Override config with chunk hints
-                        hard_max_tokens = chunk_hints.get(
-                            "maxTokens", max_tokens
-                        )
-                        min_tokens_doc = chunk_hints.get(
-                            "minTokens", min_tokens
-                        )
-                        overlap_tokens_doc = chunk_hints.get(
-                            "overlapTokens", overlap_tokens
-                        )
-                        prefer_headings = chunk_hints.get(
-                            "preferHeadings", True
-                        )
+                        hard_max_tokens = chunk_hints.get("maxTokens", max_tokens)
+                        min_tokens_doc = chunk_hints.get("minTokens", min_tokens)
+                        overlap_tokens_doc = chunk_hints.get("overlapTokens", overlap_tokens)
+                        prefer_headings = chunk_hints.get("preferHeadings", True)
                         soft_boundaries = chunk_hints.get("softBoundaries", [])
                     else:
                         hard_max_tokens = max_tokens
@@ -261,9 +247,7 @@ def _execute_phase(
                         section_map = []
 
                     # Inject media placeholders
-                    text_with_media = inject_media_placeholders(
-                        text_md, attachments
-                    )
+                    text_with_media = inject_media_placeholders(text_md, attachments)
 
                     # Create media refs for traceability
                     media_refs = []
@@ -323,7 +307,7 @@ def _execute_phase(
                     skipped_docs.append(
                         {
                             "doc_id": record.get("id", f"line_{line_num}"),
-                            "reason": f"Error processing document: {str(e)}",
+                            "reason": f"Error processing document: {e!s}",
                             "line_number": line_num,
                         }
                     )
@@ -353,27 +337,23 @@ def _execute_phase(
                     "chunks_file": str(chunks_file),
                     "input_file": str(input_file),
                     "normalized_file": str(normalized_file),
-                    "enriched_file": (
-                        str(enriched_file) if enriched_file.exists() else None
-                    ),
+                    "enriched_file": (str(enriched_file) if enriched_file.exists() else None),
                 },
             }
         )
 
         # Add split strategy distribution
         if split_strategies:
-            strategy_counts: Dict[str, int] = {}
+            strategy_counts: dict[str, int] = {}
             for strategy in split_strategies:
-                strategy_counts[strategy] = (
-                    strategy_counts.get(strategy, 0) + 1
-                )
+                strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
             assurance["splitStrategies"].update(strategy_counts)
 
         # Get quality distribution from enriched data if available
         if input_type == "enriched" and enriched_file.exists():
             quality_scores = []
             try:
-                with open(enriched_file, "r") as f:
+                with open(enriched_file) as f:
                     for line in f:
                         if line.strip():
                             record = json.loads(line.strip())
@@ -391,9 +371,7 @@ def _execute_phase(
                     min_quality = 0.60
                     max_below_threshold_pct = 0.20
 
-                    below_threshold = sum(
-                        1 for score in quality_scores if score < min_quality
-                    )
+                    below_threshold = sum(1 for score in quality_scores if score < min_quality)
                     below_threshold_pct = below_threshold / n if n > 0 else 1.0
 
                     quality_distribution = {
@@ -423,8 +401,9 @@ def _execute_phase(
 
         # Write per-stage progress file atomically
         try:
-            from ..core.paths import progress as progress_dir
             from datetime import datetime, timezone
+
+            from ..core.paths import progress as progress_dir
 
             progress_path = progress_dir() / "chunk.json"
             progress_path.parent.mkdir(parents=True, exist_ok=True)
@@ -455,10 +434,11 @@ def _execute_phase(
             log.warning("chunk.backlog_failed", error=str(e))
 
     elif phase == "embed":
-        from .steps.embed.loader import load_chunks_to_db
         import json
         from datetime import datetime, timezone
         from pathlib import Path
+
+        from .steps.embed.loader import load_chunks_to_db
 
         # Extract run_id from output path (runs/<run_id>/embed)
         run_id = out.split("/")[-2]
@@ -467,9 +447,7 @@ def _execute_phase(
         embed_dir = Path(out)
         embed_dir.mkdir(parents=True, exist_ok=True)
 
-        chunk_assurance_file = (
-            embed_dir.parent / "chunk" / "chunk_assurance.json"
-        )
+        chunk_assurance_file = embed_dir.parent / "chunk" / "chunk_assurance.json"
         embed_assurance_file = embed_dir / "embed_assurance.json"
 
         embed_assurance = {

@@ -1,8 +1,14 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Policy test: Prevent new shell scripts for preflight/plan-preflight/embed logic."""
 
 import subprocess
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Mark all tests as unit tests (no database needed)
 pytestmark = pytest.mark.unit
@@ -30,11 +36,12 @@ def test_no_new_preflight_scripts():
                     # Allow existing scripts but check git status
                     result = subprocess.run(
                         ["git", "status", "--porcelain", str(script_file)],
+                        check=False,
                         capture_output=True,
                         text=True,
                     )
                     if result.stdout.strip():  # File is modified or new
-                        assert False, (
+                        raise AssertionError(
                             f"Script {script_file} contains forbidden term '{term}' and has been modified/added"
                         )
 
@@ -49,6 +56,4 @@ def test_no_bash_zsh_files_for_preflight():
                 content = script_file.read_text()
                 for term in forbidden_terms:
                     if term in content:
-                        assert False, (
-                            f"Shell script {script_file} contains forbidden preflight logic: '{term}'"
-                        )
+                        raise AssertionError(f"Shell script {script_file} contains forbidden preflight logic: '{term}'")

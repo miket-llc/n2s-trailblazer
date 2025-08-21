@@ -10,35 +10,35 @@ This package provides document chunking functionality with:
 - Assurance reporting and corpus verification
 """
 
-from .engine import chunk_document, Chunk
+from .assurance import build_chunk_assurance
 from .boundaries import (
     ChunkType,
     count_tokens,
-    normalize_text,
     detect_content_type,
+    normalize_text,
     split_by_headings,
     split_by_paragraphs,
     split_by_sentences,
+    split_by_token_window,
     split_code_fence_by_lines,
     split_table_by_rows,
-    split_by_token_window,
 )
-from .assurance import build_chunk_assurance
+from .engine import Chunk, chunk_document
 from .verify import verify_chunks
 
 __all__ = [
-    "chunk_document",
     "Chunk",
     "ChunkType",
+    "build_chunk_assurance",
+    "chunk_document",
     "count_tokens",
-    "normalize_text",
     "detect_content_type",
+    "normalize_text",
     "split_by_headings",
     "split_by_paragraphs",
     "split_by_sentences",
+    "split_by_token_window",
     "split_code_fence_by_lines",
     "split_table_by_rows",
-    "split_by_token_window",
-    "build_chunk_assurance",
     "verify_chunks",
 ]

@@ -1,3 +1,8 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test CLI compatibility layer for old command patterns."""
 
 import pytest
@@ -24,9 +29,7 @@ def test_cli_runner_chunk_sweep_mapping(cli_runner):
     # This should map "chunk sweep" to "chunk RUN_ID"
     from trailblazer.cli.main import app
 
-    result = cli_runner.invoke(
-        app, ["chunk", "sweep", "--runs-glob", "var/runs/*"]
-    )
+    result = cli_runner.invoke(app, ["chunk", "sweep", "--runs-glob", "var/runs/*"])
 
     # The command should be mapped, even if it fails due to missing run
     assert result is not None
@@ -37,9 +40,7 @@ def test_cli_runner_enrich_sweep_mapping(cli_runner):
     # This should map "enrich sweep" to "enrich RUN_ID"
     from trailblazer.cli.main import app
 
-    result = cli_runner.invoke(
-        app, ["enrich", "sweep", "--runs-glob", "var/runs/*"]
-    )
+    result = cli_runner.invoke(app, ["enrich", "sweep", "--runs-glob", "var/runs/*"])
 
     # The command should be mapped, even if it fails due to missing run
     assert result is not None

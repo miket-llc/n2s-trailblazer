@@ -1,3 +1,8 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """
 Tests for embed manifest functionality.
 
@@ -431,9 +436,7 @@ def test_create_diff_report():
     previous["chunkSetHash"] = "abc123"
     previous["timestamp"] = "2024-01-01T00:00:00Z"
 
-    diff_report = create_diff_report(
-        "test_run", current, previous, True, [CONTENT_CHANGE]
-    )
+    diff_report = create_diff_report("test_run", current, previous, True, [CONTENT_CHANGE])
 
     assert diff_report["runId"] == "test_run"
     assert diff_report["changed"] is True
@@ -518,9 +521,7 @@ def test_create_embed_manifest(mock_tokenizer, mock_git, mock_runs):
 
         # Create mock enriched.jsonl
         with open(enrich_dir / "enriched.jsonl", "w") as f:
-            f.write(
-                '{"id": "doc1", "chunk_hints": {"maxTokens": 800, "minTokens": 120, "preferHeadings": true}}\n'
-            )
+            f.write('{"id": "doc1", "chunk_hints": {"maxTokens": 800, "minTokens": 120, "preferHeadings": true}}\n')
 
         # Create mock fingerprints.jsonl
         with open(enrich_dir / "fingerprints.jsonl", "w") as f:
@@ -528,17 +529,11 @@ def test_create_embed_manifest(mock_tokenizer, mock_git, mock_runs):
 
         # Create mock chunks.ndjson
         with open(chunk_dir / "chunks.ndjson", "w") as f:
-            f.write(
-                '{"chunk_id": "doc1_chunk1", "token_count": 100, "content_hash": "hash1"}\n'
-            )
-            f.write(
-                '{"chunk_id": "doc1_chunk2", "token_count": 150, "content_hash": "hash2"}\n'
-            )
+            f.write('{"chunk_id": "doc1_chunk1", "token_count": 100, "content_hash": "hash1"}\n')
+            f.write('{"chunk_id": "doc1_chunk2", "token_count": 150, "content_hash": "hash2"}\n')
 
         # Create manifest
-        manifest = create_embed_manifest(
-            "test_run", "openai", "text-embedding-3-small", 1536, 50
-        )
+        manifest = create_embed_manifest("test_run", "openai", "text-embedding-3-small", 1536, 50)
 
         # Verify manifest structure
         assert manifest["runId"] == "test_run"

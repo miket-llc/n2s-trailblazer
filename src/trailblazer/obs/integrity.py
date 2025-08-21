@@ -3,8 +3,10 @@
 import json
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Any
+
 from pydantic import BaseModel
+
 from ..core.logging import log
 
 
@@ -12,13 +14,13 @@ class TraceabilityRecord(BaseModel):
     """Schema for traceability validation."""
 
     id: str
-    url: Optional[str] = None
-    space_key: Optional[str] = None
-    space_id: Optional[str] = None
-    labels: Optional[List[str]] = None
-    breadcrumbs: Optional[List[str]] = None
-    attachments: Optional[List[Dict[str, Any]]] = None
-    content_sha256: Optional[str] = None
+    url: str | None = None
+    space_key: str | None = None
+    space_id: str | None = None
+    labels: list[str] | None = None
+    breadcrumbs: list[str] | None = None
+    attachments: list[dict[str, Any]] | None = None
+    content_sha256: str | None = None
 
 
 class DataIntegrityChecker:
@@ -27,12 +29,10 @@ class DataIntegrityChecker:
     def __init__(self, run_id: str):
         self.run_id = run_id
         self.run_dir = Path(f"var/runs/{run_id}")
-        self.issues: List[Dict[str, Any]] = []
-        self.sampled_items: List[Dict[str, Any]] = []
+        self.issues: list[dict[str, Any]] = []
+        self.sampled_items: list[dict[str, Any]] = []
 
-    def add_issue(
-        self, issue_type: str, message: str, severity: str = "error", **context
-    ):
+    def add_issue(self, issue_type: str, message: str, severity: str = "error", **context):
         """Add integrity issue."""
         self.issues.append(
             {
@@ -43,11 +43,9 @@ class DataIntegrityChecker:
             }
         )
 
-    def validate_traceability_chain(
-        self, sample_size: int = 10
-    ) -> Dict[str, Any]:
+    def validate_traceability_chain(self, sample_size: int = 10) -> dict[str, Any]:
         """Validate traceability keys are retained end-to-end."""
-        results: Dict[str, Any] = {
+        results: dict[str, Any] = {
             "sampled_count": 0,
             "valid_chains": 0,
             "broken_chains": 0,
@@ -86,9 +84,9 @@ class DataIntegrityChecker:
             if not phase_file.exists():
                 continue
 
-            phase_records: List[Dict[str, Any]] = []
+            phase_records: list[dict[str, Any]] = []
             try:
-                with open(phase_file, "r", encoding="utf-8") as f:
+                with open(phase_file, encoding="utf-8") as f:
                     lines = f.readlines()
                     # Sample every Nth record to get diverse data
                     step = max(1, len(lines) // sample_size)
@@ -104,15 +102,13 @@ class DataIntegrityChecker:
                             continue
 
                 phase_data[phase] = phase_records
-            except IOError:
+            except OSError:
                 continue
 
         results["sampled_count"] = len(sampled_ids)
 
         # Check field retention across phases
-        field_counts = {
-            field: {phase: 0 for phase in phases} for field in required_fields
-        }
+        field_counts = {field: {phase: 0 for phase in phases} for field in required_fields}
 
         for phase, records in phase_data.items():
             for record in records:
@@ -122,16 +118,10 @@ class DataIntegrityChecker:
 
         # Calculate retention rates
         for field in required_fields:
-            phase_counts = [
-                field_counts[field].get(phase, 0)
-                for phase in phases
-                if phase in phase_data
-            ]
+            phase_counts = [field_counts[field].get(phase, 0) for phase in phases if phase in phase_data]
             if phase_counts and max(phase_counts) > 0:
                 retention_rate = min(phase_counts) / max(phase_counts) * 100
-                results["field_retention_rates"][field] = round(
-                    retention_rate, 1
-                )
+                results["field_retention_rates"][field] = round(retention_rate, 1)
 
                 if retention_rate < 95:  # 95% retention threshold
                     self.add_issue(
@@ -158,14 +148,12 @@ class DataIntegrityChecker:
                 self.add_issue(
                     "broken_traceability_chain",
                     f"Found {len(broken_chains)} documents that didn't complete the pipeline",
-                    context={
-                        "broken_ids": list(broken_chains)[:10]
-                    },  # Show first 10
+                    context={"broken_ids": list(broken_chains)[:10]},  # Show first 10
                 )
 
         return results
 
-    def validate_json_schemas(self) -> Dict[str, Any]:
+    def validate_json_schemas(self) -> dict[str, Any]:
         """Validate JSON structure against schemas."""
         results = {
             "files_checked": 0,
@@ -175,15 +163,13 @@ class DataIntegrityChecker:
         }
 
         # Find all NDJSON/JSON files
-        json_files = list(self.run_dir.rglob("*.ndjson")) + list(
-            self.run_dir.rglob("*.jsonl")
-        )
+        json_files = list(self.run_dir.rglob("*.ndjson")) + list(self.run_dir.rglob("*.jsonl"))
 
         for json_file in json_files:
             results["files_checked"] += 1
 
             try:
-                with open(json_file, "r", encoding="utf-8") as f:
+                with open(json_file, encoding="utf-8") as f:
                     for line_num, line in enumerate(f, 1):
                         try:
                             data = json.loads(line.strip())
@@ -209,7 +195,7 @@ class DataIntegrityChecker:
                                 },
                             )
 
-            except IOError as e:
+            except OSError as e:
                 self.add_issue(
                     "file_read_error",
                     f"Cannot read file {json_file}: {e}",
@@ -221,9 +207,9 @@ class DataIntegrityChecker:
 
         return results
 
-    def check_format_compliance(self) -> Dict[str, Any]:
+    def check_format_compliance(self) -> dict[str, Any]:
         """Check format compliance using external tools."""
-        results: Dict[str, Any] = {
+        results: dict[str, Any] = {
             "markdown_files": 0,
             "markdown_errors": 0,
             "format_issues": [],
@@ -238,6 +224,7 @@ class DataIntegrityChecker:
             try:
                 result = subprocess.run(
                     ["markdownlint", str(md_file)],
+                    check=False,
                     capture_output=True,
                     text=True,
                     timeout=30,
@@ -261,9 +248,9 @@ class DataIntegrityChecker:
 
         return results
 
-    def create_sample_artifacts(self, sample_count: int = 5) -> Dict[str, Any]:
+    def create_sample_artifacts(self, sample_count: int = 5) -> dict[str, Any]:
         """Create sampling proof with source chunk IDs for human verification."""
-        results: Dict[str, Any] = {
+        results: dict[str, Any] = {
             "samples_created": 0,
             "sample_directory": None,
             "sample_files": [],
@@ -280,11 +267,7 @@ class DataIntegrityChecker:
             output_files = list(compose_dir.rglob("*.md"))
 
             # Sample files
-            sampled_files = (
-                output_files[:sample_count]
-                if len(output_files) >= sample_count
-                else output_files
-            )
+            sampled_files = output_files[:sample_count] if len(output_files) >= sample_count else output_files
 
             for i, source_file in enumerate(sampled_files):
                 sample_name = f"sample_{i + 1}_{source_file.name}"
@@ -292,29 +275,25 @@ class DataIntegrityChecker:
 
                 try:
                     # Copy file with metadata
-                    with open(source_file, "r", encoding="utf-8") as src:
+                    with open(source_file, encoding="utf-8") as src:
                         content = src.read()
 
                     with open(sample_path, "w", encoding="utf-8") as dst:
                         dst.write("<!-- SAMPLE ARTIFACT -->\n")
-                        dst.write(
-                            f"<!-- Source: {source_file.relative_to(self.run_dir)} -->\n"
-                        )
+                        dst.write(f"<!-- Source: {source_file.relative_to(self.run_dir)} -->\n")
                         dst.write(f"<!-- Run ID: {self.run_id} -->\n")
-                        dst.write(
-                            f"<!-- Created: {source_file.stat().st_mtime} -->\n\n"
-                        )
+                        dst.write(f"<!-- Created: {source_file.stat().st_mtime} -->\n\n")
                         dst.write(content)
 
                     results["sample_files"].append(str(sample_path))
                     results["samples_created"] += 1
 
-                except IOError:
+                except OSError:
                     continue
 
         return results
 
-    def run_comprehensive_check(self, sample_size: int = 10) -> Dict[str, Any]:
+    def run_comprehensive_check(self, sample_size: int = 10) -> dict[str, Any]:
         """Run all integrity checks and return comprehensive report."""
 
         log.info("data_integrity.check_start", run_id=self.run_id)
@@ -326,14 +305,11 @@ class DataIntegrityChecker:
         sampling_results = self.create_sample_artifacts()
 
         # Compile comprehensive report
-        report: Dict[str, Any] = {
+        report: dict[str, Any] = {
             "run_id": self.run_id,
             "check_timestamp": "2025-08-15T21:40:00Z",  # Would be dynamic
             "overall_status": (
-                "passed"
-                if len([i for i in self.issues if i["severity"] == "error"])
-                == 0
-                else "failed"
+                "passed" if len([i for i in self.issues if i["severity"] == "error"]) == 0 else "failed"
             ),
             "checks": {
                 "traceability": traceability_results,
@@ -344,12 +320,8 @@ class DataIntegrityChecker:
             "issues": self.issues,
             "issue_summary": {
                 "total": len(self.issues),
-                "errors": len(
-                    [i for i in self.issues if i["severity"] == "error"]
-                ),
-                "warnings": len(
-                    [i for i in self.issues if i["severity"] == "warning"]
-                ),
+                "errors": len([i for i in self.issues if i["severity"] == "error"]),
+                "warnings": len([i for i in self.issues if i["severity"] == "warning"]),
             },
         }
 
@@ -362,9 +334,7 @@ class DataIntegrityChecker:
 
         return report
 
-    def write_integrity_report(
-        self, report: Dict[str, Any]
-    ) -> Tuple[Path, Path]:
+    def write_integrity_report(self, report: dict[str, Any]) -> tuple[Path, Path]:
         """Write integrity report in JSON and Markdown formats."""
 
         reports_dir = Path(f"var/reports/{self.run_id}")
@@ -384,7 +354,7 @@ class DataIntegrityChecker:
 
         return json_path, md_path
 
-    def _generate_markdown_report(self, report: Dict[str, Any]) -> str:
+    def _generate_markdown_report(self, report: dict[str, Any]) -> str:
         """Generate human-readable markdown integrity report."""
         status_icon = "✅" if report["overall_status"] == "passed" else "❌"
 
@@ -440,9 +410,7 @@ class DataIntegrityChecker:
         )
 
         # List sample files
-        for sample_file in report["checks"]["sampling"].get(
-            "sample_files", []
-        ):
+        for sample_file in report["checks"]["sampling"].get("sample_files", []):
             lines.append(f"- `{Path(sample_file).name}`")
 
         # Issues section
@@ -457,16 +425,12 @@ class DataIntegrityChecker:
 
             for issue in self.issues[:20]:  # Show first 20
                 severity_icon = "🔴" if issue["severity"] == "error" else "🟡"
-                lines.append(
-                    f"- {severity_icon} **{issue['type']}:** {issue['message']}"
-                )
+                lines.append(f"- {severity_icon} **{issue['type']}:** {issue['message']}")
 
         return "\n".join(lines)
 
 
-def run_data_integrity_check(
-    run_id: str, sample_size: int = 10
-) -> Tuple[Dict[str, Any], Path, Path]:
+def run_data_integrity_check(run_id: str, sample_size: int = 10) -> tuple[dict[str, Any], Path, Path]:
     """Run comprehensive data integrity check for a run.
 
     Args:

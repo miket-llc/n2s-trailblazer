@@ -1,5 +1,12 @@
-import pytest
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 from unittest.mock import Mock
+
+import pytest
+
 from trailblazer.adapters.confluence_api import ConfluenceClient
 
 # Mark all tests as unit tests (no database needed)
@@ -48,7 +55,7 @@ def test_paginate_with_links_next(mock_http_client):
     # Test pagination
     results = list(client._paginate("/api/v2/pages", {"limit": 2}))
 
-    assert len(results) == 3
+    assert len(results) == EXPECTED_COUNT_3
     assert results[0]["id"] == "1"
     assert results[1]["id"] == "2"
     assert results[2]["id"] == "3"
@@ -63,10 +70,7 @@ def test_paginate_with_links_next(mock_http_client):
 
     # Second call should use cursor URL without params (fixed to remove double /wiki)
     second_call = mock_http_client.get.call_args_list[1]
-    assert (
-        second_call[0][0]
-        == "https://example.atlassian.net/api/v2/pages?cursor=next1"
-    )
+    assert second_call[0][0] == "https://example.atlassian.net/api/v2/pages?cursor=next1"
     assert second_call[1]["params"] is None
 
 
@@ -88,9 +92,7 @@ def test_paginate_with_link_header(mock_http_client):
         "_links": {},  # No _links.next
     }
     # Use Link header instead
-    response1.headers = {
-        "Link": '</api/v2/pages?cursor=abc123>; rel="next", </api/v2/pages?cursor=prev>; rel="prev"'
-    }
+    response1.headers = {"Link": '</api/v2/pages?cursor=abc123>; rel="next", </api/v2/pages?cursor=prev>; rel="prev"'}
 
     response2 = Mock()
     response2.raise_for_status.return_value = None
@@ -105,7 +107,7 @@ def test_paginate_with_link_header(mock_http_client):
     # Test pagination
     results = list(client._paginate("/api/v2/pages", {"limit": 1}))
 
-    assert len(results) == 2
+    assert len(results) == EXPECTED_COUNT_2
     assert results[0]["id"] == "1"
     assert results[1]["id"] == "2"
 
@@ -114,10 +116,7 @@ def test_paginate_with_link_header(mock_http_client):
 
     # Second call should use the URL from Link header (fixed to remove double /wiki)
     second_call = mock_http_client.get.call_args_list[1]
-    assert (
-        second_call[0][0]
-        == "https://example.atlassian.net/api/v2/pages?cursor=abc123"
-    )
+    assert second_call[0][0] == "https://example.atlassian.net/api/v2/pages?cursor=abc123"
 
 
 def test_paginate_single_page(mock_http_client):
@@ -202,7 +201,7 @@ def test_get_spaces_integration():
     # Test get_spaces
     spaces = list(client.get_spaces(keys=["TEST", "DEV"]))
 
-    assert len(spaces) == 2
+    assert len(spaces) == EXPECTED_COUNT_2
     assert spaces[0]["key"] == "TEST"
     assert spaces[1]["key"] == "DEV"
 

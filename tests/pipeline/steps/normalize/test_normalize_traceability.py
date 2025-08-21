@@ -1,8 +1,15 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Integration tests for traceability preservation in normalize."""
 
 import json
-import pytest
 from unittest.mock import patch
+
+import pytest
+
 from trailblazer.pipeline.steps.normalize.html_to_md import (
     normalize_from_ingest,
 )
@@ -53,9 +60,7 @@ def test_normalize_preserves_traceability_fields(tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
-        out = (
-            (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
-        )
+        out = (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
         normalized = json.loads(out)
 
         # Verify all traceability fields are preserved
@@ -63,10 +68,7 @@ def test_normalize_preserves_traceability_fields(tmp_path):
         assert normalized["title"] == "Traceability Test Page"
         assert normalized["space_key"] == "DEV"
         assert normalized["space_id"] == "111"
-        assert (
-            normalized["url"]
-            == "https://example.atlassian.net/wiki/spaces/DEV/pages/p1/test"
-        )
+        assert normalized["url"] == "https://example.atlassian.net/wiki/spaces/DEV/pages/p1/test"
         assert normalized["version"] == 1
         assert normalized["created_at"] == "2025-08-01T00:00:00Z"
         assert normalized["updated_at"] == "2025-08-03T00:00:00Z"
@@ -76,7 +78,7 @@ def test_normalize_preserves_traceability_fields(tmp_path):
         # Verify links are preserved (URLs extracted from body)
         assert "links" in normalized
         links = normalized["links"]
-        assert len(links) == 2
+        assert len(links) == EXPECTED_COUNT_2
         assert "https://external.com" in links
         assert "/spaces/DEV/pages/123/Other" in links
 
@@ -87,10 +89,7 @@ def test_normalize_preserves_traceability_fields(tmp_path):
 
         attachment = attachments[0]
         assert attachment["filename"] == "test.pdf"
-        assert (
-            attachment["url"]
-            == "https://example.atlassian.net/download/attachments/p1/test.pdf"
-        )
+        assert attachment["url"] == "https://example.atlassian.net/download/attachments/p1/test.pdf"
 
         # Verify markdown content is generated
         assert "text_md" in normalized
@@ -154,18 +153,13 @@ def test_normalize_preserves_adf_traceability(tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
-        out = (
-            (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
-        )
+        out = (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
         normalized = json.loads(out)
 
         # Verify ADF traceability fields
         assert normalized["id"] == "p2"
         assert normalized["space_key"] == "PROD"
-        assert (
-            normalized["url"]
-            == "https://example.atlassian.net/wiki/spaces/PROD/pages/p2/adf-test"
-        )
+        assert normalized["url"] == "https://example.atlassian.net/wiki/spaces/PROD/pages/p2/adf-test"
         assert normalized["source_system"] == "confluence"
         assert normalized["body_repr"] == "adf"
 

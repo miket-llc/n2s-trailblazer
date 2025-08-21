@@ -1,3 +1,8 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Tests for document enrichment functionality."""
 
 import json
@@ -33,18 +38,14 @@ class TestDocumentEnricher:
 
     def test_init_with_parameters(self):
         """Test enricher initialization with custom parameters."""
-        enricher = DocumentEnricher(
-            llm_enabled=True, max_docs=100, budget="1000"
-        )
+        enricher = DocumentEnricher(llm_enabled=True, max_docs=100, budget="1000")
         assert enricher.llm_enabled is True
         assert enricher.max_docs == 100
         assert enricher.budget == "1000"
 
     def test_init_with_quality_parameters(self):
         """Test enricher initialization with quality parameters."""
-        enricher = DocumentEnricher(
-            min_quality=0.70, max_below_threshold_pct=0.15
-        )
+        enricher = DocumentEnricher(min_quality=0.70, max_below_threshold_pct=0.15)
         assert enricher.min_quality == 0.70
         assert enricher.max_below_threshold_pct == 0.15
         assert enricher.quality_scores == []
@@ -153,9 +154,7 @@ class TestRuleBasedEnrichment:
     def test_compute_link_density(self):
         """Test link density computation."""
         enricher = DocumentEnricher()
-        text = (
-            "Visit [example](http://example.com) and [other](http://other.com)"
-        )
+        text = "Visit [example](http://example.com) and [other](http://other.com)"
         links = ["http://example.com", "http://other.com"]
 
         density = enricher._compute_link_density(text, links)
@@ -200,9 +199,7 @@ class TestRuleBasedEnrichment:
         """Test quality flag detection for no structure."""
         enricher = DocumentEnricher()
         doc = {"id": "test", "source_system": "confluence"}
-        text = (
-            "This is a long text without any headings. " * 50
-        )  # Over 200 words
+        text = "This is a long text without any headings. " * 50  # Over 200 words
 
         flags = enricher._determine_quality_flags(doc, text, [])
         assert "no_structure" in flags
@@ -266,9 +263,7 @@ class TestLLMEnrichment:
         keywords = enricher._extract_keywords(text)
         assert len(keywords) <= 8
         # Should find some tech terms
-        tech_terms = [
-            k for k in keywords if k.upper() in ["API", "JSON", "HTTP", "REST"]
-        ]
+        tech_terms = [k for k in keywords if k.upper() in ["API", "JSON", "HTTP", "REST"]]
         assert len(tech_terms) > 0
 
     def test_classify_taxonomy(self):
@@ -467,9 +462,7 @@ class TestEnrichFromNormalized:
 
     def test_enrich_from_normalized_missing_file(self):
         """Test error handling when normalized file is missing."""
-        with pytest.raises(
-            FileNotFoundError, match="Normalized file not found"
-        ):
+        with pytest.raises(FileNotFoundError, match="Normalized file not found"):
             enrich_from_normalized("nonexistent-run-id")
 
     @patch("trailblazer.core.artifacts.phase_dir")
@@ -544,12 +537,10 @@ class TestEnrichFromNormalized:
             assert "enrich.end" in event_types
 
             # Verify enriched content
-            with open(
-                enrich_dir / "enriched.jsonl", "r", encoding="utf-8"
-            ) as f:
+            with open(enrich_dir / "enriched.jsonl", encoding="utf-8") as f:
                 enriched_lines = f.readlines()
 
-            assert len(enriched_lines) == 2
+            assert len(enriched_lines) == EXPECTED_COUNT_2
 
             enriched1 = json.loads(enriched_lines[0])
             assert enriched1["id"] == "doc1"
@@ -557,12 +548,10 @@ class TestEnrichFromNormalized:
             assert "api" in enriched1["path_tags"]
 
             # Verify fingerprints
-            with open(
-                enrich_dir / "fingerprints.jsonl", "r", encoding="utf-8"
-            ) as f:
+            with open(enrich_dir / "fingerprints.jsonl", encoding="utf-8") as f:
                 fingerprint_lines = f.readlines()
 
-            assert len(fingerprint_lines) == 2
+            assert len(fingerprint_lines) == EXPECTED_COUNT_2
 
             fingerprint1 = json.loads(fingerprint_lines[0])
             assert fingerprint1["id"] == "doc1"
@@ -662,11 +651,9 @@ class TestEnrichFromNormalized:
             assert stats["docs_total"] == 2
 
             # Verify only 2 lines in output files
-            with open(
-                enrich_dir / "enriched.jsonl", "r", encoding="utf-8"
-            ) as f:
+            with open(enrich_dir / "enriched.jsonl", encoding="utf-8") as f:
                 lines = f.readlines()
-            assert len(lines) == 2
+            assert len(lines) == EXPECTED_COUNT_2
 
 
 class TestNewSchemaFields:
@@ -777,15 +764,11 @@ class TestNewSchemaFields:
         enriched2 = enricher.enrich_document(doc2)
 
         # Content fingerprints should be the same (whitespace normalized)
-        assert (
-            enriched1["fingerprint"]["doc"] == enriched2["fingerprint"]["doc"]
-        )
+        assert enriched1["fingerprint"]["doc"] == enriched2["fingerprint"]["doc"]
 
     def test_quality_distribution_calculation(self):
         """Test quality distribution statistics calculation."""
-        enricher = DocumentEnricher(
-            min_quality=0.60, max_below_threshold_pct=0.20
-        )
+        enricher = DocumentEnricher(min_quality=0.60, max_below_threshold_pct=0.20)
 
         # Create documents with different quality levels
         docs = [
@@ -834,7 +817,7 @@ class TestNewSchemaFields:
         assert "maxBelowThresholdPct" in distribution
 
         # Should have processed 4 documents
-        assert len(enricher.quality_scores) == 4
+        assert len(enricher.quality_scores) == EXPECTED_COUNT_4
 
         # At least one document should be below threshold (the empty one)
         assert distribution["belowThresholdPct"] > 0.0

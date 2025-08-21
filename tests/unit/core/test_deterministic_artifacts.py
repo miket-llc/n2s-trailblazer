@@ -1,6 +1,15 @@
-"""Tests to ensure artifacts remain deterministic with new observability features."""
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
+"""Tests for deterministic artifact generation."""
+
+import io
 
 import pytest
+
+from trailblazer.core.progress import ProgressRenderer
 
 # Mark all tests as unit tests (no database needed)
 pytestmark = pytest.mark.unit
@@ -9,7 +18,7 @@ pytestmark = pytest.mark.unit
 class TestArtifactDeterminism:
     """Test that all artifacts are deterministic and properly structured."""
 
-    def test_expected_artifact_files(self, tmp_path):
+    def test_expected_artifact_files(self, _tmp_path):
         """Test that all expected artifact files are created."""
         # Expected files from the ingest process
         expected_files = {
@@ -85,8 +94,6 @@ class TestArtifactDeterminism:
 
     def test_final_summary_format(self):
         """Test that final_summary.txt has expected one-line format."""
-        from trailblazer.core.progress import ProgressRenderer
-
         renderer = ProgressRenderer()
         summary = renderer.one_line_summary("test-123", 100, 50, 300.5)
 
@@ -203,8 +210,6 @@ class TestBackwardCompatibility:
 
     def test_old_progress_flag_still_works(self):
         """Test that --progress flag behavior is preserved."""
-        from trailblazer.core.progress import ProgressRenderer
-
         # Progress should still work as before
         renderer = ProgressRenderer(enabled=True)
 
@@ -214,10 +219,7 @@ class TestBackwardCompatibility:
 
     def test_progress_every_parameter_honored(self):
         """Test that progress_every parameter works correctly."""
-        from trailblazer.core.progress import ProgressRenderer
-        from io import StringIO
-
-        output = StringIO()
+        output = io.StringIO()
         renderer = ProgressRenderer(enabled=True, file=output)
 
         # With throttle_every=3, only every 3rd call should produce output
@@ -254,18 +256,15 @@ class TestOutputStreamSeparation:
         # but the principle is enforced by design:
         # - structlog is configured to use stdout
         # - ProgressRenderer explicitly uses stderr
-        pass
 
     def test_no_pretty_on_stdout(self):
         """Test that pretty output never appears on stdout."""
         # Same as above - enforced by design
-        pass
 
     def test_run_id_output_location(self):
         """Test that run_id is output to stdout for scripting."""
         # The CLI should echo the run_id to stdout so scripts can capture it
         # while all other pretty output goes to stderr
-        pass
 
 
 class TestErrorHandling:
@@ -274,14 +273,11 @@ class TestErrorHandling:
     def test_progress_checkpoint_write_failure(self):
         """Test graceful handling of progress checkpoint write failures."""
         # Should log warning but not fail the entire ingest
-        pass
 
     def test_resume_indicator_missing_file(self):
         """Test handling of missing progress checkpoint file."""
         # Should not crash when progress.json doesn't exist
-        pass
 
     def test_spaces_table_api_failure(self):
         """Test graceful handling of space details API failures."""
         # Should fall back to basic info when space details can't be fetched
-        pass

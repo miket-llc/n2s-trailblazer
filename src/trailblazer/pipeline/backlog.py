@@ -4,11 +4,12 @@ Processed runs backlog management for default selection and claim/mark operation
 
 import os
 import socket
-from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Dict, Any
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
 import psycopg2  # type: ignore[import-untyped]
 from psycopg2.extras import RealDictCursor  # type: ignore[import-untyped]
-from contextlib import contextmanager
 
 from ..core.config import SETTINGS
 
@@ -38,9 +39,7 @@ def emit_backlog_event(action: str, **kwargs):
     import json
 
     event = {
-        "timestamp": datetime.now(timezone.utc)
-        .isoformat()
-        .replace("+00:00", "Z"),
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "action": action,
         "component": "backlog",
         "pid": os.getpid(),
@@ -53,7 +52,7 @@ def upsert_normalized_run(
     run_id: str,
     source: str,
     total_docs: int,
-    code_version: Optional[str] = None,
+    code_version: str | None = None,
 ) -> None:
     """
     UPSERT a run in processed_runs table after successful normalization.
@@ -104,8 +103,8 @@ def upsert_normalized_run(
 
 
 def claim_run_for_chunking(
-    claim_ttl_minutes: Optional[int] = None,
-) -> Optional[Dict[str, Any]]:
+    claim_ttl_minutes: int | None = None,
+) -> dict[str, Any] | None:
     """
     Claim a run for chunking using SELECT ... FOR UPDATE SKIP LOCKED.
 
@@ -221,8 +220,8 @@ def mark_chunking_complete(run_id: str, total_chunks: int) -> None:
 
 
 def claim_run_for_embedding(
-    claim_ttl_minutes: Optional[int] = None,
-) -> Optional[Dict[str, Any]]:
+    claim_ttl_minutes: int | None = None,
+) -> dict[str, Any] | None:
     """
     Claim a run for embedding using SELECT ... FOR UPDATE SKIP LOCKED.
 
@@ -337,7 +336,7 @@ def mark_embedding_complete(run_id: str, embedded_chunks: int) -> None:
         )
 
 
-def get_backlog_summary(phase: str) -> Dict[str, Any]:
+def get_backlog_summary(phase: str) -> dict[str, Any]:
     """
     Get backlog summary for a specific phase.
 
@@ -399,12 +398,12 @@ def get_backlog_summary(phase: str) -> Dict[str, Any]:
 
 
 def reset_runs(
-    run_ids: Optional[List[str]] = None,
+    run_ids: list[str] | None = None,
     scope: str = "processed",
-    filters: Optional[Dict[str, Any]] = None,
+    filters: dict[str, Any] | None = None,
     dry_run: bool = False,
     confirmed: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Reset runs in the backlog.
 
@@ -445,16 +444,8 @@ def reset_runs(
                 where_conditions.append("normalized_at <= %s")
                 params.append(filters["date_to"])
 
-        where_clause = (
-            "WHERE " + " AND ".join(where_conditions)
-            if where_conditions
-            else ""
-        )
-        limit_clause = (
-            f"LIMIT {filters['limit']}"
-            if filters and filters.get("limit")
-            else ""
-        )
+        where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+        limit_clause = f"LIMIT {filters['limit']}" if filters and filters.get("limit") else ""
 
         if dry_run:
             # Count what would be affected
@@ -470,7 +461,7 @@ def reset_runs(
         else:
             if scope == "processed":
                 # Only reset status and claim fields
-                update_params = [datetime.now(timezone.utc)] + params
+                update_params = [datetime.now(timezone.utc), *params]
                 cursor.execute(
                     f"""
                     UPDATE processed_runs

@@ -1,7 +1,13 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Global test configuration for trailblazer tests."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 
 @pytest.fixture(scope="session")
@@ -10,11 +16,7 @@ def test_db_url():
     import os
 
     # Check if we need pgvector (full PostgreSQL)
-    if os.environ.get("TB_TESTING_PGVECTOR") == "1":
-        return "postgresql+psycopg2://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer"
-
-    # Check if we need real database (integration tests)
-    elif os.environ.get("TB_TESTING_INTEGRATION") == "1":
+    if os.environ.get("TB_TESTING_PGVECTOR") == "1" or os.environ.get("TB_TESTING_INTEGRATION") == "1":
         return "postgresql+psycopg2://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer"
 
     # Default to SQLite for fast unit tests
@@ -35,9 +37,7 @@ def setup_test_db(test_db_url, monkeypatch, request):
 
     # Skip database setup for unit tests if not explicitly requested
     if hasattr(request.node, "get_closest_marker"):
-        if request.node.get_closest_marker("unit") and not os.environ.get(
-            "TB_TESTING_UNIT_DB"
-        ):
+        if request.node.get_closest_marker("unit") and not os.environ.get("TB_TESTING_UNIT_DB"):
             yield
             return
 
@@ -55,8 +55,8 @@ def setup_test_db(test_db_url, monkeypatch, request):
         return
 
     try:
-        from trailblazer.db import engine as engine_module
         from trailblazer.core import config as config_module
+        from trailblazer.db import engine as engine_module
 
         # Set the environment variable first
         monkeypatch.setenv("TRAILBLAZER_DB_URL", test_db_url)
@@ -110,7 +110,7 @@ def cli_runner():
 
         def invoke(self, app, args, *kwargs, **kwkwargs):
             # Map old CLI commands to new ones for backward compatibility
-            if isinstance(args, (list, tuple)):
+            if isinstance(args, list | tuple):
                 args = list(args)
 
                 # Map old embed preflight to new plan-preflight
@@ -202,7 +202,7 @@ def mock_cli_commands():
 @pytest.fixture
 def mock_sweep_commands():
     """Mock old sweep commands that no longer exist in current CLI."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
 
     # Create mock sweep commands that tests expect
     mock_chunk_sweep = MagicMock()
@@ -237,9 +237,9 @@ def mock_sweep_commands():
 @pytest.fixture
 def temp_run_dir_structure():
     """Create a temporary run directory with current expected structure."""
+    import os
     import tempfile
     from pathlib import Path
-    import os
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -267,12 +267,8 @@ def temp_run_dir_structure():
         (run_dir / "embed").mkdir()
 
         # Create sample files with current expected content
-        (run_dir / "normalize" / "normalized.ndjson").write_text(
-            '{"id": "doc1", "title": "Test Doc"}\n'
-        )
-        (run_dir / "enrich" / "enriched.jsonl").write_text(
-            '{"id": "doc1", "title": "Test Doc"}\n'
-        )
+        (run_dir / "normalize" / "normalized.ndjson").write_text('{"id": "doc1", "title": "Test Doc"}\n')
+        (run_dir / "enrich" / "enriched.jsonl").write_text('{"id": "doc1", "title": "Test Doc"}\n')
         (run_dir / "chunk" / "chunks.ndjson").write_text(
             '{"chunk_id": "doc1:0001", "doc_id": "doc1", "token_count": 100}\n'
         )
@@ -292,6 +288,7 @@ def temp_run_dir_structure():
 def backward_compatible_cli():
     """Provide backward-compatible CLI commands for old tests."""
     from unittest.mock import MagicMock
+
     from typer.testing import CliRunner
 
     # Create a mock CLI that includes old commands
@@ -303,14 +300,10 @@ def backward_compatible_cli():
             # Handle old sweep commands by mocking them
             if command == "chunk sweep":
                 # Mock chunk sweep behavior
-                return MagicMock(
-                    exit_code=0, stdout="Mock chunk sweep completed"
-                )
+                return MagicMock(exit_code=0, stdout="Mock chunk sweep completed")
             elif command == "enrich sweep":
                 # Mock enrich sweep behavior
-                return MagicMock(
-                    exit_code=0, stdout="Mock enrich sweep completed"
-                )
+                return MagicMock(exit_code=0, stdout="Mock enrich sweep completed")
             else:
                 # Use regular CLI runner for other commands
                 return self.runner.invoke(command, *args, **kwargs)

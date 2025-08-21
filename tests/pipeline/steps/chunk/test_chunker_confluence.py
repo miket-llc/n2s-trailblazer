@@ -1,15 +1,21 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 #!/usr/bin/env python3
 """Test the enhanced chunker on real Confluence data."""
 
 import json
 import sys
+
 import pytest
 
 sys.path.insert(0, "src")
 from trailblazer.pipeline.steps.chunk.engine import (
     chunk_document,
     inject_media_placeholders,
-)  # noqa: E402
+)
 
 # Mark all tests as integration tests (need database)
 pytestmark = pytest.mark.integration
@@ -78,9 +84,7 @@ def main():
                 # Check for oversized chunks (should be rare now)
                 if tokens > 8000:  # text-embedding-3-small limit
                     oversized_count += 1
-                    print(
-                        f"⚠️  Oversized chunk: {chunk.chunk_id} ({tokens} tokens)"
-                    )
+                    print(f"⚠️  Oversized chunk: {chunk.chunk_id} ({tokens} tokens)")
 
             if (i + 1) % 10 == 0:
                 print(f"  Processed {i + 1} pages...")
@@ -115,19 +119,13 @@ def main():
     for chunk_type, _ in type_stats.items():
         # Find first chunk of this type
         example = next(
-            (
-                c
-                for c in all_chunks
-                if getattr(c, "chunk_type", "text") == chunk_type
-            ),
+            (c for c in all_chunks if getattr(c, "chunk_type", "text") == chunk_type),
             None,
         )
         if example:
             preview = example.text_md[:150].replace("\n", " ")
             meta_str = getattr(example, "meta", {})
-            print(
-                f"  {chunk_type.upper()}: {example.chunk_id} ({example.token_count} tokens)"
-            )
+            print(f"  {chunk_type.upper()}: {example.chunk_id} ({example.token_count} tokens)")
             print(f"    Meta: {meta_str}")
             print(f"    Preview: {preview}...")
             print()
@@ -144,9 +142,7 @@ def main():
     else:
         print(f"  ⚠️  {oversized_count} oversized chunks need attention")
 
-    print(
-        "\n✨ Ready for embedding with text-embedding-3-small (8191 token limit)"
-    )
+    print("\n✨ Ready for embedding with text-embedding-3-small (8191 token limit)")
 
 
 if __name__ == "__main__":

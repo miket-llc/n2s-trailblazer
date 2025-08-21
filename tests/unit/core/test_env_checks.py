@@ -1,13 +1,19 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Tests for environment checks."""
 
 import os
 import sys
-import pytest
 from unittest.mock import patch
 
+import pytest
+
 from trailblazer.env_checks import (
-    assert_virtualenv_on_macos,
     _is_in_virtualenv,
+    assert_virtualenv_on_macos,
     get_venv_info,
 )
 
@@ -92,9 +98,7 @@ class TestMacOSVenvEnforcement:
         with (
             patch.dict(os.environ, {"TB_ALLOW_SYSTEM_PYTHON": "1"}),
             patch("platform.system", return_value="Darwin"),
-            patch(
-                "trailblazer.env_checks._is_in_virtualenv", return_value=False
-            ),
+            patch("trailblazer.env_checks._is_in_virtualenv", return_value=False),
         ):
             # Should not raise
             assert_virtualenv_on_macos()
@@ -103,9 +107,7 @@ class TestMacOSVenvEnforcement:
         """Test no enforcement on non-macOS systems."""
         with (
             patch("platform.system", return_value="Linux"),
-            patch(
-                "trailblazer.env_checks._is_in_virtualenv", return_value=False
-            ),
+            patch("trailblazer.env_checks._is_in_virtualenv", return_value=False),
         ):
             # Should not raise
             assert_virtualenv_on_macos()
@@ -114,9 +116,7 @@ class TestMacOSVenvEnforcement:
         """Test success on macOS with virtual environment."""
         with (
             patch("platform.system", return_value="Darwin"),
-            patch(
-                "trailblazer.env_checks._is_in_virtualenv", return_value=True
-            ),
+            patch("trailblazer.env_checks._is_in_virtualenv", return_value=True),
         ):
             # Should not raise
             assert_virtualenv_on_macos()
@@ -125,9 +125,7 @@ class TestMacOSVenvEnforcement:
         """Test failure on macOS with system Python."""
         with (
             patch("platform.system", return_value="Darwin"),
-            patch(
-                "trailblazer.env_checks._is_in_virtualenv", return_value=False
-            ),
+            patch("trailblazer.env_checks._is_in_virtualenv", return_value=False),
             patch("sys.exit") as mock_exit,
         ):
             assert_virtualenv_on_macos()
@@ -139,17 +137,13 @@ class TestVenvInfo:
 
     def test_get_venv_info_no_venv(self):
         """Test venv info when not in virtual environment."""
-        with patch(
-            "trailblazer.env_checks._is_in_virtualenv", return_value=False
-        ):
+        with patch("trailblazer.env_checks._is_in_virtualenv", return_value=False):
             assert get_venv_info() is None
 
     def test_get_venv_info_virtual_env(self):
         """Test venv info with VIRTUAL_ENV."""
         with (
-            patch(
-                "trailblazer.env_checks._is_in_virtualenv", return_value=True
-            ),
+            patch("trailblazer.env_checks._is_in_virtualenv", return_value=True),
             patch.dict(os.environ, {"VIRTUAL_ENV": "/path/to/venv"}),
         ):
             info = get_venv_info()
@@ -158,9 +152,7 @@ class TestVenvInfo:
     def test_get_venv_info_poetry(self):
         """Test venv info with Poetry."""
         with (
-            patch(
-                "trailblazer.env_checks._is_in_virtualenv", return_value=True
-            ),
+            patch("trailblazer.env_checks._is_in_virtualenv", return_value=True),
         ):
             # Temporarily clear VIRTUAL_ENV and set Poetry env vars
             original_virtual_env = os.environ.get("VIRTUAL_ENV")
@@ -183,9 +175,7 @@ class TestVenvInfo:
     def test_get_venv_info_conda(self):
         """Test venv info with Conda."""
         with (
-            patch(
-                "trailblazer.env_checks._is_in_virtualenv", return_value=True
-            ),
+            patch("trailblazer.env_checks._is_in_virtualenv", return_value=True),
         ):
             # Temporarily clear VIRTUAL_ENV and POETRY_ACTIVE, set Conda env vars
             original_env = {}
@@ -207,9 +197,7 @@ class TestVenvInfo:
     def test_get_venv_info_base_prefix(self):
         """Test venv info with base_prefix detection."""
         with (
-            patch(
-                "trailblazer.env_checks._is_in_virtualenv", return_value=True
-            ),
+            patch("trailblazer.env_checks._is_in_virtualenv", return_value=True),
             patch.object(sys, "prefix", "/venv/path"),
             patch.object(sys, "base_prefix", "/system/python"),
         ):

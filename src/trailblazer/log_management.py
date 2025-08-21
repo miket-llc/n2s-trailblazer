@@ -5,7 +5,7 @@ import json
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any, TypedDict
+from typing import Any, TypedDict
 
 from .core.config import SETTINGS
 
@@ -15,7 +15,7 @@ class RunInfo(TypedDict):
     size_bytes: int
     segments: int
     compressed_segments: int
-    last_modified: Optional[str]
+    last_modified: str | None
     has_stderr: bool
     status: str
 
@@ -23,22 +23,18 @@ class RunInfo(TypedDict):
 class LogManager:
     """Manages log rotation, compression, retention, and maintenance."""
 
-    def __init__(self, log_dir: Optional[str] = None):
+    def __init__(self, log_dir: str | None = None):
         self.log_dir = Path(log_dir) if log_dir else Path("var/logs")
         self.status_dir = Path("var/status")
 
-    def get_run_directories(self) -> List[Path]:
+    def get_run_directories(self) -> list[Path]:
         """Get all run directories in the log directory."""
         if not self.log_dir.exists():
             return []
 
-        return [
-            d
-            for d in self.log_dir.iterdir()
-            if d.is_dir() and not d.name.startswith(".")
-        ]
+        return [d for d in self.log_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
 
-    def get_log_segments(self, run_dir: Path) -> List[Path]:
+    def get_log_segments(self, run_dir: Path) -> list[Path]:
         """Get all log segments for a run (events.ndjson, events.ndjson.1, etc.)."""
         segments = []
 
@@ -59,11 +55,9 @@ class LogManager:
 
         return segments
 
-    def compress_old_segments(self, dry_run: bool = True) -> Dict[str, Any]:
+    def compress_old_segments(self, dry_run: bool = True) -> dict[str, Any]:
         """Compress segments older than LOGS_COMPRESS_AFTER_DAYS."""
-        cutoff_time = datetime.now(timezone.utc) - timedelta(
-            days=SETTINGS.LOGS_COMPRESS_AFTER_DAYS
-        )
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=SETTINGS.LOGS_COMPRESS_AFTER_DAYS)
         compressed = []
         errors = []
 
@@ -75,13 +69,9 @@ class LogManager:
                     continue  # Already compressed
 
                 try:
-                    mtime = datetime.fromtimestamp(
-                        segment.stat().st_mtime, tz=timezone.utc
-                    )
+                    mtime = datetime.fromtimestamp(segment.stat().st_mtime, tz=timezone.utc)
                     if mtime < cutoff_time:
-                        compressed_path = segment.with_suffix(
-                            segment.suffix + ".gz"
-                        )
+                        compressed_path = segment.with_suffix(segment.suffix + ".gz")
 
                         if not dry_run:
                             # Compress the file
@@ -99,11 +89,9 @@ class LogManager:
 
         return {"compressed": compressed, "errors": errors, "dry_run": dry_run}
 
-    def prune_old_logs(self, dry_run: bool = True) -> Dict[str, Any]:
+    def prune_old_logs(self, dry_run: bool = True) -> dict[str, Any]:
         """Delete logs older than LOGS_RETENTION_DAYS."""
-        cutoff_time = datetime.now(timezone.utc) - timedelta(
-            days=SETTINGS.LOGS_RETENTION_DAYS
-        )
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=SETTINGS.LOGS_RETENTION_DAYS)
         deleted_runs = []
         deleted_files = []
         errors = []
@@ -115,9 +103,7 @@ class LogManager:
                     continue
 
                 # Check if run directory is old enough
-                dir_mtime = datetime.fromtimestamp(
-                    run_dir.stat().st_mtime, tz=timezone.utc
-                )
+                dir_mtime = datetime.fromtimestamp(run_dir.stat().st_mtime, tz=timezone.utc)
                 if dir_mtime < cutoff_time:
                     if not dry_run:
                         # Delete the entire run directory
@@ -129,9 +115,7 @@ class LogManager:
                             run_symlink.unlink()
 
                     deleted_runs.append(run_dir.name)
-                    deleted_files.extend(
-                        [str(f) for f in run_dir.rglob("*") if f.is_file()]
-                    )
+                    deleted_files.extend([str(f) for f in run_dir.rglob("*") if f.is_file()])
 
             except Exception as e:
                 errors.append(f"{run_dir}: {e}")
@@ -156,9 +140,7 @@ class LogManager:
             # Consider active if last heartbeat was within 1 hour
             last_heartbeat_str = status.get("last_heartbeat")
             if last_heartbeat_str:
-                last_heartbeat = datetime.fromisoformat(
-                    last_heartbeat_str.replace("Z", "+00:00")
-                )
+                last_heartbeat = datetime.fromisoformat(last_heartbeat_str.replace("Z", "+00:00"))
                 age = datetime.now(timezone.utc) - last_heartbeat
                 return age < timedelta(hours=1)
 
@@ -167,7 +149,7 @@ class LogManager:
         except Exception:
             return False  # Assume inactive if we can't determine
 
-    def doctor_logs(self) -> Dict[str, Any]:
+    def doctor_logs(self) -> dict[str, Any]:
         """Validate log structure and fix symlinks."""
         issues = []
         fixed = []
@@ -205,8 +187,7 @@ class LogManager:
             expected_target = f"{run_dir.name}/events.ndjson"
 
             if not run_symlink.exists() or (
-                run_symlink.is_symlink()
-                and str(run_symlink.readlink()) != expected_target
+                run_symlink.is_symlink() and str(run_symlink.readlink()) != expected_target
             ):
                 if run_symlink.exists():
                     run_symlink.unlink()
@@ -214,9 +195,7 @@ class LogManager:
                     run_symlink.symlink_to(expected_target)
                     fixed.append(f"Fixed symlink {run_symlink.name}")
                 except OSError as e:
-                    issues.append(
-                        f"Could not create symlink {run_symlink.name}: {e}"
-                    )
+                    issues.append(f"Could not create symlink {run_symlink.name}: {e}")
 
         # Fix latest symlinks
         latest_targets = [
@@ -233,19 +212,14 @@ class LogManager:
                 link_path = self.log_dir / link_name
                 expected_target = f"{latest_run.name}/{target_file}"
 
-                if not link_path.exists() or (
-                    link_path.is_symlink()
-                    and str(link_path.readlink()) != expected_target
-                ):
+                if not link_path.exists() or (link_path.is_symlink() and str(link_path.readlink()) != expected_target):
                     if link_path.exists():
                         link_path.unlink()
                     try:
                         link_path.symlink_to(expected_target)
                         fixed.append(f"Fixed latest symlink {link_name}")
                     except OSError as e:
-                        issues.append(
-                            f"Could not create latest symlink {link_name}: {e}"
-                        )
+                        issues.append(f"Could not create latest symlink {link_name}: {e}")
 
         return {
             "issues": issues,
@@ -253,9 +227,9 @@ class LogManager:
             "health": "healthy" if not issues else "issues_found",
         }
 
-    def get_index_summary(self) -> Dict[str, Any]:
+    def get_index_summary(self) -> dict[str, Any]:
         """Get summary of all log runs with sizes and timestamps."""
-        runs: List[RunInfo] = []
+        runs: list[RunInfo] = []
         total_size = 0
 
         for run_dir in self.get_run_directories():
@@ -276,7 +250,7 @@ class LogManager:
 
             # Sum up all segments
             segments = self.get_log_segments(run_dir)
-            last_modified_dt: Optional[datetime] = None
+            last_modified_dt: datetime | None = None
 
             for segment in segments:
                 if segment.exists():
@@ -290,9 +264,7 @@ class LogManager:
                         run_info["segments"] += 1  # type: ignore[operator]
 
                     # Track most recent modification
-                    mtime = datetime.fromtimestamp(
-                        segment.stat().st_mtime, tz=timezone.utc
-                    )
+                    mtime = datetime.fromtimestamp(segment.stat().st_mtime, tz=timezone.utc)
                     if not last_modified_dt or mtime > last_modified_dt:
                         last_modified_dt = mtime
                         run_info["last_modified"] = mtime.isoformat()

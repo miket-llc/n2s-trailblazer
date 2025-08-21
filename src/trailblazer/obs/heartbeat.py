@@ -1,12 +1,13 @@
 """Heartbeat manager for ETA calculation and worker tracking."""
 
+import contextlib
 import json
-import time
 import threading
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from typing import Dict, Optional, Any
+import time
 from collections import deque
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
 
 
 class EMACalculator:
@@ -30,9 +31,7 @@ class EMACalculator:
 class HeartbeatManager:
     """Manages heartbeats, ETA calculation, and worker tracking."""
 
-    def __init__(
-        self, run_id: str, phase: str, heartbeat_interval: float = 30.0
-    ):
+    def __init__(self, run_id: str, phase: str, heartbeat_interval: float = 30.0):
         self.run_id = run_id
         self.phase = phase
         self.heartbeat_interval = heartbeat_interval
@@ -54,12 +53,10 @@ class HeartbeatManager:
         # Rate calculation
         self.ema_1m = EMACalculator(alpha=0.1)  # 1-minute EMA
         self.ema_5m = EMACalculator(alpha=0.02)  # 5-minute EMA
-        self.rate_history: deque[float] = deque(
-            maxlen=60
-        )  # Last 60 data points
+        self.rate_history: deque[float] = deque(maxlen=60)  # Last 60 data points
 
         # Worker tracking
-        self.worker_rates: Dict[str, float] = {}
+        self.worker_rates: dict[str, float] = {}
 
         # Directories
         self.status_dir = Path("var/status")
@@ -72,13 +69,11 @@ class HeartbeatManager:
         latest_link = self.status_dir / "latest.json"
         if latest_link.is_symlink():
             latest_link.unlink()
-        try:
+        with contextlib.suppress(OSError, FileExistsError):
             latest_link.symlink_to(self.status_file.name)
-        except (OSError, FileExistsError):
-            pass
 
         self._stop_flag = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def start(self):
         """Start heartbeat thread."""
@@ -86,9 +81,7 @@ class HeartbeatManager:
             return
 
         self._stop_flag.clear()
-        self._thread = threading.Thread(
-            target=self._heartbeat_loop, daemon=True
-        )
+        self._thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
         self._thread.start()
 
     def stop(self):
@@ -99,15 +92,15 @@ class HeartbeatManager:
 
     def update_metrics(
         self,
-        processed: Optional[int] = None,
-        inserted: Optional[int] = None,
-        reembedded: Optional[int] = None,
-        skipped: Optional[int] = None,
-        errors: Optional[int] = None,
-        retries: Optional[int] = None,
-        backoff_429s: Optional[int] = None,
-        active_workers: Optional[int] = None,
-        total_planned: Optional[int] = None,
+        processed: int | None = None,
+        inserted: int | None = None,
+        reembedded: int | None = None,
+        skipped: int | None = None,
+        errors: int | None = None,
+        retries: int | None = None,
+        backoff_429s: int | None = None,
+        active_workers: int | None = None,
+        total_planned: int | None = None,
     ):
         """Update metrics counters."""
         if processed is not None:
@@ -129,7 +122,7 @@ class HeartbeatManager:
         if total_planned is not None:
             self.total_planned = total_planned
 
-    def calculate_eta(self) -> Optional[str]:
+    def calculate_eta(self) -> str | None:
         """Calculate ETA based on current rate and remaining items."""
         if self.total_planned <= 0 or self.processed <= 0:
             return None
@@ -192,21 +185,14 @@ class HeartbeatManager:
         if eta:
             # Convert to ISO8601 duration format
             now = datetime.now(timezone.utc)
-            eta_datetime = now + timedelta(
-                seconds=sum(
-                    int(x) * 60**i
-                    for i, x in enumerate(reversed(eta.split(":")))
-                )
-            )
+            eta_datetime = now + timedelta(seconds=sum(int(x) * 60**i for i, x in enumerate(reversed(eta.split(":")))))
             eta_iso8601 = eta_datetime.isoformat().replace("+00:00", "Z")
 
         # Create status snapshot
         status = {
             "run_id": self.run_id,
             "phase": self.phase,
-            "timestamp": datetime.now(timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z"),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "elapsed_seconds": int(current_time - self.start_time),
             "processed": self.processed,
             "inserted": self.inserted,
@@ -216,19 +202,13 @@ class HeartbeatManager:
             "retries": self.retries,
             "backoff_429s": self.backoff_429s,
             "active_workers": self.active_workers,
-            "remaining": (
-                max(0, self.total_planned - self.processed)
-                if self.total_planned > 0
-                else None
-            ),
+            "remaining": (max(0, self.total_planned - self.processed) if self.total_planned > 0 else None),
             "rate_current": round(current_rate, 2),
             "rate_ema_1m": round(self.ema_1m.value, 2),
             "rate_ema_5m": round(self.ema_5m.value, 2),
             "eta_human": eta,
             "eta_iso8601": eta_iso8601,
-            "total_planned": (
-                self.total_planned if self.total_planned > 0 else None
-            ),
+            "total_planned": (self.total_planned if self.total_planned > 0 else None),
         }
 
         # Write status file atomically
@@ -246,7 +226,7 @@ class HeartbeatManager:
         """Force immediate heartbeat emission."""
         self._emit_heartbeat()
 
-    def final_summary(self) -> Dict[str, Any]:
+    def final_summary(self) -> dict[str, Any]:
         """Generate final summary for banner display."""
         elapsed = time.time() - self.start_time
         avg_rate = self.processed / elapsed if elapsed > 0 else 0.0

@@ -1,15 +1,15 @@
-import typer
-from typing import List, Optional
-from datetime import datetime
-from urllib.parse import urlparse
-from pathlib import Path
 import subprocess
 import sys
-from ..core.logging import setup_logging, log
-from ..core.config import SETTINGS
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlparse
+
+import typer
+
+from ..core.config import SETTINGS, Settings
+from ..core.logging import log, setup_logging
 from ..pipeline.runner import run as run_pipeline
 from .db_admin import app as db_admin_app
-from ..core.config import Settings
 
 app = typer.Typer(add_completion=False, help="Trailblazer CLI")
 
@@ -52,8 +52,9 @@ def _run_db_preflight_check() -> None:
 
     This is used as a preflight check for commands that require database access.
     """
-    from ..db.engine import check_db_health
     import os
+
+    from ..db.engine import check_db_health
 
     try:
         health_info = check_db_health()
@@ -76,13 +77,10 @@ def _run_db_preflight_check() -> None:
                     "Only PostgreSQL is supported; use 'make db.up' + 'trailblazer db init' + 'trailblazer db doctor'",
                     err=True,
                 )
-                raise typer.Exit(1)
+                raise typer.Exit(1) from e
 
         # For PostgreSQL, require pgvector
-        if (
-            health_info["dialect"] == "postgresql"
-            and not health_info["pgvector"]
-        ):
+        if health_info["dialect"] == "postgresql" and not health_info["pgvector"]:
             typer.echo(
                 "❌ Database preflight failed: pgvector extension not found",
                 err=True,
@@ -91,7 +89,7 @@ def _run_db_preflight_check() -> None:
                 "Use 'make db.up' then 'trailblazer db doctor' to get started",
                 err=True,
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     except Exception as e:
         typer.echo(f"❌ Database preflight failed: {e}", err=True)
@@ -99,7 +97,7 @@ def _run_db_preflight_check() -> None:
             "Use 'make db.up' then 'trailblazer db doctor' to get started",
             err=True,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.callback()
@@ -116,38 +114,20 @@ def version() -> None:
 
 @app.command()
 def run(
-    config_file: Optional[str] = typer.Option(
+    config_file: str | None = typer.Option(
         None,
         "--config",
         help="Config file (.trailblazer.yaml auto-discovered)",
     ),
-    phases: Optional[List[str]] = typer.Option(
-        None, "--phases", help="Subset of phases to run, in order"
-    ),
-    reset: Optional[str] = typer.Option(
-        None, "--reset", help="Reset scope: artifacts|embeddings|all"
-    ),
-    resume: bool = typer.Option(
-        False, "--resume", help="Resume from last incomplete run"
-    ),
-    since: Optional[str] = typer.Option(
-        None, "--since", help="Override since timestamp"
-    ),
-    workers: Optional[int] = typer.Option(
-        None, "--workers", help="Override worker count"
-    ),
-    limit: Optional[int] = typer.Option(
-        None, "--limit", help="Limit number of runs to process from backlog"
-    ),
-    provider: Optional[str] = typer.Option(
-        None, "--provider", help="Override embedding provider"
-    ),
-    model: Optional[str] = typer.Option(
-        None, "--model", help="Override embedding model"
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Do not execute; just scaffold outputs"
-    ),
+    phases: list[str] | None = typer.Option(None, "--phases", help="Subset of phases to run, in order"),
+    reset: str | None = typer.Option(None, "--reset", help="Reset scope: artifacts|embeddings|all"),
+    resume: bool = typer.Option(False, "--resume", help="Resume from last incomplete run"),
+    since: str | None = typer.Option(None, "--since", help="Override since timestamp"),
+    workers: int | None = typer.Option(None, "--workers", help="Override worker count"),
+    limit: int | None = typer.Option(None, "--limit", help="Limit number of runs to process from backlog"),
+    provider: str | None = typer.Option(None, "--provider", help="Override embedding provider"),
+    model: str | None = typer.Option(None, "--model", help="Override embedding model"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Do not execute; just scaffold outputs"),
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation prompts"),
 ) -> None:
     """
@@ -164,7 +144,7 @@ def run(
         log.info("config.loaded", config_file=config_file or "auto-discovered")
     except Exception as e:
         typer.echo(f"❌ Config error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Override settings with CLI flags (highest precedence)
     if phases:
@@ -206,16 +186,15 @@ def run(
     typer.echo(rid)  # For scripting
 
 
-def _handle_reset(
-    reset_scope: str, settings: Settings, yes: bool, dry_run: bool
-) -> None:
+def _handle_reset(reset_scope: str, settings: Settings, yes: bool, dry_run: bool) -> None:
     """Handle reset operations with confirmation and reporting."""
     import json
     import shutil
     from datetime import datetime, timezone
     from pathlib import Path
-    from typing import Dict, Any
-    from ..core.artifacts import runs_dir, new_run_id
+    from typing import Any
+
+    from ..core.artifacts import new_run_id, runs_dir
     from ..db.engine import get_engine
 
     valid_scopes = ["artifacts", "embeddings", "all"]
@@ -224,7 +203,7 @@ def _handle_reset(
             f"❌ Invalid reset scope: {reset_scope}. Use: {', '.join(valid_scopes)}",
             err=True,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Prepare reset report
     reset_id = new_run_id()
@@ -232,7 +211,7 @@ def _handle_reset(
     report_dir.mkdir(parents=True, exist_ok=True)
     reset_report = report_dir / "reset.md"
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "reset_id": reset_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "scope": reset_scope,
@@ -267,9 +246,7 @@ def _handle_reset(
                         "completed": not dry_run,
                     }
                 )
-                typer.echo(
-                    f"🗑️  {'Would clear' if dry_run else 'Cleared'} artifacts: {runs_base}"
-                )
+                typer.echo(f"🗑️  {'Would clear' if dry_run else 'Cleared'} artifacts: {runs_base}")
 
         # Reset embeddings
         if reset_scope in ["embeddings", "all"]:
@@ -287,41 +264,23 @@ def _handle_reset(
                         from sqlalchemy import text
 
                         with engine.connect() as conn:
-                            conn.execute(
-                                text(
-                                    "TRUNCATE TABLE IF EXISTS embeddings CASCADE"
-                                )
-                            )
-                            conn.execute(
-                                text("TRUNCATE TABLE IF EXISTS chunks CASCADE")
-                            )
-                            conn.execute(
-                                text(
-                                    "TRUNCATE TABLE IF EXISTS documents CASCADE"
-                                )
-                            )
+                            conn.execute(text("TRUNCATE TABLE IF EXISTS embeddings CASCADE"))
+                            conn.execute(text("TRUNCATE TABLE IF EXISTS chunks CASCADE"))
+                            conn.execute(text("TRUNCATE TABLE IF EXISTS documents CASCADE"))
                             conn.commit()
                     report["actions"].append(
                         {
                             "type": "embeddings_cleared",
-                            "database": settings.TRAILBLAZER_DB_URL.split("@")[
-                                -1
-                            ],  # Hide credentials
+                            "database": settings.TRAILBLAZER_DB_URL.split("@")[-1],  # Hide credentials
                             "completed": not dry_run,
                         }
                     )
-                    typer.echo(
-                        f"🗑️  {'Would clear' if dry_run else 'Cleared'} embeddings from database"
-                    )
+                    typer.echo(f"🗑️  {'Would clear' if dry_run else 'Cleared'} embeddings from database")
                 except Exception as e:
-                    report["actions"].append(
-                        {"type": "embeddings_clear_failed", "error": str(e)}
-                    )
+                    report["actions"].append({"type": "embeddings_clear_failed", "error": str(e)})
                     typer.echo(f"❌ Failed to clear embeddings: {e}", err=True)
             else:
-                typer.echo(
-                    "⚠️  No database URL configured, skipping embeddings reset"
-                )
+                typer.echo("⚠️  No database URL configured, skipping embeddings reset")
 
         # Write reset report
         with open(reset_report, "w") as f:
@@ -331,9 +290,7 @@ def _handle_reset(
             f.write(f"**Dry Run:** {dry_run}\n\n")
             f.write("## Actions Taken\n\n")
             for action in report["actions"]:
-                f.write(
-                    f"- **{action['type']}**: {action.get('path', action.get('database', 'N/A'))}\n"
-                )
+                f.write(f"- **{action['type']}**: {action.get('path', action.get('database', 'N/A'))}\n")
                 if "error" in action:
                     f.write(f"  - Error: {action['error']}\n")
 
@@ -345,12 +302,12 @@ def _handle_reset(
 
     except Exception as e:
         typer.echo(f"❌ Reset failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
-def _find_resumable_run(settings: Settings) -> Optional[str]:
+def _find_resumable_run(settings: Settings) -> str | None:
     """Find the most recent incomplete run that can be resumed."""
-    from ..core.artifacts import runs_dir, phase_dir
+    from ..core.artifacts import phase_dir, runs_dir
 
     runs_base = runs_dir()
     if not runs_base.exists():
@@ -370,9 +327,7 @@ def _find_resumable_run(settings: Settings) -> Optional[str]:
             "create",
         ]  # Any of these could be final
         has_final_phase = any(
-            phase_dir(run_id, phase).exists()
-            for phase in final_phases
-            if phase in settings.PIPELINE_PHASES
+            phase_dir(run_id, phase).exists() for phase in final_phases if phase in settings.PIPELINE_PHASES
         )
 
         if not has_final_phase:
@@ -395,73 +350,40 @@ def config(
 
 @ingest_app.command("confluence")
 def ingest_confluence_cmd(
-    space: List[str] = typer.Option(
-        [], "--space", help="Confluence space keys"
-    ),
-    space_id: List[str] = typer.Option(
-        [], "--space-id", help="Confluence space ids"
-    ),
-    since: Optional[str] = typer.Option(
-        None, help='ISO timestamp, e.g. "2025-08-01T00:00:00Z"'
-    ),
-    auto_since: bool = typer.Option(
-        False, "--auto-since", help="Auto-read since from state files"
-    ),
+    space: list[str] = typer.Option([], "--space", help="Confluence space keys"),
+    space_id: list[str] = typer.Option([], "--space-id", help="Confluence space ids"),
+    since: str | None = typer.Option(None, help='ISO timestamp, e.g. "2025-08-01T00:00:00Z"'),
+    auto_since: bool = typer.Option(False, "--auto-since", help="Auto-read since from state files"),
     body_format: str = typer.Option(
         "atlas_doc_format",
         help="Body format: storage or atlas_doc_format (default: atlas_doc_format)",
     ),
-    max_pages: Optional[int] = typer.Option(
-        None, help="Stop after N pages (debug)"
-    ),
-    progress: bool = typer.Option(
-        False, "--progress", help="Show per-page progress"
-    ),
-    progress_every: int = typer.Option(
-        1, "--progress-every", help="Progress output every N pages"
-    ),
-    allow_empty: bool = typer.Option(
-        False, "--allow-empty", help="Allow zero pages without error"
-    ),
-    log_format: str = typer.Option(
-        "auto", "--log-format", help="Logging format: json|plain|auto"
-    ),
-    quiet_pretty: bool = typer.Option(
-        False, "--quiet-pretty", help="Suppress banners but keep progress bars"
-    ),
-    no_color: bool = typer.Option(
-        False, "--no-color", help="Disable colored output"
-    ),
+    max_pages: int | None = typer.Option(None, help="Stop after N pages (debug)"),
+    progress: bool = typer.Option(False, "--progress", help="Show per-page progress"),
+    progress_every: int = typer.Option(1, "--progress-every", help="Progress output every N pages"),
+    allow_empty: bool = typer.Option(False, "--allow-empty", help="Allow zero pages without error"),
+    log_format: str = typer.Option("auto", "--log-format", help="Logging format: json|plain|auto"),
+    quiet_pretty: bool = typer.Option(False, "--quiet-pretty", help="Suppress banners but keep progress bars"),
+    no_color: bool = typer.Option(False, "--no-color", help="Disable colored output"),
 ) -> None:
-    from ..core.artifacts import new_run_id, phase_dir
-    from ..pipeline.steps.ingest.confluence import ingest_confluence
-    from ..core.logging import setup_logging, LogFormat
     from typing import cast
+
+    from ..core.artifacts import new_run_id, phase_dir
+    from ..core.logging import LogFormat, setup_logging
     from ..core.progress import init_progress
+    from ..pipeline.steps.ingest.confluence import ingest_confluence
 
     # Setup logging first
-    setup_logging(
-        format_type=(
-            cast(LogFormat, log_format)
-            if log_format in ("json", "plain", "auto")
-            else "auto"
-        )
-    )
+    setup_logging(format_type=(cast(LogFormat, log_format) if log_format in ("json", "plain", "auto") else "auto"))
 
     # Initialize progress renderer
-    progress_renderer = init_progress(
-        enabled=progress, quiet_pretty=quiet_pretty, no_color=no_color
-    )
+    progress_renderer = init_progress(enabled=progress, quiet_pretty=quiet_pretty, no_color=no_color)
 
     rid = new_run_id()
     out = str(phase_dir(rid, "ingest"))
 
     try:
-        dt = (
-            datetime.fromisoformat(since.replace("Z", "+00:00"))
-            if since
-            else None
-        )
+        dt = datetime.fromisoformat(since.replace("Z", "+00:00")) if since else None
 
         # Determine since mode for banner
         since_mode = "none"
@@ -529,28 +451,22 @@ def ingest_confluence_cmd(
         # Configuration/parameter error
         log.error("cli.ingest.confluence.config_error", error=str(e))
         typer.echo(f"❌ Configuration error: {e}", err=True)
-        raise typer.Exit(2)
+        raise typer.Exit(2) from e
     except Exception as e:
         # Check if it's an auth/API error or other remote failure
         error_str = str(e).lower()
-        if any(
-            keyword in error_str
-            for keyword in ["auth", "unauthorized", "forbidden", "401", "403"]
-        ):
+        if any(keyword in error_str for keyword in ["auth", "unauthorized", "forbidden", "401", "403"]):
             log.error("cli.ingest.confluence.auth_error", error=str(e))
             typer.echo(f"❌ Authentication error: {e}", err=True)
-            raise typer.Exit(2)
-        elif any(
-            keyword in error_str
-            for keyword in ["connection", "timeout", "network", "api", "http"]
-        ):
+            raise typer.Exit(2) from e
+        elif any(keyword in error_str for keyword in ["connection", "timeout", "network", "api", "http"]):
             log.error("cli.ingest.confluence.api_error", error=str(e))
             typer.echo(f"❌ API/Network error: {e}", err=True)
-            raise typer.Exit(3)
+            raise typer.Exit(3) from e
         else:
             log.error("cli.ingest.confluence.unknown_error", error=str(e))
             typer.echo(f"❌ Unexpected error: {e}", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
 
 @ingest_app.command("dita")
@@ -560,50 +476,31 @@ def ingest_dita_cmd(
         "--root",
         help="Root directory for DITA files",
     ),
-    include: List[str] = typer.Option(
+    include: list[str] = typer.Option(
         [],
         "--include",
         help="Include glob patterns (default: **/*.dita, **/*.xml, **/*.ditamap)",
     ),
-    exclude: List[str] = typer.Option(
-        [], "--exclude", help="Exclude glob patterns"
-    ),
-    progress: bool = typer.Option(
-        False, "--progress", help="Show per-file progress"
-    ),
-    progress_every: int = typer.Option(
-        1, "--progress-every", help="Progress output every N files"
-    ),
-    log_format: str = typer.Option(
-        "auto", "--log-format", help="Logging format: json|plain|auto"
-    ),
-    quiet_pretty: bool = typer.Option(
-        False, "--quiet-pretty", help="Suppress banners but keep progress bars"
-    ),
-    no_color: bool = typer.Option(
-        False, "--no-color", help="Disable colored output"
-    ),
+    exclude: list[str] = typer.Option([], "--exclude", help="Exclude glob patterns"),
+    progress: bool = typer.Option(False, "--progress", help="Show per-file progress"),
+    progress_every: int = typer.Option(1, "--progress-every", help="Progress output every N files"),
+    log_format: str = typer.Option("auto", "--log-format", help="Logging format: json|plain|auto"),
+    quiet_pretty: bool = typer.Option(False, "--quiet-pretty", help="Suppress banners but keep progress bars"),
+    no_color: bool = typer.Option(False, "--no-color", help="Disable colored output"),
 ) -> None:
     """Ingest DITA topics and maps from local filesystem."""
-    from ..core.artifacts import new_run_id, phase_dir
-    from ..pipeline.steps.ingest.dita import ingest_dita
-    from ..core.logging import setup_logging, LogFormat
     from typing import cast
+
+    from ..core.artifacts import new_run_id, phase_dir
+    from ..core.logging import LogFormat, setup_logging
     from ..core.progress import init_progress
+    from ..pipeline.steps.ingest.dita import ingest_dita
 
     # Setup logging first
-    setup_logging(
-        format_type=(
-            cast(LogFormat, log_format)
-            if log_format in ("json", "plain", "auto")
-            else "auto"
-        )
-    )
+    setup_logging(format_type=(cast(LogFormat, log_format) if log_format in ("json", "plain", "auto") else "auto"))
 
     # Initialize progress renderer
-    progress_renderer = init_progress(
-        enabled=progress, quiet_pretty=quiet_pretty, no_color=no_color
-    )
+    progress_renderer = init_progress(enabled=progress, quiet_pretty=quiet_pretty, no_color=no_color)
 
     rid = new_run_id()
     out = str(phase_dir(rid, "ingest"))
@@ -633,16 +530,18 @@ def ingest_dita_cmd(
 
     except Exception as e:
         log.error("cli.ingest.dita.error", run_id=rid, error=str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @confluence_app.command("spaces")
 def confluence_spaces_cmd() -> None:
     """List Confluence spaces with structured logging and artifact output."""
     import json
+
     from tabulate import tabulate  # type: ignore
-    from ..core.artifacts import new_run_id, phase_dir
+
     from ..adapters.confluence_api import ConfluenceClient
+    from ..core.artifacts import new_run_id, phase_dir
 
     rid = new_run_id()
     out_dir = phase_dir(rid, "ingest")
@@ -659,9 +558,7 @@ def confluence_spaces_cmd() -> None:
             "name": space.get("name", ""),
             "type": space.get("type", ""),
             "status": space.get("status", ""),
-            "homepage_id": str(
-                space.get("homepageId", "") if space.get("homepageId") else ""
-            ),
+            "homepage_id": str(space.get("homepageId", "") if space.get("homepageId") else ""),
         }
         spaces.append(space_data)
 
@@ -678,55 +575,43 @@ def confluence_spaces_cmd() -> None:
 
     # Pretty console output
     if spaces:
-        table_data = [
-            [s["id"], s["key"], s["name"], s["type"], s["status"]]
-            for s in spaces
-        ]
+        table_data = [[s["id"], s["key"], s["name"], s["type"], s["status"]] for s in spaces]
         headers = ["ID", "KEY", "NAME", "TYPE", "STATUS"]
         typer.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
     else:
         typer.echo("No spaces found.")
 
     typer.echo(f"\n📄 Spaces written to: {spaces_file}")
-    log.info(
-        "cli.confluence.spaces.done", run_id=rid, spaces_count=len(spaces)
-    )
+    log.info("cli.confluence.spaces.done", run_id=rid, spaces_count=len(spaces))
 
 
 @ingest_app.command("diff-deletions")
 def ingest_diff_deletions_cmd(
     space: str = typer.Option(..., "--space", help="Confluence space key"),
-    baseline_run: str = typer.Option(
-        ..., "--baseline-run", help="Baseline run ID"
-    ),
-    current_run: str = typer.Option(
-        ..., "--current-run", help="Current run ID"
-    ),
+    baseline_run: str = typer.Option(..., "--baseline-run", help="Baseline run ID"),
+    current_run: str = typer.Option(..., "--current-run", help="Current run ID"),
 ) -> None:
     """Find deleted page IDs between two runs."""
     import json
+
     from ..core.artifacts import runs_dir
 
     runs_base = runs_dir()
 
     # Read baseline seen IDs
-    baseline_file = (
-        runs_base / baseline_run / "ingest" / f"{space}_seen_page_ids.json"
-    )
+    baseline_file = runs_base / baseline_run / "ingest" / f"{space}_seen_page_ids.json"
     if not baseline_file.exists():
         typer.echo(f"❌ Baseline file not found: {baseline_file}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     with open(baseline_file) as f:
         baseline_ids = set(json.load(f))
 
     # Read current seen IDs
-    current_file = (
-        runs_base / current_run / "ingest" / f"{space}_seen_page_ids.json"
-    )
+    current_file = runs_base / current_run / "ingest" / f"{space}_seen_page_ids.json"
     if not current_file.exists():
         typer.echo(f"❌ Current file not found: {current_file}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     with open(current_file) as f:
         current_ids = set(json.load(f))
@@ -756,19 +641,17 @@ def ingest_diff_deletions_cmd(
 
 @normalize_app.command("from-ingest")
 def normalize_from_ingest_cmd(
-    run_id: Optional[str] = typer.Option(
+    run_id: str | None = typer.Option(
         None,
         "--run-id",
         help="Run ID to normalize (uses runs/<RUN_ID>/ingest/confluence.ndjson)",
     ),
-    input_file: Optional[str] = typer.Option(
+    input_file: str | None = typer.Option(
         None,
         "--input",
         help="Input NDJSON file to normalize (overrides --run-id)",
     ),
-    limit: Optional[int] = typer.Option(
-        None, "--limit", help="Limit number of pages to process"
-    ),
+    limit: int | None = typer.Option(None, "--limit", help="Limit number of pages to process"),
 ) -> None:
     from ..core.artifacts import new_run_id, phase_dir
     from ..pipeline.steps.normalize.html_to_md import normalize_from_ingest
@@ -811,27 +694,20 @@ def db_check_cmd() -> None:
         typer.echo(f"  Engine: {health_info['dialect']}")
         typer.echo(f"  Host: {health_info['host']}")
         typer.echo(f"  Database: {health_info['database']}")
-        typer.echo(
-            f"  pgvector: {'✅ available' if health_info['pgvector'] else '❌ not available'}"
-        )
+        typer.echo(f"  pgvector: {'✅ available' if health_info['pgvector'] else '❌ not available'}")
 
         # Exit with error if PostgreSQL but no pgvector
-        if (
-            health_info["dialect"] == "postgresql"
-            and not health_info["pgvector"]
-        ):
+        if health_info["dialect"] == "postgresql" and not health_info["pgvector"]:
             typer.echo(
                 "\n⚠️  pgvector extension not found. Run 'trailblazer db init' or manually:",
                 err=True,
             )
-            typer.echo(
-                "    psql -d your_db -c 'CREATE EXTENSION vector;'", err=True
-            )
-            raise typer.Exit(1)
+            typer.echo("    psql -d your_db -c 'CREATE EXTENSION vector;'", err=True)
+            raise typer.Exit(1) from e
 
     except Exception as e:
         typer.echo(f"❌ Database check failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @db_app.command("doctor")
@@ -853,9 +729,7 @@ def db_doctor_cmd() -> None:
         typer.echo(f"📊 Parsed DB URL: {safe_url}")
         typer.echo(f"🔧 Dialect: {parsed_url.scheme}")
         typer.echo(f"🌐 Host: {parsed_url.hostname or 'localhost'}")
-        typer.echo(
-            f"🗃️  Database: {parsed_url.path.lstrip('/') if parsed_url.path else 'default'}"
-        )
+        typer.echo(f"🗃️  Database: {parsed_url.path.lstrip('/') if parsed_url.path else 'default'}")
 
         # Attempt connection and check health
         typer.echo("\n🔗 Testing connection...")
@@ -879,35 +753,25 @@ def db_doctor_cmd() -> None:
                     from sqlalchemy import text
 
                     try:
-                        result = session.execute(
-                            text(
-                                "SELECT DISTINCT dim FROM chunk_embeddings LIMIT 5"
-                            )
-                        )
+                        result = session.execute(text("SELECT DISTINCT dim FROM chunk_embeddings LIMIT 5"))
                         dims = [row[0] for row in result]
                         if dims:
-                            typer.echo(
-                                f"   📏 Embedding dimensions found: {dims}"
-                            )
+                            typer.echo(f"   📏 Embedding dimensions found: {dims}")
                         else:
-                            typer.echo(
-                                "   📏 No embeddings found (empty database)"
-                            )
+                            typer.echo("   📏 No embeddings found (empty database)")
                     except Exception as e:
                         typer.echo(f"   📏 Could not check embeddings: {e}")
             else:
                 typer.echo("   ❌ pgvector extension: NOT available")
                 typer.echo("      Run 'trailblazer db init' or manually:")
-                typer.echo(
-                    "      psql -d your_db -c 'CREATE EXTENSION vector;'"
-                )
-                raise typer.Exit(1)
+                typer.echo("      psql -d your_db -c 'CREATE EXTENSION vector;'")
+                raise typer.Exit(1) from e
         else:
             # Non-PostgreSQL database - not supported
             typer.echo(f"\n❌ Unsupported database: {health_info['dialect']}")
             typer.echo("   Only PostgreSQL is supported.")
             typer.echo("   Run 'make db.up' then 'trailblazer db doctor'")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
         # Final summary
         typer.echo("\n🎉 Database health check completed successfully!")
@@ -920,18 +784,19 @@ def db_doctor_cmd() -> None:
         typer.echo("   2. Ensure PostgreSQL is running: make db.up")
         typer.echo("   3. Initialize database: trailblazer db init")
         typer.echo("   4. Verify pgvector extension is installed")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @db_app.command("init")
 def db_init_cmd() -> None:
     """Initialize database schema (safe if tables already exist)."""
     from urllib.parse import urlparse
+
     from ..db.engine import (
         create_tables,
+        ensure_vector_index,
         get_db_url,
         initialize_postgres_extensions,
-        ensure_vector_index,
     )
 
     db_url = get_db_url()
@@ -959,27 +824,18 @@ def db_init_cmd() -> None:
         from ..db.engine import check_db_health
 
         health_info = check_db_health()
-        if (
-            health_info["dialect"] == "postgresql"
-            and not health_info["pgvector"]
-        ):
-            typer.echo(
-                "⚠️  pgvector extension not detected. You may need to run manually:"
-            )
+        if health_info["dialect"] == "postgresql" and not health_info["pgvector"]:
+            typer.echo("⚠️  pgvector extension not detected. You may need to run manually:")
             typer.echo("    psql -d your_db -c 'CREATE EXTENSION vector;'")
-        elif (
-            health_info["dialect"] == "postgresql" and health_info["pgvector"]
-        ):
+        elif health_info["dialect"] == "postgresql" and health_info["pgvector"]:
             typer.echo("✅ pgvector extension ready and vector index created")
 
     except Exception as e:
         typer.echo(f"❌ Error initializing database: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
-def _check_dimension_compatibility(
-    provider: str, requested_dim: Optional[int]
-) -> None:
+def _check_dimension_compatibility(provider: str, requested_dim: int | None) -> None:
     """Check if requested dimensions are compatible with existing embeddings.
 
     Args:
@@ -989,8 +845,9 @@ def _check_dimension_compatibility(
     Raises:
         typer.Exit: If dimension mismatch detected and reembed_all not used
     """
-    from ..db.engine import get_session
     from sqlalchemy import text
+
+    from ..db.engine import get_session
 
     if requested_dim is None:
         # Get dimension from provider configuration
@@ -1008,9 +865,7 @@ def _check_dimension_compatibility(
         try:
             # Check for existing embeddings with this provider
             result = session.execute(
-                text(
-                    "SELECT DISTINCT dim FROM chunk_embeddings WHERE provider = :provider LIMIT 1"
-                ),
+                text("SELECT DISTINCT dim FROM chunk_embeddings WHERE provider = :provider LIMIT 1"),
                 {"provider": provider},
             )
             existing_dims = [row[0] for row in result]
@@ -1024,7 +879,7 @@ def _check_dimension_compatibility(
                     "Re-run with '--changed-only=false' and '--reembed-all' (or purge embeddings).",
                     err=True,
                 )
-                raise typer.Exit(1)
+                raise typer.Exit(1) from e
         except Exception:
             # If we can't check, continue (might be empty database)
             pass
@@ -1032,12 +887,12 @@ def _check_dimension_compatibility(
 
 @embed_app.command("load")
 def embed_load_cmd(
-    run_id: Optional[str] = typer.Option(
+    run_id: str | None = typer.Option(
         None,
         "--run-id",
         help="Run ID to load (uses runs/<RUN_ID>/normalize/normalized.ndjson)",
     ),
-    input_file: Optional[str] = typer.Option(
+    input_file: str | None = typer.Option(
         None,
         "--input",
         help="Input NDJSON file to load (overrides --run-id)",
@@ -1047,25 +902,19 @@ def embed_load_cmd(
         "--provider",
         help="Embedding provider (dummy, openai, sentencetransformers)",
     ),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None,
         "--model",
         help="Model name (e.g., text-embedding-3-small, BAAI/bge-small-en-v1.5)",
     ),
-    dimension: Optional[int] = typer.Option(
+    dimension: int | None = typer.Option(
         None,
         "--dimension",
         help="Embedding dimension (e.g., 512, 1024, 1536)",
     ),
-    batch_size: int = typer.Option(
-        128, "--batch", help="Batch size for embedding generation"
-    ),
-    max_docs: Optional[int] = typer.Option(
-        None, "--max-docs", help="Maximum number of documents to process"
-    ),
-    max_chunks: Optional[int] = typer.Option(
-        None, "--max-chunks", help="Maximum number of chunks to process"
-    ),
+    batch_size: int = typer.Option(128, "--batch", help="Batch size for embedding generation"),
+    max_docs: int | None = typer.Option(None, "--max-docs", help="Maximum number of documents to process"),
+    max_chunks: int | None = typer.Option(None, "--max-chunks", help="Maximum number of chunks to process"),
     changed_only: bool = typer.Option(
         False,
         "--changed-only",
@@ -1130,58 +979,38 @@ def embed_load_cmd(
             )
         if reembed_all:
             typer.echo("  Mode: Full re-embed (ignoring fingerprints)")
-        typer.echo(
-            f"  Documents: {metrics.get('docs_embedded', 0)} embedded, {metrics.get('docs_skipped', 0)} skipped"
-        )
+        typer.echo(f"  Documents: {metrics.get('docs_embedded', 0)} embedded, {metrics.get('docs_skipped', 0)} skipped")
         typer.echo(
             f"  Chunks: {metrics.get('chunks_embedded', 0)} embedded, {metrics.get('chunks_skipped', 0)} skipped"
         )
-        typer.echo(
-            f"  Provider: {metrics['provider']} (dim={metrics['dimension']})"
-        )
+        typer.echo(f"  Provider: {metrics['provider']} (dim={metrics['dimension']})")
         if metrics.get("model"):
             typer.echo(f"  Model: {metrics['model']}")
         if dry_run_cost:
-            typer.echo(
-                f"  Estimated tokens: {metrics.get('estimated_tokens', 0):,}"
-            )
+            typer.echo(f"  Estimated tokens: {metrics.get('estimated_tokens', 0):,}")
             if metrics.get("estimated_cost"):
-                typer.echo(
-                    f"  Estimated cost: ${metrics.get('estimated_cost', 0):.4f}"
-                )
+                typer.echo(f"  Estimated cost: ${metrics.get('estimated_cost', 0):.4f}")
         typer.echo(f"  Duration: {metrics['duration_seconds']:.2f}s")
 
     except Exception as e:
         typer.echo(f"❌ Error loading embeddings: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
 def ask(
     question: str = typer.Argument(..., help="Question to ask"),
-    top_k: int = typer.Option(
-        8, "--top-k", help="Number of top chunks to retrieve"
-    ),
-    max_chunks_per_doc: int = typer.Option(
-        3, "--max-chunks-per-doc", help="Maximum chunks per document"
-    ),
+    top_k: int = typer.Option(8, "--top-k", help="Number of top chunks to retrieve"),
+    max_chunks_per_doc: int = typer.Option(3, "--max-chunks-per-doc", help="Maximum chunks per document"),
     provider: str = typer.Option(
         "dummy",
         "--provider",
         help="Embedding provider (dummy, openai, sentencetransformers)",
     ),
-    max_chars: int = typer.Option(
-        6000, "--max-chars", help="Maximum characters in context"
-    ),
-    format_output: str = typer.Option(
-        "text", "--format", help="Output format (text, json)"
-    ),
-    out_dir: Optional[str] = typer.Option(
-        None, "--out", help="Output directory (default: runs/<run_id>/ask/)"
-    ),
-    db_url: Optional[str] = typer.Option(
-        None, "--db-url", help="Database URL override"
-    ),
+    max_chars: int = typer.Option(6000, "--max-chars", help="Maximum characters in context"),
+    format_output: str = typer.Option("text", "--format", help="Output format (text, json)"),
+    out_dir: str | None = typer.Option(None, "--out", help="Output directory (default: runs/<run_id>/ask/)"),
+    db_url: str | None = typer.Option(None, "--db-url", help="Database URL override"),
 ) -> None:
     """Ask a question using dense retrieval over embedded chunks."""
     # Run database preflight check only if not using custom db_url
@@ -1198,9 +1027,9 @@ def ask(
     from ..core.artifacts import new_run_id, phase_dir
     from ..retrieval.dense import create_retriever
     from ..retrieval.pack import (
-        pack_context,
-        group_by_doc,
         create_context_summary,
+        group_by_doc,
+        pack_context,
     )
 
     # Setup
@@ -1212,7 +1041,7 @@ def ask(
     final_db_url = db_url or os.getenv("TRAILBLAZER_DB_URL")
     if not final_db_url:
         typer.echo("❌ TRAILBLAZER_DB_URL required", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # NDJSON event emitter - outputs to stdout
     def emit_event(event_type: str, **kwargs):
@@ -1240,15 +1069,11 @@ def ask(
     try:
         # Create retriever
         start_time = time.time()
-        retriever = create_retriever(
-            db_url=final_db_url, provider_name=provider
-        )
+        retriever = create_retriever(db_url=final_db_url, provider_name=provider)
 
         # Perform search with event logging
         search_start = time.time()
-        emit_event(
-            "search.begin", query=question, top_k=top_k, provider=provider
-        )
+        emit_event("search.begin", query=question, top_k=top_k, provider=provider)
         hits = retriever.search(question, top_k=top_k)
         emit_event("search.end", total_hits=len(hits))
         search_time = time.time() - search_start
@@ -1256,7 +1081,7 @@ def ask(
         if not hits:
             typer.echo("❌ No results found", err=True)
             emit_event("ask.no_results")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
         # Group and pack results
         pack_start = time.time()
@@ -1281,9 +1106,7 @@ def ask(
         }
 
         # Create summary using the existing function
-        summary = create_context_summary(
-            question, grouped_hits, provider, timing_info
-        )
+        summary = create_context_summary(question, grouped_hits, provider, timing_info)
         summary["run_id"] = run_id
 
         # Write artifacts
@@ -1318,9 +1141,7 @@ def ask(
             typer.echo("\n📊 Results:", err=True)
             typer.echo(f"  Top hits: {len(grouped_hits)}", err=True)
             typer.echo(f"  Documents: {summary['unique_documents']}", err=True)
-            typer.echo(
-                f"  Characters: {summary['total_characters']:,}", err=True
-            )
+            typer.echo(f"  Characters: {summary['total_characters']:,}", err=True)
             typer.echo(
                 f"  Score range: {summary['score_stats']['min']:.3f} - {summary['score_stats']['max']:.3f}",
                 err=True,
@@ -1333,16 +1154,12 @@ def ask(
                 title = hit.get("title", "Untitled")
                 url = hit.get("url", "")
                 score = hit.get("score", 0.0)
-                typer.echo(
-                    f"  {i + 1}. {title} (score: {score:.3f})", err=True
-                )
+                typer.echo(f"  {i + 1}. {title} (score: {score:.3f})", err=True)
                 if url:
                     typer.echo(f"     {url}", err=True)
 
             if len(grouped_hits) > 3:
-                typer.echo(
-                    f"     ... and {len(grouped_hits) - 3} more", err=True
-                )
+                typer.echo(f"     ... and {len(grouped_hits) - 3} more", err=True)
 
             typer.echo("\n📄 Context preview (first 200 chars):", err=True)
             preview = context_str[:200].replace("\n", " ")
@@ -1357,26 +1174,21 @@ def ask(
     except Exception as e:
         emit_event("ask.error", error=str(e))
         typer.echo(f"❌ Error during retrieval: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @ops_app.command("prune-runs")
 def ops_prune_runs_cmd(
-    keep: int = typer.Option(
-        ..., "--keep", help="Number of newest runs to keep"
-    ),
-    min_age_days: int = typer.Option(
-        ..., "--min-age-days", help="Minimum age in days for deletion"
-    ),
-    dry_run: bool = typer.Option(
-        True, "--dry-run/--no-dry-run", help="Dry run mode (default: true)"
-    ),
+    keep: int = typer.Option(..., "--keep", help="Number of newest runs to keep"),
+    min_age_days: int = typer.Option(..., "--min-age-days", help="Minimum age in days for deletion"),
+    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run", help="Dry run mode (default: true)"),
 ) -> None:
     """Prune old run artifacts (safe, opt-in)."""
     import json
     import shutil
     from datetime import datetime, timedelta
     from pathlib import Path
+
     from ..core.artifacts import runs_dir
 
     runs_base = runs_dir()
@@ -1453,9 +1265,7 @@ def ops_prune_runs_cmd(
     # Write report
     reports_dir = Path("logs")
     reports_dir.mkdir(exist_ok=True)
-    report_file = (
-        reports_dir / f"prune_report_{now.strftime('%Y%m%d_%H%M%S')}.json"
-    )
+    report_file = reports_dir / f"prune_report_{now.strftime('%Y%m%d_%H%M%S')}.json"
     with open(report_file, "w") as f:
         json.dump(report, f, indent=2, sort_keys=True)
 
@@ -1467,9 +1277,7 @@ def ops_prune_runs_cmd(
     if candidates:
         typer.echo("\nCandidates for deletion:")
         for candidate in candidates:
-            typer.echo(
-                f"  - {candidate['run_id']} (age: {candidate['age_days']} days)"
-            )
+            typer.echo(f"  - {candidate['run_id']} (age: {candidate['age_days']} days)")
 
     if not dry_run and candidates:
         typer.echo(f"\n🔥 Deleting {len(candidates)} run directories...")
@@ -1484,9 +1292,7 @@ def ops_prune_runs_cmd(
         with open(report_file, "w") as f:
             json.dump(report, f, indent=2, sort_keys=True)
     elif dry_run and candidates:
-        typer.echo(
-            "\n💡 This is a dry run. Use --no-dry-run to actually delete."
-        )
+        typer.echo("\n💡 This is a dry run. Use --no-dry-run to actually delete.")
 
     typer.echo(f"\n📄 Report written to: {report_file}")
     log.info(
@@ -1500,13 +1306,12 @@ def ops_prune_runs_cmd(
 
 @paths_app.command()
 def show(
-    json_output: bool = typer.Option(
-        False, "--json", help="Output paths as JSON"
-    ),
+    json_output: bool = typer.Option(False, "--json", help="Output paths as JSON"),
 ) -> None:
     """Show resolved workspace paths."""
-    from ..core import paths
     import json
+
+    from ..core import paths
 
     path_info = {
         "data": str(paths.data()),
@@ -1565,10 +1370,10 @@ def _validate_workspace_only() -> None:
                 "Please run 'trailblazer paths ensure' and migrate data to var/",
                 err=True,
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
 
-def _get_confluence_spaces() -> List[str]:
+def _get_confluence_spaces() -> list[str]:
     """Get list of all Confluence spaces using the existing command."""
     try:
         result = subprocess.run(
@@ -1598,9 +1403,7 @@ def _get_confluence_spaces() -> List[str]:
 
         if not spaces:
             typer.echo("⚠️  No Confluence spaces found", err=True)
-            typer.echo(
-                "💡 Check your Confluence credentials in .env:", err=True
-            )
+            typer.echo("💡 Check your Confluence credentials in .env:", err=True)
             typer.echo(
                 "   CONFLUENCE_BASE_URL=https://your-site.atlassian.net/wiki",
                 err=True,
@@ -1615,14 +1418,12 @@ def _get_confluence_spaces() -> List[str]:
         typer.echo(f"   Error: {e}", err=True)
         typer.echo("💡 Troubleshooting:", err=True)
         typer.echo("   1. Check Confluence credentials in .env file", err=True)
-        typer.echo(
-            "   2. Test connection: trailblazer confluence spaces", err=True
-        )
+        typer.echo("   2. Test connection: trailblazer confluence spaces", err=True)
         typer.echo("   3. Verify CONFLUENCE_BASE_URL format", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
-def _get_runs_needing_normalization() -> List[str]:
+def _get_runs_needing_normalization() -> list[str]:
     """Get list of run IDs that need normalization."""
     from ..core import paths
 
@@ -1642,9 +1443,7 @@ def _get_runs_needing_normalization() -> List[str]:
         # Check if ingest exists but normalize doesn't
         if ingest_dir.exists() and not normalize_dir.exists():
             # Check for either confluence.ndjson or dita.ndjson
-            if (ingest_dir / "confluence.ndjson").exists() or (
-                ingest_dir / "dita.ndjson"
-            ).exists():
+            if (ingest_dir / "confluence.ndjson").exists() or (ingest_dir / "dita.ndjson").exists():
                 runs_needing_norm.append(run_dir.name)
 
     return sorted(runs_needing_norm)
@@ -1652,12 +1451,8 @@ def _get_runs_needing_normalization() -> List[str]:
 
 @app.command()
 def plan(
-    confluence: bool = typer.Option(
-        True, "--confluence/--no-confluence", help="Plan Confluence ingestion"
-    ),
-    dita: bool = typer.Option(
-        True, "--dita/--no-dita", help="Plan DITA ingestion"
-    ),
+    confluence: bool = typer.Option(True, "--confluence/--no-confluence", help="Plan Confluence ingestion"),
+    dita: bool = typer.Option(True, "--dita/--no-dita", help="Plan DITA ingestion"),
 ) -> None:
     """
     Dry-run preview showing what would be ingested (no writes).
@@ -1688,9 +1483,7 @@ def plan(
                 for space in spaces[:5]:
                     typer.echo(f"     - {space}", err=True)
                 if len(spaces) > 5:
-                    typer.echo(
-                        f"     ... and {len(spaces) - 5} more", err=True
-                    )
+                    typer.echo(f"     ... and {len(spaces) - 5} more", err=True)
             total_items += len(spaces)
         except typer.Exit:
             typer.echo("   ⚠️  Could not enumerate spaces", err=True)
@@ -1716,31 +1509,15 @@ def plan(
 
 @app.command()
 def ingest_all(
-    confluence: bool = typer.Option(
-        True, "--confluence/--no-confluence", help="Ingest Confluence"
-    ),
+    confluence: bool = typer.Option(True, "--confluence/--no-confluence", help="Ingest Confluence"),
     dita: bool = typer.Option(True, "--dita/--no-dita", help="Ingest DITA"),
-    progress: bool = typer.Option(
-        True, "--progress/--no-progress", help="Show progress"
-    ),
-    progress_every: int = typer.Option(
-        10, "--progress-every", help="Progress frequency"
-    ),
-    no_color: bool = typer.Option(
-        False, "--no-color", help="Disable colored output"
-    ),
-    since: Optional[str] = typer.Option(
-        None, "--since", help="ISO timestamp for delta ingestion"
-    ),
-    auto_since: bool = typer.Option(
-        False, "--auto-since", help="Auto-detect since from state"
-    ),
-    max_pages: Optional[int] = typer.Option(
-        None, "--max-pages", help="Debug: limit pages"
-    ),
-    from_scratch: bool = typer.Option(
-        False, "--from-scratch", help="Clear var/state before starting"
-    ),
+    progress: bool = typer.Option(True, "--progress/--no-progress", help="Show progress"),
+    progress_every: int = typer.Option(10, "--progress-every", help="Progress frequency"),
+    no_color: bool = typer.Option(False, "--no-color", help="Disable colored output"),
+    since: str | None = typer.Option(None, "--since", help="ISO timestamp for delta ingestion"),
+    auto_since: bool = typer.Option(False, "--auto-since", help="Auto-detect since from state"),
+    max_pages: int | None = typer.Option(None, "--max-pages", help="Debug: limit pages"),
+    from_scratch: bool = typer.Option(False, "--from-scratch", help="Clear var/state before starting"),
 ) -> None:
     """
     Ingest all Confluence spaces and DITA files with enforced ADF format.
@@ -1763,8 +1540,9 @@ def ingest_all(
     _validate_workspace_only()
 
     if from_scratch:
-        from ..core import paths
         import shutil
+
+        from ..core import paths
 
         state_dir = paths.state()
         if state_dir.exists():
@@ -1830,9 +1608,7 @@ def ingest_all(
                 total_runs += 1
                 typer.echo(f"✅ Completed space: {space}")
             except subprocess.CalledProcessError as e:
-                typer.echo(
-                    f"❌ Failed space: {space} (exit {e.returncode})", err=True
-                )
+                typer.echo(f"❌ Failed space: {space} (exit {e.returncode})", err=True)
 
     if dita:
         typer.echo("\n📄 Ingesting DITA files...")
@@ -1868,9 +1644,7 @@ def ingest_all(
             total_runs += 1
             typer.echo("✅ Completed DITA ingestion")
         except subprocess.CalledProcessError as e:
-            typer.echo(
-                f"❌ Failed DITA ingestion (exit {e.returncode})", err=True
-            )
+            typer.echo(f"❌ Failed DITA ingestion (exit {e.returncode})", err=True)
 
     # Finalize session index
     with open(index_file, "a") as f:
@@ -1887,9 +1661,7 @@ def ingest_all(
 
 @app.command()
 def normalize_all(
-    progress: bool = typer.Option(
-        True, "--progress/--no-progress", help="Show progress"
-    ),
+    progress: bool = typer.Option(True, "--progress/--no-progress", help="Show progress"),
 ) -> None:
     """
     Normalize all runs that are missing normalized output.
@@ -1912,9 +1684,7 @@ def normalize_all(
         typer.echo("✅ All runs are already normalized")
         return
 
-    typer.echo(
-        f"🔄 Found {len(runs_to_normalize)} runs needing normalization:"
-    )
+    typer.echo(f"🔄 Found {len(runs_to_normalize)} runs needing normalization:")
     for run_id in runs_to_normalize:
         typer.echo(f"  - {run_id}")
 
@@ -1943,41 +1713,27 @@ def normalize_all(
         except subprocess.CalledProcessError as e:
             typer.echo(f"❌ Failed: {run_id} (exit {e.returncode})", err=True)
 
-    typer.echo(
-        f"\n📊 Normalization complete: {successful}/{len(runs_to_normalize)} successful"
-    )
+    typer.echo(f"\n📊 Normalization complete: {successful}/{len(runs_to_normalize)} successful")
 
 
 @app.command()
 def enrich(
-    run_id: str = typer.Argument(
-        ..., help="Run ID to enrich (must have normalize phase completed)"
-    ),
+    run_id: str = typer.Argument(..., help="Run ID to enrich (must have normalize phase completed)"),
     llm: bool = typer.Option(
         False,
         "--llm/--no-llm",
         help="Enable LLM-based enrichment (default: off)",
     ),
-    max_docs: Optional[int] = typer.Option(
-        None, "--max-docs", help="Maximum number of documents to process"
-    ),
-    budget: Optional[str] = typer.Option(
-        None, "--budget", help="Budget limit for LLM usage (soft limit)"
-    ),
-    min_quality: float = typer.Option(
-        0.60, "--min-quality", help="Minimum quality score threshold (0.0-1.0)"
-    ),
+    max_docs: int | None = typer.Option(None, "--max-docs", help="Maximum number of documents to process"),
+    budget: str | None = typer.Option(None, "--budget", help="Budget limit for LLM usage (soft limit)"),
+    min_quality: float = typer.Option(0.60, "--min-quality", help="Minimum quality score threshold (0.0-1.0)"),
     max_below_threshold_pct: float = typer.Option(
         0.20,
         "--max-below-threshold-pct",
         help="Maximum percentage of docs below quality threshold",
     ),
-    progress: bool = typer.Option(
-        True, "--progress/--no-progress", help="Show progress output"
-    ),
-    no_color: bool = typer.Option(
-        False, "--no-color", help="Disable colored output"
-    ),
+    progress: bool = typer.Option(True, "--progress/--no-progress", help="Show progress output"),
+    no_color: bool = typer.Option(False, "--no-color", help="Disable colored output"),
 ) -> None:
     """
     Enrich normalized documents with metadata and quality signals.
@@ -2015,14 +1771,12 @@ def enrich(
             f"❌ Run {run_id} not found or normalize phase not completed",
             err=True,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     normalized_file = normalize_dir / "normalized.ndjson"
     if not normalized_file.exists():
-        typer.echo(
-            f"❌ Normalized file not found: {normalized_file}", err=True
-        )
-        raise typer.Exit(1)
+        typer.echo(f"❌ Normalized file not found: {normalized_file}", err=True)
+        raise typer.Exit(1) from e
 
     # Setup output directory
     enrich_dir = phase_dir(run_id, "enrich")
@@ -2042,9 +1796,7 @@ def enrich(
         print(json.dumps(event))
 
     # Progress callback for human-readable updates to stderr
-    def progress_callback(
-        docs_processed: int, rate: float, elapsed: float, docs_llm: int
-    ):
+    def progress_callback(docs_processed: int, rate: float, elapsed: float, docs_llm: int):
         if progress:
             typer.echo(
                 f"[ENRICH] docs={docs_processed} rate={rate:.1f}/s elapsed={elapsed:.1f}s llm_used={docs_llm}",
@@ -2053,9 +1805,7 @@ def enrich(
 
     # Show banner
     if progress:
-        progress_renderer.start_banner(
-            run_id=run_id, spaces=1
-        )  # Single "phase" for enrichment
+        progress_renderer.start_banner(run_id=run_id, spaces=1)  # Single "phase" for enrichment
         typer.echo(f"📁 Input: {normalized_file}", err=True)
         typer.echo(f"📂 Output: {enrich_dir}", err=True)
         typer.echo(f"🧠 LLM enabled: {llm}", err=True)
@@ -2092,9 +1842,7 @@ def enrich(
         if progress:
             typer.echo("", err=True)
             typer.echo("✅ ENRICH COMPLETE", err=True)
-            typer.echo(
-                f"📊 Documents processed: {stats['docs_total']:,}", err=True
-            )
+            typer.echo(f"📊 Documents processed: {stats['docs_total']:,}", err=True)
             if llm:
                 typer.echo(f"🧠 LLM enriched: {stats['docs_llm']:,}", err=True)
                 typer.echo(
@@ -2114,7 +1862,7 @@ def enrich(
     except Exception as e:
         emit_event("enrich.error", error=str(e))
         typer.echo(f"❌ Enrichment failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def _generate_enrichment_assurance_md(stats: dict, output_path: Path) -> None:
@@ -2182,15 +1930,9 @@ def chunk(
         ...,
         help="Run ID to chunk (must have enrich or normalize phase completed)",
     ),
-    max_tokens: int = typer.Option(
-        800, "--max-tokens", help="Maximum tokens per chunk"
-    ),
-    min_tokens: int = typer.Option(
-        120, "--min-tokens", help="Minimum tokens per chunk"
-    ),
-    progress: bool = typer.Option(
-        True, "--progress/--no-progress", help="Show progress output"
-    ),
+    max_tokens: int = typer.Option(800, "--max-tokens", help="Maximum tokens per chunk"),
+    min_tokens: int = typer.Option(120, "--min-tokens", help="Minimum tokens per chunk"),
+    progress: bool = typer.Option(True, "--progress/--no-progress", help="Show progress output"),
 ) -> None:
     """
     Chunk enriched or normalized documents into token-bounded pieces.
@@ -2218,7 +1960,7 @@ def chunk(
     run_dir = phase_dir(run_id, "").parent
     if not run_dir.exists():
         typer.echo(f"❌ Run {run_id} not found", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Check for input files
     enrich_dir = phase_dir(run_id, "enrich")
@@ -2238,7 +1980,7 @@ def chunk(
             f"❌ No input files found. Run 'trailblazer enrich {run_id}' or 'trailblazer normalize {run_id}' first",
             err=True,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Create chunk directory
     chunk_dir = phase_dir(run_id, "chunk")
@@ -2302,7 +2044,7 @@ def chunk(
 
     except Exception as e:
         typer.echo(f"❌ Chunking failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -2335,9 +2077,7 @@ def status() -> None:
         return
 
     # Get all runs
-    all_runs = sorted(
-        [d.name for d in runs_dir.iterdir() if d.is_dir()], reverse=True
-    )
+    all_runs = sorted([d.name for d in runs_dir.iterdir() if d.is_dir()], reverse=True)
 
     if not all_runs:
         typer.echo("📁 No runs found")
@@ -2385,9 +2125,7 @@ def status() -> None:
     import shutil
 
     total, used, free = shutil.disk_usage(runs_dir)
-    runs_size = sum(
-        f.stat().st_size for f in runs_dir.rglob("*") if f.is_file()
-    )
+    runs_size = sum(f.stat().st_size for f in runs_dir.rglob("*") if f.is_file())
 
     typer.echo("\n💾 Workspace usage:")
     typer.echo(f"   Runs data: {runs_size / (1024**2):.1f} MB")
@@ -2396,15 +2134,9 @@ def status() -> None:
 
 @app.command("enrich-all")
 def enrich_all(
-    pattern: str = typer.Option(
-        "2025-08-*", "--pattern", help="Pattern to match run directories"
-    ),
-    batch_size: int = typer.Option(
-        50, "--batch-size", help="Progress report every N runs"
-    ),
-    no_llm: bool = typer.Option(
-        True, "--no-llm", help="Disable LLM enrichment (default: disabled)"
-    ),
+    pattern: str = typer.Option("2025-08-*", "--pattern", help="Pattern to match run directories"),
+    batch_size: int = typer.Option(50, "--batch-size", help="Progress report every N runs"),
+    no_llm: bool = typer.Option(True, "--no-llm", help="Disable LLM enrichment (default: disabled)"),
     no_progress: bool = typer.Option(
         True,
         "--no-progress",
@@ -2417,7 +2149,7 @@ def enrich_all(
     base_dir = runs_dir()
     if not base_dir.exists():
         typer.echo("❌ No runs directory found", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
         # Find runs that need enrichment
     runs_to_enrich = []
@@ -2473,39 +2205,29 @@ def enrich_all(
 
 @app.command("monitor")
 def monitor_cmd(
-    run_id: Optional[str] = typer.Option(
-        None, "--run", help="Run ID to monitor (default: latest)"
-    ),
-    json_output: bool = typer.Option(
-        False, "--json", help="JSON output for CI dashboards"
-    ),
-    interval: float = typer.Option(
-        2.0, "--interval", help="Refresh interval in seconds"
-    ),
+    run_id: str | None = typer.Option(None, "--run", help="Run ID to monitor (default: latest)"),
+    json_output: bool = typer.Option(False, "--json", help="JSON output for CI dashboards"),
+    interval: float = typer.Option(2.0, "--interval", help="Refresh interval in seconds"),
 ) -> None:
     """Monitor running processes with live TUI or JSON output."""
     from ..obs.monitor import TrailblazerMonitor
 
-    monitor = TrailblazerMonitor(
-        run_id=run_id, json_mode=json_output, refresh_interval=interval
-    )
+    monitor = TrailblazerMonitor(run_id=run_id, json_mode=json_output, refresh_interval=interval)
 
     monitor.run()
 
 
 @ops_app.command("monitor")
 def ops_monitor_cmd(
-    interval: int = typer.Option(
-        15, "--interval", help="Monitor interval in seconds"
-    ),
+    interval: int = typer.Option(15, "--interval", help="Monitor interval in seconds"),
     alpha: float = typer.Option(0.25, "--alpha", help="EWMA smoothing factor"),
 ) -> None:
     """Monitor embedding progress with real-time ETA and worker stats."""
     import json
-    import time
-    import subprocess
     import os
-    from datetime import datetime, timezone, timedelta
+    import subprocess
+    import time
+    from datetime import datetime, timedelta, timezone
     from pathlib import Path
 
     progress_file = Path("var/logs/reembed_progress.json")
@@ -2514,7 +2236,7 @@ def ops_monitor_cmd(
 
     if not progress_file.exists():
         typer.echo(f"❌ {progress_file} not found", err=True)
-        raise typer.Exit(2)
+        raise typer.Exit(2) from e
 
     def iso_to_epoch(iso_str: str) -> int:
         """Convert ISO 8601 string to epoch timestamp."""
@@ -2545,9 +2267,7 @@ def ops_monitor_cmd(
             os.system("clear" if os.name == "posix" else "cls")
 
             now = int(time.time())
-            current_time = datetime.now(timezone.utc).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
+            current_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
             typer.echo(f"[MONITOR] {current_time}  interval={interval}s")
 
@@ -2572,21 +2292,13 @@ def ops_monitor_cmd(
 
                 # Calculate progress
                 runs_data = progress_data.get("runs", {})
-                docs_planned = sum(
-                    run.get("docs_planned", 0) for run in runs_data.values()
-                )
+                docs_planned = sum(run.get("docs_planned", 0) for run in runs_data.values())
                 if docs_planned == 0 and runs_file.exists():
                     # Fallback: read from runs file
                     with open(runs_file) as f:
-                        docs_planned = sum(
-                            int(line.split(":")[1])
-                            for line in f
-                            if ":" in line
-                        )
+                        docs_planned = sum(int(line.split(":")[1]) for line in f if ":" in line)
 
-                docs_embedded = sum(
-                    run.get("docs_embedded", 0) for run in runs_data.values()
-                )
+                docs_embedded = sum(run.get("docs_embedded", 0) for run in runs_data.values())
 
                 elapsed = max(1, now - start_ts)
                 docs_rate = docs_embedded / elapsed
@@ -2596,14 +2308,11 @@ def ops_monitor_cmd(
                 try:
                     result = subprocess.run(
                         ["pgrep", "-fc", "trailblazer embed load"],
+                        check=False,
                         capture_output=True,
                         text=True,
                     )
-                    active_workers = (
-                        int(result.stdout.strip())
-                        if result.returncode == 0
-                        else 1
-                    )
+                    active_workers = int(result.stdout.strip()) if result.returncode == 0 else 1
                 except (subprocess.SubprocessError, ValueError):
                     active_workers = 1
 
@@ -2623,9 +2332,7 @@ def ops_monitor_cmd(
                 # Show recent runs
                 typer.echo("---- recent runs ----")
                 recent_runs = list(runs_data.items())
-                recent_runs.sort(
-                    key=lambda x: x[1].get("completed_at", ""), reverse=True
-                )
+                recent_runs.sort(key=lambda x: x[1].get("completed_at", ""), reverse=True)
 
                 for run_id, run_data in recent_runs[:8]:
                     status = run_data.get("status", "unknown")
@@ -2633,17 +2340,13 @@ def ops_monitor_cmd(
                     chunks = run_data.get("chunks_embedded", 0)
                     duration = run_data.get("duration_seconds", 0)
                     error = run_data.get("error", "")
-                    typer.echo(
-                        f"{run_id}  {status}  docs={docs} chunks={chunks} dur={duration}s err={error}"
-                    )
+                    typer.echo(f"{run_id}  {status}  docs={docs} chunks={chunks} dur={duration}s err={error}")
 
                 # Show recent logs
                 if log_dir.exists():
                     typer.echo("---- tail of active logs ----")
                     log_files = list(log_dir.glob("embed-*.out"))
-                    log_files.sort(
-                        key=lambda x: x.stat().st_mtime, reverse=True
-                    )
+                    log_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
 
                     for log_file in log_files[:2]:
                         typer.echo(f">>> {log_file}")
@@ -2652,7 +2355,7 @@ def ops_monitor_cmd(
                                 lines = f.readlines()
                                 for line in lines[-30:]:
                                     typer.echo(line.rstrip())
-                        except (IOError, OSError):
+                        except OSError:
                             typer.echo("Error reading log file")
                         typer.echo()
 
@@ -2667,9 +2370,7 @@ def ops_monitor_cmd(
 
 @ops_app.command("dispatch")
 def ops_dispatch_cmd(
-    workers: int = typer.Option(
-        2, "--workers", help="Number of parallel workers"
-    ),
+    workers: int = typer.Option(2, "--workers", help="Number of parallel workers"),
     runs_file: str = typer.Option(
         "var/logs/temp_runs_to_embed.txt",
         "--runs-file",
@@ -2683,7 +2384,7 @@ def ops_dispatch_cmd(
     runs_path = Path(runs_file)
     if not runs_path.exists() or runs_path.stat().st_size == 0:
         typer.echo(f"❌ {runs_file} missing or empty", err=True)
-        raise typer.Exit(2)
+        raise typer.Exit(2) from e
 
     typer.echo(f"🚀 Dispatching {workers} parallel embedding workers")
     typer.echo(f"📁 Runs file: {runs_file}")
@@ -2691,13 +2392,11 @@ def ops_dispatch_cmd(
     # Read runs and dispatch
     try:
         with open(runs_path) as f:
-            lines = [
-                line.strip() for line in f if line.strip() and ":" in line
-            ]
+            lines = [line.strip() for line in f if line.strip() and ":" in line]
 
         if not lines:
             typer.echo("❌ No valid runs found in file", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
         typer.echo(f"📊 Found {len(lines)} runs to embed")
 
@@ -2736,18 +2435,17 @@ def ops_dispatch_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Dispatch error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @ops_app.command("track-pages")
 def ops_track_pages_cmd(
-    log_file: Optional[str] = typer.Option(
-        None, "--log-file", help="Specific log file to track (default: latest)"
-    ),
+    log_file: str | None = typer.Option(None, "--log-file", help="Specific log file to track (default: latest)"),
 ) -> None:
     """Track and display page processing from embedding logs."""
     import time
     from pathlib import Path
+
     from ..core.paths import logs
 
     logs_dir = logs()
@@ -2759,9 +2457,7 @@ def ops_track_pages_cmd(
 
     # Initialize log file
     with open(pages_log, "w") as f:
-        f.write(
-            f"=== Page Titles Tracking Started at {datetime.now().isoformat()} ===\n"
-        )
+        f.write(f"=== Page Titles Tracking Started at {datetime.now().isoformat()} ===\n")
         f.write("Format: [TIMESTAMP] [DOC_NUMBER] TITLE (STATUS)\n\n")
 
     try:
@@ -2807,25 +2503,19 @@ def _track_pages_from_log(log_file: Path, output_log: Path) -> None:
         if process.stdout:
             for line in process.stdout:
                 # Match patterns like: 📖 [123] Page Title (embedding) or ⏭️ [123] Page Title (skipped)
-                match = re.search(
-                    r"(📖|⏭️).*\[(\d+)\].*\((embedding|skipped)\)", line
-                )
+                match = re.search(r"(📖|⏭️).*\[(\d+)\].*\((embedding|skipped)\)", line)
                 if match:
                     icon, doc_num, status = match.groups()
 
                     # Extract title (everything between ] and ( )
-                    title_match = re.search(
-                        r"\] (.*) \((embedding|skipped)\)", line
-                    )
+                    title_match = re.search(r"\] (.*) \((embedding|skipped)\)", line)
                     title = title_match.group(1) if title_match else "Unknown"
 
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                     # Log to file
                     with open(output_log, "a") as f:
-                        f.write(
-                            f"[{timestamp}] [{doc_num}] {title} ({status}) - Run: {run_id}\n"
-                        )
+                        f.write(f"[{timestamp}] [{doc_num}] {title} ({status}) - Run: {run_id}\n")
 
                     # Display to console
                     if status == "embedding":
@@ -2852,6 +2542,7 @@ def ops_kill_cmd() -> None:
                 "-f",
                 "trailblazer.*(embed|ingest|enrich|chunk|classif|compose|playbook|ask|retrieve)",
             ],
+            check=False,
             capture_output=True,
         )
 
@@ -2862,23 +2553,15 @@ def ops_kill_cmd() -> None:
 
     except Exception as e:
         typer.echo(f"❌ Error killing processes: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @runs_app.command("reset")
 def runs_reset_cmd(
-    scope: str = typer.Option(
-        "processed", "--scope", help="Reset scope: processed|embeddings|all"
-    ),
-    run_ids: Optional[List[str]] = typer.Option(
-        None, "--run-id", help="Specific run IDs to reset"
-    ),
-    limit: Optional[int] = typer.Option(
-        None, "--limit", help="Limit number of runs to reset"
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show what would be reset without doing it"
-    ),
+    scope: str = typer.Option("processed", "--scope", help="Reset scope: processed|embeddings|all"),
+    run_ids: list[str] | None = typer.Option(None, "--run-id", help="Specific run IDs to reset"),
+    limit: int | None = typer.Option(None, "--limit", help="Limit number of runs to reset"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be reset without doing it"),
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation prompts"),
 ) -> None:
     """
@@ -2897,7 +2580,7 @@ def runs_reset_cmd(
             f"❌ Invalid scope: {scope}. Use: {', '.join(valid_scopes)}",
             err=True,
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Show what would be affected
     if not dry_run and not yes and scope in ("embeddings", "all"):
@@ -2927,17 +2610,13 @@ def runs_reset_cmd(
         )
 
         if dry_run:
-            typer.echo(
-                f"🔍 Would reset {result['reset_count']} runs (scope: {scope})"
-            )
+            typer.echo(f"🔍 Would reset {result['reset_count']} runs (scope: {scope})")
         else:
-            typer.echo(
-                f"✅ Reset {result['reset_count']} runs (scope: {scope})"
-            )
+            typer.echo(f"✅ Reset {result['reset_count']} runs (scope: {scope})")
 
     except Exception as e:
         typer.echo(f"❌ Reset failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @runs_app.command("status")
@@ -2980,7 +2659,7 @@ def runs_status_cmd() -> None:
 
     except Exception as e:
         typer.echo(f"❌ Failed to get status: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 # Add logs management subcommands
@@ -3007,9 +2686,7 @@ def logs_index():
             return
 
         # Show header
-        typer.echo(
-            f"{'Run ID':<20} {'Status':<8} {'Size (MB)':<10} {'Segments':<9} {'Last Modified'}"
-        )
+        typer.echo(f"{'Run ID':<20} {'Status':<8} {'Size (MB)':<10} {'Segments':<9} {'Last Modified'}")
         typer.echo("-" * 80)
 
         # Show runs (limit to first 50 for readability)
@@ -3019,22 +2696,16 @@ def logs_index():
             if run_info["compressed_segments"] > 0:
                 segments += f"+{run_info['compressed_segments']}gz"
 
-            last_mod = (
-                run_info["last_modified"][:19]
-                if run_info["last_modified"]
-                else "unknown"
-            )
+            last_mod = run_info["last_modified"][:19] if run_info["last_modified"] else "unknown"
 
-            typer.echo(
-                f"{run_info['run_id']:<20} {run_info['status']:<8} {size_mb:<10.2f} {segments:<9} {last_mod}"
-            )
+            typer.echo(f"{run_info['run_id']:<20} {run_info['status']:<8} {size_mb:<10.2f} {segments:<9} {last_mod}")
 
         if len(summary["runs"]) > 50:
             typer.echo(f"... and {len(summary['runs']) - 50} more runs")
 
     except Exception as e:
         typer.echo(f"❌ Failed to get log index: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @logs_app.command("prune")
@@ -3058,64 +2729,44 @@ def logs_prune(
 
         # Always start with compression
         typer.echo("🗜️  Checking for old segments to compress...")
-        compress_result = manager.compress_old_segments(
-            dry_run=True
-        )  # Always dry-run first
+        compress_result = manager.compress_old_segments(dry_run=True)  # Always dry-run first
 
         if compress_result["compressed"]:
-            typer.echo(
-                f"   Found {len(compress_result['compressed'])} segments to compress"
-            )
+            typer.echo(f"   Found {len(compress_result['compressed'])} segments to compress")
             for path in compress_result["compressed"][:10]:  # Show first 10
                 typer.echo(f"     {path}")
             if len(compress_result["compressed"]) > 10:
-                typer.echo(
-                    f"     ... and {len(compress_result['compressed']) - 10} more"
-                )
+                typer.echo(f"     ... and {len(compress_result['compressed']) - 10} more")
         else:
             typer.echo("   No segments need compression")
 
         # Check what would be pruned
         from ..core.config import SETTINGS
 
-        typer.echo(
-            f"\n🗑️  Checking for logs to prune (retention: {SETTINGS.LOGS_RETENTION_DAYS} days)..."
-        )
-        prune_result = manager.prune_old_logs(
-            dry_run=True
-        )  # Always dry-run first
+        typer.echo(f"\n🗑️  Checking for logs to prune (retention: {SETTINGS.LOGS_RETENTION_DAYS} days)...")
+        prune_result = manager.prune_old_logs(dry_run=True)  # Always dry-run first
 
         if prune_result["deleted_runs"]:
-            typer.echo(
-                f"   Found {len(prune_result['deleted_runs'])} run directories to delete"
-            )
+            typer.echo(f"   Found {len(prune_result['deleted_runs'])} run directories to delete")
             for run_id in prune_result["deleted_runs"][:10]:  # Show first 10
                 typer.echo(f"     {run_id}")
             if len(prune_result["deleted_runs"]) > 10:
-                typer.echo(
-                    f"     ... and {len(prune_result['deleted_runs']) - 10} more"
-                )
+                typer.echo(f"     ... and {len(prune_result['deleted_runs']) - 10} more")
         else:
             typer.echo("   No runs to prune")
 
         # Show errors if any
         if compress_result["errors"] or prune_result["errors"]:
             typer.echo("\n⚠️  Errors found:")
-            for error in (compress_result["errors"] + prune_result["errors"])[
-                :5
-            ]:
+            for error in (compress_result["errors"] + prune_result["errors"])[:5]:
                 typer.echo(f"     {error}")
 
         # Actually execute if requested and not dry-run
         if not dry_run:
             if not yes:
-                total_actions = len(compress_result["compressed"]) + len(
-                    prune_result["deleted_runs"]
-                )
+                total_actions = len(compress_result["compressed"]) + len(prune_result["deleted_runs"])
                 if total_actions > 0:
-                    typer.echo(
-                        f"\n❓ Proceed with {total_actions} actions? This cannot be undone."
-                    )
+                    typer.echo(f"\n❓ Proceed with {total_actions} actions? This cannot be undone.")
                     if not typer.confirm("Continue?"):
                         typer.echo("Cancelled")
                         return
@@ -3124,26 +2775,20 @@ def logs_prune(
             if compress_result["compressed"]:
                 typer.echo("\n🗜️  Compressing segments...")
                 actual_compress = manager.compress_old_segments(dry_run=False)
-                typer.echo(
-                    f"   Compressed {len(actual_compress['compressed'])} segments"
-                )
+                typer.echo(f"   Compressed {len(actual_compress['compressed'])} segments")
 
             # Execute pruning
             if prune_result["deleted_runs"]:
                 typer.echo("\n🗑️  Pruning old logs...")
                 actual_prune = manager.prune_old_logs(dry_run=False)
-                typer.echo(
-                    f"   Deleted {len(actual_prune['deleted_runs'])} run directories"
-                )
+                typer.echo(f"   Deleted {len(actual_prune['deleted_runs'])} run directories")
 
         elif dry_run:
-            typer.echo(
-                "\n💡 This was a dry run. Use --no-dry-run --yes to actually perform these actions."
-            )
+            typer.echo("\n💡 This was a dry run. Use --no-dry-run --yes to actually perform these actions.")
 
     except Exception as e:
         typer.echo(f"❌ Failed to prune logs: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @logs_app.command("doctor")
@@ -3171,11 +2816,11 @@ def logs_doctor():
 
         # Exit with error if unfixable issues
         if result["health"] != "healthy":
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     except Exception as e:
         typer.echo(f"❌ Log doctor failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @embed_app.command("run")
@@ -3208,18 +2853,16 @@ def embed_run_cmd(
 
     if provider != "openai":
         typer.echo("❌ Only OpenAI provider is supported", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if dimension != 1536:
         typer.echo("❌ Only 1536 dimensions supported", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     try:
         from ..pipeline.steps.embed.simple_loader import simple_embed_run
 
-        typer.echo(
-            f"🔄 Embedding run {run_id} with {provider}/{model} (dim={dimension})"
-        )
+        typer.echo(f"🔄 Embedding run {run_id} with {provider}/{model} (dim={dimension})")
 
         assurance = simple_embed_run(
             run_id=run_id,
@@ -3229,19 +2872,15 @@ def embed_run_cmd(
             batch_size=batch_size,
         )
 
-        typer.echo(
-            f"✅ Embedded {assurance['chunks_embedded']} chunks from {assurance['docs_embedded']} documents"
-        )
+        typer.echo(f"✅ Embedded {assurance['chunks_embedded']} chunks from {assurance['docs_embedded']} documents")
         typer.echo(f"⏱️  Duration: {assurance['duration_seconds']:.2f} seconds")
 
         if assurance["errors"]:
-            typer.echo(
-                f"⚠️  {len(assurance['errors'])} errors occurred", err=True
-            )
+            typer.echo(f"⚠️  {len(assurance['errors'])} errors occurred", err=True)
 
     except Exception as e:
         typer.echo(f"❌ Embed failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @embed_app.command("corpus")
@@ -3271,7 +2910,7 @@ def embed_corpus_cmd(
         "--large-run-threshold",
         help="Runs with more chunks than this get batched",
     ),
-    resume_from: Optional[str] = typer.Option(
+    resume_from: str | None = typer.Option(
         None,
         "--resume-from",
         help="Resume from specific run ID",
@@ -3286,7 +2925,7 @@ def embed_corpus_cmd(
         "--changed-only",
         help="Only embed documents with changed enrichment fingerprints",
     ),
-    max_runs: Optional[int] = typer.Option(
+    max_runs: int | None = typer.Option(
         None,
         "--max-runs",
         help="Maximum number of runs to process",
@@ -3309,20 +2948,19 @@ def embed_corpus_cmd(
     # Validate provider
     if provider != "openai":
         typer.echo("❌ Only OpenAI provider is supported", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if dimension != 1536:
         typer.echo("❌ Only 1536 dimensions supported", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
+
+    from datetime import datetime, timezone
 
     from ..core.paths import runs
     from ..pipeline.steps.embed.simple_loader import simple_embed_run
-    from datetime import datetime, timezone
 
     # Simple working corpus embedding using our proven approach
-    typer.echo(
-        f"🚀 Starting corpus embedding with {provider}/{model} (dim={dimension})"
-    )
+    typer.echo(f"🚀 Starting corpus embedding with {provider}/{model} (dim={dimension})")
 
     # Get all runs with chunks
     runs_dir = runs()
@@ -3341,7 +2979,7 @@ def embed_corpus_cmd(
             typer.echo(f"📍 Resuming from: {resume_from}")
         except ValueError:
             typer.echo(f"❌ Resume run '{resume_from}' not found", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     if max_runs:
         runs_with_chunks = runs_with_chunks[:max_runs]
@@ -3351,7 +2989,7 @@ def embed_corpus_cmd(
 
     if total_runs == 0:
         typer.echo("❌ No runs with chunks found", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Process each run using our simple working approach
     success_count = 0
@@ -3396,7 +3034,7 @@ def embed_corpus_cmd(
 
     if failure_count > 0:
         typer.echo(f"⚠️  {failure_count} runs failed", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @embed_app.command("reembed-if-changed")
@@ -3417,9 +3055,7 @@ def embed_reembed_if_changed_cmd(
         "--dimension",
         help="Embedding dimension (e.g., 512, 1024, 1536)",
     ),
-    batch_size: int = typer.Option(
-        128, "--batch", help="Batch size for embedding generation"
-    ),
+    batch_size: int = typer.Option(128, "--batch", help="Batch size for embedding generation"),
 ) -> None:
     """Re-embed a run only if content has changed since last embedding."""
     # Run database preflight check first
@@ -3443,9 +3079,7 @@ def embed_reembed_if_changed_cmd(
             return
 
         # Display summary
-        typer.echo(
-            f"✅ Re-embedded {metrics['chunks_embedded']} chunks", err=True
-        )
+        typer.echo(f"✅ Re-embedded {metrics['chunks_embedded']} chunks", err=True)
         typer.echo(
             f"Provider: {metrics['provider']} (dim={metrics['dimension']})",
             err=True,
@@ -3453,7 +3087,7 @@ def embed_reembed_if_changed_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Re-embedding failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 # OLD PREFLIGHT COMMAND REMOVED - USE plan-preflight INSTEAD
@@ -3483,11 +3117,12 @@ def embed_dispatch_cmd(
     ),
 ) -> None:
     """Dispatch embedding for all runs in a validated plan-preflight bundle."""
-    from pathlib import Path
-    from datetime import datetime, timezone
-    import json
     import concurrent.futures
+    import json
     import os
+    from datetime import datetime, timezone
+    from pathlib import Path
+
     from ..pipeline.steps.embed.loader import load_chunks_to_db
 
     # Load .env file if it exists
@@ -3503,19 +3138,17 @@ def embed_dispatch_cmd(
     # Validate plan directory
     plan_dir = Path(plan_preflight_dir)
     if not plan_dir.exists():
-        typer.echo(
-            f"❌ Plan directory not found: {plan_preflight_dir}", err=True
-        )
-        raise typer.Exit(1)
+        typer.echo(f"❌ Plan directory not found: {plan_preflight_dir}", err=True)
+        raise typer.Exit(1) from e
 
     ready_file = plan_dir / "ready.txt"
     if not ready_file.exists():
         typer.echo(f"❌ ready.txt not found in {plan_preflight_dir}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Read runs from ready.txt (these are already validated by plan-preflight)
     runs = []
-    with open(ready_file, "r") as f:
+    with open(ready_file) as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#"):
@@ -3539,9 +3172,7 @@ def embed_dispatch_cmd(
     import shutil
 
     shutil.copytree(plan_dir, dispatch_log_dir / "plan_preflight")
-    typer.echo(
-        f"📦 Archived plan to: {dispatch_log_dir}/plan_preflight", err=True
-    )
+    typer.echo(f"📦 Archived plan to: {dispatch_log_dir}/plan_preflight", err=True)
 
     # Create dispatch manifest
     manifest = {
@@ -3583,12 +3214,8 @@ def embed_dispatch_cmd(
     completed = 0
     failed = 0
 
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=workers
-    ) as executor:
-        future_to_run = {
-            executor.submit(process_run, run_id): run_id for run_id in runs
-        }
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_run = {executor.submit(process_run, run_id): run_id for run_id in runs}
 
         for future in concurrent.futures.as_completed(future_to_run):
             run_id = future_to_run[future]
@@ -3629,17 +3256,17 @@ def embed_plan_preflight_cmd(
         "--plan-file",
         help="Plan file with runs to validate (format: 'run_id:chunk_count' or 'var/runs/run_id' per line)",
     ),
-    provider: Optional[str] = typer.Option(
+    provider: str | None = typer.Option(
         None,
         "--provider",
         help="Embedding provider (openai, sentencetransformers)",
     ),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None,
         "--model",
         help="Model name (e.g., text-embedding-3-small)",
     ),
-    dimension: Optional[int] = typer.Option(
+    dimension: int | None = typer.Option(
         None,
         "--dimension",
         help="Embedding dimension (always 1536 per requirements)",
@@ -3718,12 +3345,12 @@ def embed_plan_preflight_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Plan preflight failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @embed_app.command("plan-diagnose")
 def embed_plan_diagnose_cmd(
-    plan_dir: Optional[str] = typer.Option(
+    plan_dir: str | None = typer.Option(
         None,
         "--plan-dir",
         help="Plan bundle directory to diagnose (defaults to latest)",
@@ -3740,25 +3367,26 @@ def embed_plan_diagnose_cmd(
     Analyzes each blocked run to determine the exact structural reason
     and generates fix lists and repair guidance.
     """
+    import glob
+    from pathlib import Path
+
     from ..pipeline.steps.embed.diagnose import (
         diagnose_blocked_runs,
         write_diagnostic_pack,
     )
-    from pathlib import Path
-    import glob
 
     # Find plan directory
     if plan_dir:
         if not Path(plan_dir).exists():
             typer.echo(f"❌ Plan directory not found: {plan_dir}", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         target_plan_dir = plan_dir
     else:
         # Auto-find latest plan bundle
         plan_dirs = glob.glob("var/plan_preflight*/*/")
         if not plan_dirs:
             typer.echo("❌ No plan preflight directories found", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         target_plan_dir = sorted(plan_dirs)[-1].rstrip("/")
 
     typer.echo(f"🔍 Diagnosing plan bundle: {target_plan_dir}", err=True)
@@ -3775,9 +3403,7 @@ def embed_plan_diagnose_cmd(
         typer.echo(f"Total blocked runs: {result['total_blocked']}", err=True)
         typer.echo("Reason breakdown:", err=True)
 
-        for reason, count in sorted(
-            result["reason_counts"].items(), key=lambda x: x[1], reverse=True
-        ):
+        for reason, count in sorted(result["reason_counts"].items(), key=lambda x: x[1], reverse=True):
             typer.echo(f"  {reason}: {count} runs", err=True)
 
         typer.echo(f"\n📁 Diagnostic pack: {diagnostic_dir}", err=True)
@@ -3788,7 +3414,7 @@ def embed_plan_diagnose_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Diagnosis failed: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @embed_app.command("status")
@@ -3797,10 +3423,12 @@ def embed_status_cmd() -> None:
     # Run database preflight check first
     _run_db_preflight_check()
 
-    from ..db.engine import get_engine
-    from sqlalchemy import text
-    from ..core.paths import logs
     import time
+
+    from sqlalchemy import text
+
+    from ..core.paths import logs
+    from ..db.engine import get_engine
 
     typer.echo("📊 Embedding Status Report")
     typer.echo("=" * 40)
@@ -3815,9 +3443,7 @@ def embed_status_cmd() -> None:
             result = conn.execute(text("SELECT COUNT(*) FROM chunks"))
             chunk_count = result.fetchone()[0]
 
-            result = conn.execute(
-                text("SELECT COUNT(*) FROM chunk_embeddings")
-            )
+            result = conn.execute(text("SELECT COUNT(*) FROM chunk_embeddings"))
             embedding_count = result.fetchone()[0]
 
             # Get provider and dimension info
@@ -3865,12 +3491,10 @@ def embed_status_cmd() -> None:
                 typer.echo(f"\n📋 Latest log: {latest_log.name}")
 
                 # Show last few lines if it's a recent log
-                if latest_log.stat().st_mtime > (
-                    time.time() - 3600
-                ):  # Last hour
+                if latest_log.stat().st_mtime > (time.time() - 3600):  # Last hour
                     typer.echo("📝 Recent log entries:")
                     try:
-                        with open(latest_log, "r") as f:
+                        with open(latest_log) as f:
                             lines = f.readlines()
                             for line in lines[-5:]:  # Last 5 lines
                                 typer.echo(f"  {line.rstrip()}")
@@ -3883,21 +3507,19 @@ def embed_status_cmd() -> None:
 
     except Exception as e:
         typer.echo(f"❌ Error getting status: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @embed_app.command("clean-preflight")
 def embed_clean_preflight_cmd(
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show what would be cleaned without doing it"
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be cleaned without doing it"),
 ) -> None:
     """Purge bad preflight artifacts (safely archive, never delete)."""
+    import glob
+    import json
     import shutil
     from datetime import datetime, timezone
     from pathlib import Path
-    import json
-    import glob
 
     typer.echo("🧹 Cleaning bad preflight artifacts", err=True)
 
@@ -3925,7 +3547,7 @@ def embed_clean_preflight_cmd(
             reasons.append("missing_plan_preflight_json")
         else:
             try:
-                with open(plan_json_path, "r") as f:
+                with open(plan_json_path) as f:
                     plan_data = json.load(f)
 
                 # Check for QUALITY_GATE in any run reason
@@ -3945,27 +3567,15 @@ def embed_clean_preflight_cmd(
         ready_file = plan_dir / "ready.txt"
         blocked_file = plan_dir / "blocked.txt"
 
-        if (
-            ready_file.exists()
-            and blocked_file.exists()
-            and plan_json_path.exists()
-        ):
+        if ready_file.exists() and blocked_file.exists() and plan_json_path.exists():
             try:
-                with open(ready_file, "r") as f:
-                    ready_count = sum(
-                        1
-                        for line in f
-                        if line.strip() and not line.strip().startswith("#")
-                    )
-                with open(blocked_file, "r") as f:
-                    blocked_count = sum(
-                        1
-                        for line in f
-                        if line.strip() and not line.strip().startswith("#")
-                    )
+                with open(ready_file) as f:
+                    ready_count = sum(1 for line in f if line.strip() and not line.strip().startswith("#"))
+                with open(blocked_file) as f:
+                    blocked_count = sum(1 for line in f if line.strip() and not line.strip().startswith("#"))
 
                 if plan_json_path.exists():
-                    with open(plan_json_path, "r") as f:
+                    with open(plan_json_path) as f:
                         plan_data = json.load(f)
 
                     json_ready = plan_data.get("ready_runs", 0)
@@ -3975,14 +3585,9 @@ def embed_clean_preflight_cmd(
                     total_json = json_ready + json_blocked
                     total_files = ready_count + blocked_count
 
-                    if (
-                        total_json > 0
-                        and abs(total_files - total_json) / total_json > 0.01
-                    ):
+                    if total_json > 0 and abs(total_files - total_json) / total_json > 0.01:
                         is_bad = True
-                        reasons.append(
-                            f"count_mismatch: json={total_json} files={total_files}"
-                        )
+                        reasons.append(f"count_mismatch: json={total_json} files={total_files}")
 
             except Exception as e:
                 is_bad = True
@@ -4029,9 +3634,7 @@ def embed_clean_preflight_cmd(
         # Archive bad bundles
         for plan_dir, reasons in bad_bundles:
             archive_dest = archive_base / plan_dir.name
-            typer.echo(
-                f"📦 Archiving {plan_dir.name} -> {archive_dest}", err=True
-            )
+            typer.echo(f"📦 Archiving {plan_dir.name} -> {archive_dest}", err=True)
             shutil.copytree(plan_dir, archive_dest)
             shutil.rmtree(plan_dir)
 
@@ -4042,9 +3645,7 @@ def embed_clean_preflight_cmd(
             for stray_file in stray_files:
                 stray_path = Path(stray_file)
                 dest_path = stray_dir / stray_path.name
-                typer.echo(
-                    f"📦 Archiving {stray_file} -> {dest_path}", err=True
-                )
+                typer.echo(f"📦 Archiving {stray_file} -> {dest_path}", err=True)
                 shutil.move(stray_file, dest_path)
 
         # Write cleanup report
@@ -4053,10 +3654,7 @@ def embed_clean_preflight_cmd(
             "bad_bundles_archived": len(bad_bundles),
             "stray_files_archived": len(stray_files),
             "archive_location": str(archive_base),
-            "bad_bundles": [
-                {"bundle": str(plan_dir), "reasons": reasons}
-                for plan_dir, reasons in bad_bundles
-            ],
+            "bad_bundles": [{"bundle": str(plan_dir), "reasons": reasons} for plan_dir, reasons in bad_bundles],
             "stray_files": stray_files,
         }
 
@@ -4073,21 +3671,17 @@ def embed_clean_preflight_cmd(
 
 @admin_app.command("script-audit")
 def admin_script_audit_cmd(
-    fix: bool = typer.Option(
-        False, "--fix", help="Apply fixes (remove/upgrade scripts)"
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show what would be done without doing it"
-    ),
+    fix: bool = typer.Option(False, "--fix", help="Apply fixes (remove/upgrade scripts)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be done without doing it"),
 ) -> None:
     """Audit and remove/upgrade legacy scripts to Python-only."""
     import glob
+    import json
     import re
+    import shutil
     from datetime import datetime, timezone
     from pathlib import Path
-    from typing import cast, List, Dict, Any
-    import json
-    import shutil
+    from typing import Any, cast
 
     typer.echo("🔍 Auditing scripts for legacy patterns", err=True)
 
@@ -4132,11 +3726,7 @@ def admin_script_audit_cmd(
 
     # Scan scripts directory
     script_files = glob.glob("scripts/**", recursive=True)
-    script_files = [
-        f
-        for f in script_files
-        if Path(f).is_file() and f.endswith((".sh", ".py", ".bash"))
-    ]
+    script_files = [f for f in script_files if Path(f).is_file() and f.endswith((".sh", ".py", ".bash"))]
 
     if not script_files:
         typer.echo("ℹ️  No script files found in scripts/", err=True)
@@ -4146,9 +3736,9 @@ def admin_script_audit_cmd(
     audit_dir = Path(f"var/script_audit/{timestamp}")
 
     audit_results = []
-    remove_scripts: List[Path] = []
-    upgrade_scripts: List[Path] = []
-    keep_scripts: List[Path] = []
+    remove_scripts: list[Path] = []
+    upgrade_scripts: list[Path] = []
+    keep_scripts: list[Path] = []
 
     typer.echo(f"📁 Scanning {len(script_files)} script files...", err=True)
 
@@ -4158,9 +3748,7 @@ def admin_script_audit_cmd(
         action = "keep"
 
         try:
-            with open(
-                script_file, "r", encoding="utf-8", errors="ignore"
-            ) as f:
+            with open(script_file, encoding="utf-8", errors="ignore") as f:
                 content = f.read()
 
             # Check each forbidden pattern
@@ -4177,31 +3765,19 @@ def admin_script_audit_cmd(
                     # Determine overall action (remove takes precedence over upgrade)
                     if pattern_info["action"] == "remove":
                         action = "remove"
-                    elif (
-                        pattern_info["action"] == "upgrade"
-                        and action != "remove"
-                    ):
+                    elif pattern_info["action"] == "upgrade" and action != "remove":
                         action = "upgrade"
 
             # Special case: monitor_embedding.sh should be kept as canonical
-            if (
-                script_file.name == "monitor_embedding.sh"
-                and script_file.parent.name == "scripts"
-            ):
+            if script_file.name == "monitor_embedding.sh" and script_file.parent.name == "scripts":
                 action = "keep"
-                patterns_found = [
-                    p
-                    for p in patterns_found
-                    if p["name"] != "bespoke_monitors"
-                ]
+                patterns_found = [p for p in patterns_found if p["name"] != "bespoke_monitors"]
 
             audit_result = {
                 "path": str(script_file),
                 "patterns": patterns_found,
                 "action": action,
-                "size_bytes": (
-                    script_file.stat().st_size if script_file.exists() else 0
-                ),
+                "size_bytes": (script_file.stat().st_size if script_file.exists() else 0),
             }
 
             audit_results.append(audit_result)
@@ -4236,13 +3812,9 @@ def admin_script_audit_cmd(
 
     if remove_scripts:
         typer.echo("\n🚨 Scripts to remove:", err=True)
-        for script in cast(List[Path], remove_scripts[:10]):  # Show first 10
-            script_result = [
-                p
-                for p in audit_results
-                if Path(cast(str, p["path"])) == script
-            ][0]
-            patterns = cast(List[Dict[str, Any]], script_result["patterns"])
+        for script in cast(list[Path], remove_scripts[:10]):  # Show first 10
+            script_result = next(p for p in audit_results if Path(cast(str, p["path"])) == script)
+            patterns = cast(list[dict[str, Any]], script_result["patterns"])
             typer.echo(
                 f"   - {script.name}: {len(patterns)} issues",
                 err=True,
@@ -4250,7 +3822,7 @@ def admin_script_audit_cmd(
 
     if upgrade_scripts:
         typer.echo("\n🔧 Scripts to upgrade:", err=True)
-        for script in cast(List[Path], upgrade_scripts[:10]):  # Show first 10
+        for script in cast(list[Path], upgrade_scripts[:10]):  # Show first 10
             typer.echo(f"   - {script.name}", err=True)
 
     if dry_run:
@@ -4291,32 +3863,24 @@ def admin_script_audit_cmd(
 
         if remove_scripts:
             f.write(f"## Scripts to Remove ({len(remove_scripts)})\n\n")
-            for script in cast(List[Path], remove_scripts):
-                result = next(
-                    r
-                    for r in audit_results
-                    if Path(cast(str, r["path"])) == script
-                )
+            for script in cast(list[Path], remove_scripts):
+                result = next(r for r in audit_results if Path(cast(str, r["path"])) == script)
                 f.write(f"### {script.name}\n")
                 f.write(f"**Path:** `{script}`\n")
                 f.write("**Issues:**\n")
-                patterns = cast(List[Dict[str, Any]], result["patterns"])
+                patterns = cast(list[dict[str, Any]], result["patterns"])
                 for pattern in patterns:
                     f.write(f"- {pattern['description']}\n")
                 f.write("\n")
 
         if upgrade_scripts:
             f.write(f"## Scripts to Upgrade ({len(upgrade_scripts)})\n\n")
-            for script in cast(List[Path], upgrade_scripts):
-                result = next(
-                    r
-                    for r in audit_results
-                    if Path(cast(str, r["path"])) == script
-                )
+            for script in cast(list[Path], upgrade_scripts):
+                result = next(r for r in audit_results if Path(cast(str, r["path"])) == script)
                 f.write(f"### {script.name}\n")
                 f.write(f"**Path:** `{script}`\n")
                 f.write("**Issues:**\n")
-                patterns = cast(List[Dict[str, Any]], result["patterns"])
+                patterns = cast(list[dict[str, Any]], result["patterns"])
                 for pattern in patterns:
                     f.write(f"- {pattern['description']}\n")
                 f.write("\n")
@@ -4362,7 +3926,7 @@ exit 1
 
             # Add a comment at the top indicating it needs upgrade
             try:
-                with open(script, "r") as f:
+                with open(script) as f:
                     content = f.read()
 
                 upgrade_comment = f"""# WARNING: This script contains legacy patterns and should be upgraded
@@ -4375,9 +3939,7 @@ exit 1
                         f.write(upgrade_comment + content)
                     changes_made += 1
             except Exception as e:
-                typer.echo(
-                    f"⚠️  Failed to mark {script} for upgrade: {e}", err=True
-                )
+                typer.echo(f"⚠️  Failed to mark {script} for upgrade: {e}", err=True)
 
     # Update report with changes made
     report_data["changes_applied"] = {

@@ -1,6 +1,13 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 import json
 from unittest.mock import patch
+
 import pytest
+
 from trailblazer.pipeline.steps.normalize.html_to_md import (
     normalize_from_ingest,
 )
@@ -27,9 +34,7 @@ def test_normalize_storage(tmp_path):
         "updated_at": "2025-08-02T00:00:00Z",
         "body_repr": "storage",
         "body_storage": "<h1>Title</h1><p>A <a href='https://x.y/z'>link</a></p>",
-        "attachments": [
-            {"filename": "a.png", "download_url": "https://x/download/a.png"}
-        ],
+        "attachments": [{"filename": "a.png", "download_url": "https://x/download/a.png"}],
     }
     nd = ingest / "confluence.ndjson"
     nd.write_text(json.dumps(rec) + "\n", encoding="utf-8")

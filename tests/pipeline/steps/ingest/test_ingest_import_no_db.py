@@ -1,9 +1,15 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test that importing ingest CLI doesn't trigger DB engine initialization."""
 
 import logging
-import pytest
 from io import StringIO
 from unittest.mock import patch
+
+import pytest
 
 # Mark all tests as unit tests (no database needed)
 pytestmark = pytest.mark.unit
@@ -24,9 +30,7 @@ def test_ingest_cli_help_no_db_logs():
 
     try:
         # Mock DB engine creation to spy on calls
-        with patch(
-            "trailblazer.db.engine.create_engine"
-        ) as mock_create_engine:
+        with patch("trailblazer.db.engine.create_engine") as mock_create_engine:
             # Import ingest CLI - this should not trigger DB creation
             from trailblazer.cli.main import ingest_app  # noqa: F401
 
@@ -35,16 +39,10 @@ def test_ingest_cli_help_no_db_logs():
 
             # Check logs for any DB-related messages
             log_content = log_capture.getvalue()
-            assert "engine" not in log_content.lower(), (
-                f"Found DB engine logs: {log_content}"
-            )
-            assert "database" not in log_content.lower(), (
-                f"Found database logs: {log_content}"
-            )
+            assert "engine" not in log_content.lower(), f"Found DB engine logs: {log_content}"
+            assert "database" not in log_content.lower(), f"Found database logs: {log_content}"
             # No database operations should occur during ingest
-            assert "postgresql" not in log_content.lower(), (
-                f"Found database logs: {log_content}"
-            )
+            assert "postgresql" not in log_content.lower(), f"Found database logs: {log_content}"
 
     finally:
         # Restore original logging state

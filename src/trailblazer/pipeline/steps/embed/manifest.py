@@ -14,7 +14,7 @@ import json
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 try:
     import tiktoken  # type: ignore
@@ -29,6 +29,7 @@ def get_git_commit() -> str:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
+            check=False,
             capture_output=True,
             text=True,
             timeout=5,
@@ -40,7 +41,7 @@ def get_git_commit() -> str:
     return "unknown"
 
 
-def get_tokenizer_info() -> Dict[str, str]:
+def get_tokenizer_info() -> dict[str, str]:
     """Get tokenizer name and version."""
     try:
         if tiktoken is not None:
@@ -51,7 +52,7 @@ def get_tokenizer_info() -> Dict[str, str]:
     return {"name": "unknown", "version": "unknown"}
 
 
-def get_component_versions() -> Dict[str, str]:
+def get_component_versions() -> dict[str, str]:
     """Get enricher and chunker versions."""
     # These versions should be bumped when the algorithms change
     return {
@@ -60,7 +61,7 @@ def get_component_versions() -> Dict[str, str]:
     }
 
 
-def compute_chunk_set_hash(chunks: List[Dict[str, Any]]) -> str:
+def compute_chunk_set_hash(chunks: list[dict[str, Any]]) -> str:
     """
     Compute SHA256 hash over ordered chunk data.
 
@@ -84,15 +85,13 @@ def compute_chunk_set_hash(chunks: List[Dict[str, Any]]) -> str:
         chunk_tuples.append(chunk_tuple)
 
     # Create canonical JSON representation
-    canonical_json = json.dumps(
-        chunk_tuples, sort_keys=True, ensure_ascii=False
-    )
+    canonical_json = json.dumps(chunk_tuples, sort_keys=True, ensure_ascii=False)
 
     # Compute SHA256
     return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
-def get_doc_fingerprints_from_enrich(run_id: str) -> List[str]:
+def get_doc_fingerprints_from_enrich(run_id: str) -> list[str]:
     """
     Get document fingerprints from enrich phase for docs actually embedded.
 
@@ -111,15 +110,13 @@ def get_doc_fingerprints_from_enrich(run_id: str) -> List[str]:
 
     doc_fingerprints = []
     try:
-        with open(fingerprints_file, "r", encoding="utf-8") as f:
+        with open(fingerprints_file, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     fingerprint_rec = json.loads(line.strip())
                     # Extract the 'doc' field from the fingerprint record
                     if "fingerprint_sha256" in fingerprint_rec:
-                        doc_fingerprints.append(
-                            fingerprint_rec["fingerprint_sha256"]
-                        )
+                        doc_fingerprints.append(fingerprint_rec["fingerprint_sha256"])
     except Exception as e:
         log.error(
             "embed.manifest.fingerprints_read_error",
@@ -131,7 +128,7 @@ def get_doc_fingerprints_from_enrich(run_id: str) -> List[str]:
     return doc_fingerprints
 
 
-def get_chunk_config_from_run(run_id: str) -> Dict[str, Any]:
+def get_chunk_config_from_run(run_id: str) -> dict[str, Any]:
     """
     Get chunk configuration from enriched documents.
 
@@ -150,7 +147,7 @@ def get_chunk_config_from_run(run_id: str) -> Dict[str, Any]:
 
     try:
         # Read first document to get chunk hints
-        with open(enriched_file, "r", encoding="utf-8") as f:
+        with open(enriched_file, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     doc = json.loads(line.strip())
@@ -158,20 +155,16 @@ def get_chunk_config_from_run(run_id: str) -> Dict[str, Any]:
                     return {
                         "maxTokens": chunk_hints.get("maxTokens", 800),
                         "minTokens": chunk_hints.get("minTokens", 120),
-                        "preferHeadings": chunk_hints.get(
-                            "preferHeadings", True
-                        ),
+                        "preferHeadings": chunk_hints.get("preferHeadings", True),
                     }
     except Exception as e:
-        log.error(
-            "embed.manifest.chunk_config_error", run_id=run_id, error=str(e)
-        )
+        log.error("embed.manifest.chunk_config_error", run_id=run_id, error=str(e))
 
     # Default configuration
     return {"maxTokens": 800, "minTokens": 120, "preferHeadings": True}
 
 
-def load_chunks_for_manifest(run_id: str) -> List[Dict[str, Any]]:
+def load_chunks_for_manifest(run_id: str) -> list[dict[str, Any]]:
     """
     Load chunk data for manifest generation.
 
@@ -190,7 +183,7 @@ def load_chunks_for_manifest(run_id: str) -> List[Dict[str, Any]]:
 
     chunks = []
     try:
-        with open(chunks_file, "r", encoding="utf-8") as f:
+        with open(chunks_file, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     chunk = json.loads(line.strip())
@@ -202,9 +195,7 @@ def load_chunks_for_manifest(run_id: str) -> List[Dict[str, Any]]:
                         }
                     )
     except Exception as e:
-        log.error(
-            "embed.manifest.chunks_read_error", run_id=run_id, error=str(e)
-        )
+        log.error("embed.manifest.chunks_read_error", run_id=run_id, error=str(e))
         return []
 
     return chunks
@@ -216,7 +207,7 @@ def create_embed_manifest(
     model: str,
     dimension: int,
     chunks_embedded: int = 0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Create embed manifest for a successful embedding run.
 
@@ -281,9 +272,7 @@ def write_embed_manifest(
     """
     from ....core.paths import runs
 
-    manifest = create_embed_manifest(
-        run_id, provider, model, dimension, chunks_embedded
-    )
+    manifest = create_embed_manifest(run_id, provider, model, dimension, chunks_embedded)
 
     # Ensure embed directory exists
     embed_dir = runs() / run_id / "embed"
@@ -303,7 +292,7 @@ def write_embed_manifest(
     return manifest_file
 
 
-def find_last_manifest(run_id: str) -> Optional[Path]:
+def find_last_manifest(run_id: str) -> Path | None:
     """
     Find the most recent manifest for a run.
 
@@ -322,7 +311,7 @@ def find_last_manifest(run_id: str) -> Optional[Path]:
     return None
 
 
-def load_manifest(manifest_path: Path) -> Optional[Dict[str, Any]]:
+def load_manifest(manifest_path: Path) -> dict[str, Any] | None:
     """
     Load manifest from file.
 
@@ -333,18 +322,14 @@ def load_manifest(manifest_path: Path) -> Optional[Dict[str, Any]]:
         Manifest dictionary, or None if loading failed
     """
     try:
-        with open(manifest_path, "r", encoding="utf-8") as f:
+        with open(manifest_path, encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        log.error(
-            "embed.manifest.load_error", path=str(manifest_path), error=str(e)
-        )
+        log.error("embed.manifest.load_error", path=str(manifest_path), error=str(e))
         return None
 
 
-def compute_current_state(
-    run_id: str, provider: str, model: str, dimension: int
-) -> Dict[str, Any]:
+def compute_current_state(run_id: str, provider: str, model: str, dimension: int) -> dict[str, Any]:
     """
     Compute current embedding state for comparison.
 
@@ -372,9 +357,7 @@ CHUNKER_CHANGE = "CHUNKER_CHANGE"
 CHUNK_CONFIG_CHANGE = "CHUNK_CONFIG_CHANGE"
 
 
-def compare_manifests(
-    current: Dict[str, Any], previous: Dict[str, Any]
-) -> Tuple[bool, List[ChangeReason]]:
+def compare_manifests(current: dict[str, Any], previous: dict[str, Any]) -> tuple[bool, list[ChangeReason]]:
     """
     Compare current state with previous manifest to detect changes.
 
@@ -402,9 +385,9 @@ def compare_manifests(
     # Check tokenizer changes
     current_tokenizer = current.get("tokenizer", {})
     previous_tokenizer = previous.get("tokenizer", {})
-    if current_tokenizer.get("name") != previous_tokenizer.get(
-        "name"
-    ) or current_tokenizer.get("version") != previous_tokenizer.get("version"):
+    if current_tokenizer.get("name") != previous_tokenizer.get("name") or current_tokenizer.get(
+        "version"
+    ) != previous_tokenizer.get("version"):
         reasons.append(TOKENIZER_CHANGE)
 
     # Check chunker version changes
@@ -427,11 +410,11 @@ def compare_manifests(
 
 def create_diff_report(
     run_id: str,
-    current: Dict[str, Any],
-    previous: Dict[str, Any],
+    current: dict[str, Any],
+    previous: dict[str, Any],
     has_changes: bool,
-    reasons: List[ChangeReason],
-) -> Dict[str, Any]:
+    reasons: list[ChangeReason],
+) -> dict[str, Any]:
     """
     Create a diff report comparing current state with previous manifest.
 
@@ -474,7 +457,7 @@ def create_diff_report(
     }
 
 
-def format_diff_as_markdown(diff_report: Dict[str, Any]) -> str:
+def format_diff_as_markdown(diff_report: dict[str, Any]) -> str:
     """
     Format diff report as Markdown.
 
@@ -499,9 +482,7 @@ def format_diff_as_markdown(diff_report: Dict[str, Any]) -> str:
     lines.append(f"- **Provider:** {current['provider']}")
     lines.append(f"- **Model:** {current['model']}")
     lines.append(f"- **Dimension:** {current['dimension']}")
-    lines.append(
-        f"- **Tokenizer:** {current['tokenizer']['name']} v{current['tokenizer']['version']}"
-    )
+    lines.append(f"- **Tokenizer:** {current['tokenizer']['name']} v{current['tokenizer']['version']}")
     lines.append(f"- **Chunker Version:** {current['chunkerVersion']}")
     lines.append(f"- **Chunk Config:** {json.dumps(current['chunkConfig'])}")
     lines.append(f"- **Chunk Set Hash:** {current['chunkSetHash'][:12]}...")
@@ -513,9 +494,7 @@ def format_diff_as_markdown(diff_report: Dict[str, Any]) -> str:
     lines.append(f"- **Provider:** {previous['provider']}")
     lines.append(f"- **Model:** {previous['model']}")
     lines.append(f"- **Dimension:** {previous['dimension']}")
-    lines.append(
-        f"- **Tokenizer:** {previous['tokenizer']['name']} v{previous['tokenizer']['version']}"
-    )
+    lines.append(f"- **Tokenizer:** {previous['tokenizer']['name']} v{previous['tokenizer']['version']}")
     lines.append(f"- **Chunker Version:** {previous['chunkerVersion']}")
     lines.append(f"- **Chunk Config:** {json.dumps(previous['chunkConfig'])}")
     lines.append(f"- **Chunk Set Hash:** {previous['chunkSetHash'][:12]}...")

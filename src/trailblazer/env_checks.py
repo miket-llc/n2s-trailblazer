@@ -3,7 +3,6 @@
 import os
 import platform
 import sys
-from typing import Optional
 
 
 def assert_virtualenv_on_macos() -> None:
@@ -59,13 +58,10 @@ def _is_in_virtualenv() -> bool:
         return True
 
     # Method 5: Check if sys.prefix differs from sys.exec_prefix (older Python)
-    if hasattr(sys, "real_prefix"):
-        return True
-
-    return False
+    return bool(hasattr(sys, "real_prefix"))
 
 
-def get_venv_info() -> Optional[str]:
+def get_venv_info() -> str | None:
     """Get information about the current virtual environment."""
     if not _is_in_virtualenv():
         return None

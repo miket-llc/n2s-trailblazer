@@ -24,7 +24,7 @@ dependencies = [
   "pgvector>=0.2.5",
   "tabulate>=0.9.0",
   "lxml>=4.9.0",
-  "tiktoken>=0.5.0"
+  "tiktoken>=0.5.0",
 ]
 
 [project.optional-dependencies]
@@ -35,41 +35,133 @@ dev = [
   "pytest>=8.1.0",
   "pytest-asyncio>=0.23.0",
   "testcontainers>=3.7.0",
-  "pre-commit>=3.7.0"
+  "pre-commit>=3.7.0",
 ]
 
 [project.scripts]
 trailblazer = "trailblazer.cli.main:app"
 
 [tool.black]
-line-length = 79
+line-length = 120
 target-version = ["py310"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
 
 [tool.ruff]
-line-length = 79
+# Enable pycodestyle (`E`), Pyflakes (`F`), and isort (`I`) codes by default.
+select = [
+  "E",
+  "F",
+  "I",
+  "B",
+  "UP",
+  "C90",
+]
+ignore = [
+  "E501",    # Line too long - let Black handle this
+  "B008",    # Do not perform function calls in argument defaults
+  "B006",    # Do not use mutable data structures for argument defaults
+  "C901",    # Function is too complex
+  "PLR0913", # Too many arguments to function call
+  "PLR0912", # Too many branches in function
+  "PLR0915", # Too many statements in function
+]
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Exclude a variety of commonly ignored directories.
+exclude = [
+  ".bzr",
+  ".direnv",
+  ".eggs",
+  ".git",
+  ".git-rewrite",
+  ".hg",
+  ".mypy_cache",
+  ".nox",
+  ".pants.d",
+  ".pytype",
+  ".ruff_cache",
+  ".svn",
+  ".tox",
+  ".venv",
+  "__pypackages__",
+  "_build",
+  "buck-out",
+  "build",
+  "dist",
+  "node_modules",
+  "venv",
+]
+
+# Same as Black.
+line-length = 120
+indent-width = 4
+
+# Assume Python 3.10
 target-version = "py310"
-select = ["E","F","I","B","UP","C90"]
-ignore = []
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
 
 [tool.mypy]
 python_version = "3.10"
-warn_unused_ignores = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
 warn_redundant_casts = true
-strict_optional = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+# Ignore missing imports for packages that don't have stubs
+ignore_missing_imports = true
+
+# Per-module options
+[[tool.mypy.overrides]]
+module = ["trailblazer.*", "tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
 
 [tool.pytest.ini_options]
 markers = [
-    "unit: marks tests as unit tests (can use SQLite/mocks)",
-    "integration: marks tests as integration tests (need real database)",
-    "pgvector: marks tests as requiring pgvector extension",
-    "no_db: marks tests as not needing any database",
+  "unit: marks tests as unit tests (can use SQLite/mocks)",
+  "integration: marks tests as integration tests (need real database)",
+  "pgvector: marks tests as requiring pgvector extension",
+  "no_db: marks tests as not needing any database",
 ]
-addopts = [
-    "--strict-markers",
-    "--strict-config",
-    "-v",
-    "--tb=short"
-]
+addopts = ["--strict-markers", "--strict-config", "-v", "--tb=short"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]

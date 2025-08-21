@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 from urllib.parse import urlparse
 
 from sqlalchemy import (
@@ -21,8 +21,7 @@ try:
 except ImportError:
     # Fallback for SQLite testing - use Text type instead of Vector
     from sqlalchemy import Text as VECTOR  # type: ignore[misc]
-from sqlalchemy.orm import DeclarativeBase, Session
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
 from sqlalchemy.sql import func
 
 from ..core.config import SETTINGS
@@ -107,7 +106,7 @@ def create_tables():
 # Removed is_postgres() since we only support PostgreSQL
 
 
-def check_db_health() -> Dict[str, Any]:
+def check_db_health() -> dict[str, Any]:
     """Check database connectivity and capabilities.
 
     Returns:
@@ -132,11 +131,7 @@ def check_db_health() -> Dict[str, Any]:
         pgvector_available = False
         if dialect == "postgresql":
             try:
-                result = conn.execute(
-                    text(
-                        "SELECT extname FROM pg_extension WHERE extname='vector'"
-                    )
-                )
+                result = conn.execute(text("SELECT extname FROM pg_extension WHERE extname='vector'"))
                 pgvector_available = result.fetchone() is not None
             except Exception:
                 # Extension query failed, pgvector not available
@@ -196,23 +191,17 @@ class Document(Base):
     __tablename__ = "documents"
 
     doc_id = Column(String, primary_key=True)
-    source_system = Column(
-        String, nullable=False
-    )  # e.g., "confluence", "dita"
+    source_system = Column(String, nullable=False)  # e.g., "confluence", "dita"
     title = Column(String)
     space_key = Column(String)
     url = Column(String)
     created_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True))
-    content_sha256 = Column(
-        String, nullable=False, unique=True
-    )  # For idempotency
+    content_sha256 = Column(String, nullable=False, unique=True)  # For idempotency
     meta = Column(JSON)  # Additional metadata as JSON
 
     # Relationships
-    chunks = relationship(
-        "Chunk", back_populates="document", cascade="all, delete-orphan"
-    )
+    chunks = relationship("Chunk", back_populates="document", cascade="all, delete-orphan")
 
     # Index for efficient queries
     __table_args__ = (
@@ -231,19 +220,13 @@ class Chunk(Base):
     ord = Column(Integer, nullable=False)  # Order within document
     text_md = Column(Text, nullable=False)  # Markdown text content
     char_count = Column(Integer, nullable=False)
-    token_count = Column(
-        Integer, nullable=False
-    )  # Simple proxy: len(text.split())
-    chunk_type = Column(
-        String, nullable=False, default="text"
-    )  # text, code, table, macro, digest
+    token_count = Column(Integer, nullable=False)  # Simple proxy: len(text.split())
+    chunk_type = Column(String, nullable=False, default="text")  # text, code, table, macro, digest
     meta = Column(JSON)  # Additional chunk metadata as JSON
 
     # Relationships
     document = relationship("Document", back_populates="chunks")
-    embeddings = relationship(
-        "ChunkEmbedding", back_populates="chunk", cascade="all, delete-orphan"
-    )
+    embeddings = relationship("ChunkEmbedding", back_populates="chunk", cascade="all, delete-orphan")
 
     # Composite index for efficient document-based queries
     __table_args__ = (
@@ -269,14 +252,10 @@ class ChunkEmbedding(Base):
     chunk = relationship("Chunk", back_populates="embeddings")
 
     # Unique constraint
-    __table_args__ = (
-        Index(
-            "idx_chunk_embeddings_unique", "chunk_id", "provider", unique=True
-        ),
-    )
+    __table_args__ = (Index("idx_chunk_embeddings_unique", "chunk_id", "provider", unique=True),)
 
 
-def upsert_document(session, doc_data: Dict[str, Any]) -> Document:
+def upsert_document(session, doc_data: dict[str, Any]) -> Document:
     """Upsert a document record."""
     doc = session.get(Document, doc_data["doc_id"])
     if doc is None:
@@ -289,7 +268,7 @@ def upsert_document(session, doc_data: Dict[str, Any]) -> Document:
     return doc
 
 
-def upsert_chunk(session, chunk_data: Dict[str, Any]) -> Chunk:
+def upsert_chunk(session, chunk_data: dict[str, Any]) -> Chunk:
     """Upsert a chunk record."""
     chunk = session.get(Chunk, chunk_data["chunk_id"])
     if chunk is None:
@@ -302,9 +281,7 @@ def upsert_chunk(session, chunk_data: Dict[str, Any]) -> Chunk:
     return chunk
 
 
-def upsert_chunk_embedding(
-    session, embedding_data: Dict[str, Any]
-) -> ChunkEmbedding:
+def upsert_chunk_embedding(session, embedding_data: dict[str, Any]) -> ChunkEmbedding:
     """Upsert a chunk embedding record."""
     key_tuple = (embedding_data["chunk_id"], embedding_data["provider"])
     embedding = session.get(ChunkEmbedding, key_tuple)
@@ -320,11 +297,11 @@ def upsert_chunk_embedding(
     return embedding
 
 
-def serialize_embedding(embedding: List[float]) -> List[float]:
+def serialize_embedding(embedding: list[float]) -> list[float]:
     """Return embedding as-is for pgvector storage."""
     return embedding
 
 
-def deserialize_embedding(stored_embedding: List[float]) -> List[float]:
+def deserialize_embedding(stored_embedding: list[float]) -> list[float]:
     """Return embedding as-is from pgvector storage."""
     return stored_embedding

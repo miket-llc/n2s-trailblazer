@@ -1,3 +1,8 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test database schema and models."""
 
 import pytest
@@ -9,9 +14,9 @@ from trailblazer.db.engine import (
     Chunk,
     ChunkEmbedding,
     Document,
+    deserialize_embedding,
     get_engine,
     serialize_embedding,
-    deserialize_embedding,
 )
 
 # Mark all tests in this file as requiring pgvector
@@ -30,9 +35,7 @@ def test_database_schema_creation():
 
     # Check that tables exist (created by conftest.py)
     with engine.connect() as conn:
-        result = conn.execute(
-            text("SELECT tablename FROM pg_tables WHERE schemaname='public'")
-        )
+        result = conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname='public'"))
         tables = [row[0] for row in result]
 
         assert "documents" in tables
@@ -280,9 +283,7 @@ def test_database_indexes():
     with engine.connect() as conn:
         # Check that indexes exist
         result = conn.execute(
-            text(
-                "SELECT indexname FROM pg_indexes WHERE schemaname='public' AND indexname NOT LIKE 'pg_%'"
-            )
+            text("SELECT indexname FROM pg_indexes WHERE schemaname='public' AND indexname NOT LIKE 'pg_%'")
         )
         indexes = [row[0] for row in result]
 

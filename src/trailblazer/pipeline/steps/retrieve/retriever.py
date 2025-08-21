@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import text
 
@@ -33,7 +34,7 @@ class SearchHit:
         self.score = score
         self.source_system = source_system
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "chunk_id": self.chunk_id,
@@ -61,7 +62,7 @@ class DenseRetriever:
         self.embedder = get_embedding_provider(provider)
         self.session_factory = get_session_factory()
 
-    def embed_query(self, query: str) -> List[float]:
+    def embed_query(self, query: str) -> list[float]:
         """Embed a query using the same provider as documents.
 
         Args:
@@ -76,8 +77,8 @@ class DenseRetriever:
         self,
         query: str,
         top_k: int = 8,
-        emit_event: Optional[Callable] = None,
-    ) -> List[SearchHit]:
+        emit_event: Callable | None = None,
+    ) -> list[SearchHit]:
         """Search for relevant chunks using pgvector cosine similarity.
 
         Args:
@@ -114,9 +115,9 @@ class DenseRetriever:
         # SQL query using pgvector cosine similarity (PostgreSQL only)
         sql_query = text(
             """
-            SELECT 
+            SELECT
                 c.chunk_id,
-                c.doc_id, 
+                c.doc_id,
                 d.title,
                 d.url,
                 c.text_md,
@@ -183,10 +184,10 @@ class DenseRetriever:
 
 
 def pack_context(
-    hits: List[SearchHit],
+    hits: list[SearchHit],
     max_chars: int = 6000,
-    max_chunks_per_doc: Optional[int] = None,
-) -> tuple[str, List[SearchHit]]:
+    max_chunks_per_doc: int | None = None,
+) -> tuple[str, list[SearchHit]]:
     """Pack search hits into context string respecting boundaries.
 
     Args:
@@ -201,10 +202,10 @@ def pack_context(
         return "", []
 
     selected_hits = []
-    context_parts: List[str] = []
+    context_parts: list[str] = []
     current_chars = 0
     docs_seen = set()
-    doc_chunk_counts: Dict[str, int] = {}
+    doc_chunk_counts: dict[str, int] = {}
 
     for hit in hits:
         # Track chunks per document if limit specified

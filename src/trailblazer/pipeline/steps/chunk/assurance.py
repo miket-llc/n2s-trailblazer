@@ -5,15 +5,12 @@ Chunk assurance and quality reporting.
 import json
 import statistics
 from pathlib import Path
-from typing import Dict, List
 
 from .boundaries import count_tokens
-from .engine import calculate_coverage, Chunk
+from .engine import Chunk, calculate_coverage
 
 
-def build_chunk_assurance(
-    run_dir: Path, cfg: Dict, tokenizer: str = "text-embedding-3-small"
-) -> Dict:
+def build_chunk_assurance(run_dir: Path, cfg: dict, tokenizer: str = "text-embedding-3-small") -> dict:
     """
     Build chunk assurance report for a run directory.
 
@@ -75,7 +72,7 @@ def build_chunk_assurance(
 
     # Load all chunks
     chunks = []
-    with open(chunks_file, "r") as f:
+    with open(chunks_file) as f:
         for line in f:
             if line.strip():
                 chunks.append(json.loads(line))
@@ -155,10 +152,10 @@ def build_chunk_assurance(
     # Coverage tracking
     docs_with_gaps = 0
     coverage_percentages = []
-    gaps_examples: List[Dict] = []
+    gaps_examples: list[dict] = []
 
     # Group chunks by document for coverage analysis
-    chunks_by_doc: Dict[str, List] = {}
+    chunks_by_doc: dict[str, list] = {}
     for chunk in chunks:
         doc_id = chunk.get("doc_id", "")
         if doc_id not in chunks_by_doc:
@@ -236,19 +233,13 @@ def build_chunk_assurance(
 
         # Find the original document length by looking for enriched data
         # This is a simplified approach - in practice we'd need the original document
-        max_char_end = max(
-            (chunk.get("char_end", 0) for chunk in doc_chunks), default=0
-        )
+        max_char_end = max((chunk.get("char_end", 0) for chunk in doc_chunks), default=0)
         if max_char_end == 0:
             # Fallback: estimate from chunk char counts
-            max_char_end = sum(
-                chunk.get("char_count", 0) for chunk in doc_chunks
-            )
+            max_char_end = sum(chunk.get("char_count", 0) for chunk in doc_chunks)
 
         if max_char_end > 0:
-            coverage_pct, gaps = calculate_coverage(
-                chunk_objects, max_char_end
-            )
+            coverage_pct, gaps = calculate_coverage(chunk_objects, max_char_end)
             coverage_percentages.append(coverage_pct)
 
             if coverage_pct < 99.5:
@@ -289,20 +280,10 @@ def build_chunk_assurance(
     }
 
     # Calculate average coverage
-    avg_coverage_pct = (
-        statistics.mean(coverage_percentages)
-        if coverage_percentages
-        else 100.0
-    )
+    avg_coverage_pct = statistics.mean(coverage_percentages) if coverage_percentages else 100.0
 
     # Determine status
-    status = (
-        "PASS"
-        if len(breaches) == 0
-        and missing_traceability == 0
-        and docs_with_gaps == 0
-        else "FAIL"
-    )
+    status = "PASS" if len(breaches) == 0 and missing_traceability == 0 and docs_with_gaps == 0 else "FAIL"
 
     return {
         "tokenCap": {
@@ -321,9 +302,7 @@ def build_chunk_assurance(
         "bottoms": {
             "softMinTokens": soft_min_tokens,
             "hardMinTokens": hard_min_tokens,
-            "pctBelowSoftMin": (
-                (len(below_soft_min) / len(chunks)) * 100 if chunks else 0.0
-            ),
+            "pctBelowSoftMin": ((len(below_soft_min) / len(chunks)) * 100 if chunks else 0.0),
             "belowSoftMinExamples": below_soft_min[:10],  # Limit examples
             "hardMinExceptions": {
                 "count": len(below_hard_min),

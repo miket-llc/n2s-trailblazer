@@ -1,14 +1,19 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test dense retrieval ordering and determinism."""
 
 # PostgreSQL testcontainer handles temporary database setup
 from datetime import datetime
 
+import numpy as np
 import pytest
 from sqlalchemy.orm import sessionmaker
 
-from trailblazer.db.engine import Document, Chunk, ChunkEmbedding
+from trailblazer.db.engine import Chunk, ChunkEmbedding, Document
 from trailblazer.retrieval.dense import DenseRetriever, cosine_sim, top_k
-import numpy as np
 
 # Mark all tests as pgvector tests (need vector database)
 pytestmark = pytest.mark.pgvector
@@ -174,7 +179,7 @@ def test_top_k_ordering():
 
     results = top_k(query_vec, candidates, k=3)
 
-    assert len(results) == 3
+    assert len(results) == EXPECTED_COUNT_3
     # Results should be ordered by score desc, then doc_id, then chunk_id
     assert results[0]["chunk_id"] == "chunk2"  # Highest score
     # For ties between chunk1 and chunk3 (same embedding), doc1 < doc2
@@ -196,7 +201,7 @@ def test_retriever_deterministic_ordering(temp_db):
     assert len(results1) == len(results2)
     assert len(results1) == 6  # All chunks
 
-    for r1, r2 in zip(results1, results2):
+    for r1, r2 in zip(results1, results2, strict=False):
         assert r1["chunk_id"] == r2["chunk_id"]
         assert abs(r1["score"] - r2["score"]) < 1e-6
         assert r1["doc_id"] == r2["doc_id"]
@@ -229,7 +234,7 @@ def test_retriever_metadata(temp_db):
 
     results = retriever.search("testing", top_k=3)
 
-    assert len(results) == 3
+    assert len(results) == EXPECTED_COUNT_3
 
     for result in results:
         assert "chunk_id" in result

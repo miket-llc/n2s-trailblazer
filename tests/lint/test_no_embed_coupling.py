@@ -1,9 +1,15 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test to ensure chunking package doesn't import from embed modules."""
 
 import ast
 import os
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Mark all tests in this file as not needing database
 pytestmark = pytest.mark.no_db
@@ -30,7 +36,7 @@ def test_no_embed_coupling():
         if py_file.name == "__init__.py":
             continue
 
-        with open(py_file, "r") as f:
+        with open(py_file) as f:
             content = f.read()
 
         try:
@@ -43,23 +49,16 @@ def test_no_embed_coupling():
                 for alias in node.names:
                     for forbidden in forbidden_imports:
                         if forbidden in alias.name:
-                            violations.append(
-                                f"{py_file}: imports {alias.name}"
-                            )
+                            violations.append(f"{py_file}: imports {alias.name}")
 
-            elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    for forbidden in forbidden_imports:
-                        if forbidden in node.module:
-                            violations.append(
-                                f"{py_file}: from {node.module} import ..."
-                            )
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                for forbidden in forbidden_imports:
+                    if forbidden in node.module:
+                        violations.append(f"{py_file}: from {node.module} import ...")
 
     if violations:
         violation_msg = "\n".join(violations)
-        raise AssertionError(
-            f"Chunk package has forbidden embed coupling:\n{violation_msg}"
-        )
+        raise AssertionError(f"Chunk package has forbidden embed coupling:\n{violation_msg}")
 
 
 @pytest.mark.skipif(
@@ -73,14 +72,12 @@ def test_chunking_package_independence():
         from trailblazer.pipeline.steps.chunk.engine import chunk_document
 
         # Basic functionality should work
-        chunks = chunk_document(
-            doc_id="test", text_md="Test content", source_system="test"
-        )
+        chunks = chunk_document(doc_id="test", text_md="Test content", source_system="test")
         assert len(chunks) == 1
 
     except ImportError as e:
         if "embed" in str(e).lower():
-            raise AssertionError(f"Chunk package imports embed modules: {e}")
+            raise AssertionError(f"Chunk package imports embed modules: {e}") from e
         elif "No module named" in str(e):
             # Chunk package not found, skip test
             return

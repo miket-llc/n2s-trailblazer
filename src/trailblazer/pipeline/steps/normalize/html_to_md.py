@@ -1,20 +1,20 @@
 from __future__ import annotations
+
 import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md  # type: ignore
 
 from ....core.logging import log
 
-
 # ---------- DITA XML -> Markdown ----------
 
 
-def _to_markdown_from_dita_xml(dita_xml: Optional[str]) -> str:
+def _to_markdown_from_dita_xml(dita_xml: str | None) -> str:
     """Convert DITA XML body to Markdown."""
     if not dita_xml:
         return ""
@@ -155,7 +155,7 @@ def _to_markdown_from_dita_xml(dita_xml: Optional[str]) -> str:
         return clean_text.strip()
 
 
-def _extract_links_from_dita_xml(dita_xml: Optional[str]) -> List[str]:
+def _extract_links_from_dita_xml(dita_xml: str | None) -> list[str]:
     """Extract links from DITA XML."""
     if not dita_xml:
         return []
@@ -170,27 +170,17 @@ def _extract_links_from_dita_xml(dita_xml: Optional[str]) -> List[str]:
         for xref in soup.find_all("xref"):
             if hasattr(xref, "get"):
                 href = xref.get("href")
-                if (
-                    href
-                    and isinstance(href, str)
-                    and href.startswith(("http://", "https://"))
-                ):
+                if href and isinstance(href, str) and href.startswith(("http://", "https://")):
                     links.append(href)
 
         # Extract from link elements
         for link in soup.find_all("link"):
             if hasattr(link, "get"):
                 href = link.get("href")
-                if (
-                    href
-                    and isinstance(href, str)
-                    and href.startswith(("http://", "https://"))
-                ):
+                if href and isinstance(href, str) and href.startswith(("http://", "https://")):
                     links.append(href)
 
-        return sorted(
-            dict.fromkeys([link for link in links if isinstance(link, str)])
-        )
+        return sorted(dict.fromkeys([link for link in links if isinstance(link, str)]))
 
     except Exception:
         return []
@@ -199,7 +189,7 @@ def _extract_links_from_dita_xml(dita_xml: Optional[str]) -> List[str]:
 # ---------- Storage (XHTML) -> Markdown ----------
 
 
-def _to_markdown_from_storage(xhtml: Optional[str]) -> str:
+def _to_markdown_from_storage(xhtml: str | None) -> str:
     if not xhtml:
         return ""
     soup = BeautifulSoup(xhtml, "html.parser")
@@ -207,16 +197,14 @@ def _to_markdown_from_storage(xhtml: Optional[str]) -> str:
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
     html2 = str(soup)
-    text = md(
-        html2, heading_style="ATX", strip=["script", "style", "noscript"]
-    )
+    text = md(html2, heading_style="ATX", strip=["script", "style", "noscript"])
     # normalize whitespace deterministically
     text = re.sub(r"\r\n?", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
     return text
 
 
-def _extract_links_from_storage(xhtml: Optional[str]) -> List[str]:
+def _extract_links_from_storage(xhtml: str | None) -> list[str]:
     if not xhtml:
         return []
     soup = BeautifulSoup(xhtml, "html.parser")
@@ -232,7 +220,7 @@ def _extract_links_from_storage(xhtml: Optional[str]) -> List[str]:
 # ---------- ADF JSON -> Markdown (minimal converter) ----------
 
 
-def _adf_text_with_marks(text: str, marks: Optional[List[dict]]) -> str:
+def _adf_text_with_marks(text: str, marks: list[dict] | None) -> str:
     if not marks:
         return text
     # apply marks in a stable order: code, strong, em, strike, link
@@ -266,34 +254,21 @@ def _adf_inline(node: dict) -> str:
     return ""
 
 
-def _adf_block(
-    node: dict, bullets: Optional[str] = None, number: Optional[int] = None
-) -> str:
+def _adf_block(node: dict, bullets: str | None = None, number: int | None = None) -> str:
     t = node.get("type")
     if t == "paragraph":
         parts = [_adf_inline(c) for c in node.get("content", [])]
         return "".join(parts).strip()
     elif t == "heading":
         level = max(1, min(6, int((node.get("attrs") or {}).get("level", 1))))
-        inner = "".join(
-            [_adf_inline(c) for c in node.get("content", [])]
-        ).strip()
+        inner = "".join([_adf_inline(c) for c in node.get("content", [])]).strip()
         return f"{'#' * level} {inner}".strip()
     elif t == "blockquote":
         inner = _adf_blocks(node.get("content", []))
-        return (
-            "\n".join([f"> {line}".rstrip() for line in inner.splitlines()])
-            or "> "
-        )
+        return "\n".join([f"> {line}".rstrip() for line in inner.splitlines()]) or "> "
     elif t == "codeBlock":
         lang = (node.get("attrs") or {}).get("language") or ""
-        code = "".join(
-            [
-                c.get("text", "")
-                for c in node.get("content", [])
-                if c.get("type") == "text"
-            ]
-        )
+        code = "".join([c.get("text", "") for c in node.get("content", []) if c.get("type") == "text"])
         return f"```{lang}\n{code}\n```"
     elif t == "bulletList":
         lines = []
@@ -324,8 +299,8 @@ def _adf_block(
         return _adf_blocks(node.get("content", []))
 
 
-def _adf_blocks(nodes: List[dict]) -> str:
-    lines: List[str] = []
+def _adf_blocks(nodes: list[dict]) -> str:
+    lines: list[str] = []
     for n in nodes:
         s = _adf_block(n)
         if s.strip():
@@ -336,16 +311,16 @@ def _adf_blocks(nodes: List[dict]) -> str:
     return text
 
 
-def _to_markdown_from_adf(adf: Optional[dict]) -> str:
+def _to_markdown_from_adf(adf: dict | None) -> str:
     if not adf or adf.get("type") != "doc":
         return ""
     return _adf_blocks(adf.get("content", []))
 
 
-def _extract_links_from_adf(adf: Optional[dict]) -> List[str]:
+def _extract_links_from_adf(adf: dict | None) -> list[str]:
     if not adf:
         return []
-    links: List[str] = []
+    links: list[str] = []
 
     def walk(n: dict):
         # collect from marks
@@ -390,9 +365,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def normalize_from_ingest(
-    outdir: str, input_file: Optional[str] = None, limit: Optional[int] = None
-) -> Dict[str, Any]:
+def normalize_from_ingest(outdir: str, input_file: str | None = None, limit: int | None = None) -> dict[str, Any]:
     out_dir = Path(outdir)
     out_dir.mkdir(parents=True, exist_ok=True)
     run_id = Path(outdir).parent.name
@@ -432,31 +405,19 @@ def normalize_from_ingest(
                 else (
                     "storage"
                     if rec.get("body_storage")
-                    else (
-                        "dita"
-                        if rec.get("body_dita_xml") or rec.get("body_xml")
-                        else None
-                    )
+                    else ("dita" if rec.get("body_dita_xml") or rec.get("body_xml") else None)
                 )
             )
-            links: List[str] = []
+            links: list[str] = []
             if body_repr == "storage":
-                text_md = _to_markdown_from_storage(
-                    rec.get("body_storage") or rec.get("body_html")
-                )
-                links = _extract_links_from_storage(
-                    rec.get("body_storage") or rec.get("body_html")
-                )
+                text_md = _to_markdown_from_storage(rec.get("body_storage") or rec.get("body_html"))
+                links = _extract_links_from_storage(rec.get("body_storage") or rec.get("body_html"))
             elif body_repr == "adf":
                 text_md = _to_markdown_from_adf(rec.get("body_adf"))
                 links = _extract_links_from_adf(rec.get("body_adf"))
             elif body_repr == "dita":
-                text_md = _to_markdown_from_dita_xml(
-                    rec.get("body_dita_xml") or rec.get("body_xml")
-                )
-                links = _extract_links_from_dita_xml(
-                    rec.get("body_dita_xml") or rec.get("body_xml")
-                )
+                text_md = _to_markdown_from_dita_xml(rec.get("body_dita_xml") or rec.get("body_xml"))
+                links = _extract_links_from_dita_xml(rec.get("body_dita_xml") or rec.get("body_xml"))
             else:
                 text_md = ""
 
@@ -496,9 +457,7 @@ def normalize_from_ingest(
                 "links": sorted(dict.fromkeys(links)),
                 "attachments": attachments,
                 "source_system": rec.get("source_system", "confluence"),
-                "source": rec.get(
-                    "source_system", "confluence"
-                ),  # Updated for DITA support
+                "source": rec.get("source_system", "confluence"),  # Updated for DITA support
                 # Enhanced traceability preservation
                 "labels": enhanced_meta.get("labels", rec.get("labels", [])),
                 "content_sha256": rec.get("content_sha256"),

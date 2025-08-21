@@ -1,10 +1,16 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 #!/usr/bin/env python3
 """Test data integrity and format validation."""
 
 import json
 import sys
-import pytest
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, "src")
 from trailblazer.obs.integrity import run_data_integrity_check
@@ -125,26 +131,18 @@ def test_integrity_checks():
 
     try:
         # Run integrity checks
-        report, json_path, md_path = run_data_integrity_check(
-            run_id, sample_size=5
-        )
+        report, json_path, md_path = run_data_integrity_check(run_id, sample_size=5)
 
         print("   ✓ Completed integrity checks")
         print(f"   Status: {report['overall_status']}")
-        print(
-            f"   Issues: {report['issue_summary']['total']} total, {report['issue_summary']['errors']} errors"
-        )
+        print(f"   Issues: {report['issue_summary']['total']} total, {report['issue_summary']['errors']} errors")
 
         # Show some details
         trace = report["checks"]["traceability"]
-        print(
-            f"   Traceability: {trace['valid_chains']} valid, {trace['broken_chains']} broken chains"
-        )
+        print(f"   Traceability: {trace['valid_chains']} valid, {trace['broken_chains']} broken chains")
 
         sampling = report["checks"]["sampling"]
-        print(
-            f"   Sampling: {sampling['samples_created']} sample files created"
-        )
+        print(f"   Sampling: {sampling['samples_created']} sample files created")
 
         print(f"   ✓ Reports written: {json_path}, {md_path}")
 

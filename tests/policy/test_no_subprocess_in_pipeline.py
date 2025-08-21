@@ -1,8 +1,14 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Policy test: Prevent subprocess/shell usage in preflight/plan-preflight/embed."""
 
 import ast
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Mark all tests as unit tests (no database needed)
 pytestmark = pytest.mark.unit
@@ -21,7 +27,7 @@ def test_no_subprocess_in_embed_steps():
             continue
 
         try:
-            with open(py_file, "r", encoding="utf-8") as f:
+            with open(py_file, encoding="utf-8") as f:
                 content = f.read()
 
             tree = ast.parse(content)
@@ -30,23 +36,15 @@ def test_no_subprocess_in_embed_steps():
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         if alias.name in forbidden_imports:
-                            assert False, (
-                                f"Forbidden import '{alias.name}' found in {py_file}"
-                            )
+                            raise AssertionError(f"Forbidden import '{alias.name}' found in {py_file}")
 
                 elif isinstance(node, ast.ImportFrom):
                     if node.module in forbidden_imports:
-                        assert False, (
-                            f"Forbidden import 'from {node.module}' found in {py_file}"
-                        )
+                        raise AssertionError(f"Forbidden import 'from {node.module}' found in {py_file}")
 
                     # Check for specific functions
-                    if node.module == "os" and any(
-                        alias.name == "system" for alias in node.names
-                    ):
-                        assert False, (
-                            f"Forbidden import 'from os import system' found in {py_file}"
-                        )
+                    if node.module == "os" and any(alias.name == "system" for alias in node.names):
+                        raise AssertionError(f"Forbidden import 'from os import system' found in {py_file}")
 
         except Exception:
             # If we can't parse the file, that's a different issue
@@ -60,7 +58,7 @@ def test_no_subprocess_in_cli_main():
         return
 
     try:
-        with open(cli_main, "r", encoding="utf-8") as f:
+        with open(cli_main, encoding="utf-8") as f:
             content = f.read()
 
         tree = ast.parse(content)
@@ -68,9 +66,8 @@ def test_no_subprocess_in_cli_main():
         # Find preflight and plan-preflight functions
         preflight_functions = []
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                if "preflight" in node.name.lower():
-                    preflight_functions.append(node)
+            if isinstance(node, ast.FunctionDef) and "preflight" in node.name.lower():
+                preflight_functions.append(node)
 
         # Check each preflight function for subprocess usage
         for func_node in preflight_functions:
@@ -83,15 +80,12 @@ def test_no_subprocess_in_cli_main():
                             and node.func.value.id in ["subprocess", "os"]
                             and node.func.attr in ["run", "system", "popen"]
                         ):
-                            assert False, (
+                            raise AssertionError(
                                 f"Forbidden subprocess call in {func_node.name}: {node.func.value.id}.{node.func.attr}"
                             )
 
-                    elif isinstance(node.func, ast.Name):
-                        if node.func.id in ["system", "popen"]:
-                            assert False, (
-                                f"Forbidden shell call in {func_node.name}: {node.func.id}"
-                            )
+                    elif isinstance(node.func, ast.Name) and node.func.id in ["system", "popen"]:
+                        raise AssertionError(f"Forbidden shell call in {func_node.name}: {node.func.id}")
 
     except Exception:
         # If we can't parse, that's a different issue

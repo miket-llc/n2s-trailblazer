@@ -2,8 +2,8 @@
 """Script to help systematically fix failing tests."""
 
 import subprocess
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 
 def run_tests_and_categorize():
@@ -14,6 +14,7 @@ def run_tests_and_categorize():
         # Run tests with minimal output
         result = subprocess.run(
             ["python", "-m", "pytest", "tests/", "--tb=no", "-q"],
+            check=False,
             capture_output=True,
             text=True,
             cwd=Path(__file__).parent.parent,
@@ -41,15 +42,11 @@ def categorize_failures(failures):
             categories["CLI_COMMAND_CHANGES"].append(failure)
         elif "test_embed_loader.py" in failure:
             categories["API_INTERFACE_CHANGES"].append(failure)
-        elif "test_chunk_sweep.py" in failure:
-            categories["CLI_COMMAND_CHANGES"].append(failure)
-        elif "test_enrich_sweep.py" in failure:
+        elif "test_chunk_sweep.py" in failure or "test_enrich_sweep.py" in failure:
             categories["CLI_COMMAND_CHANGES"].append(failure)
         elif "test_policy" in failure:
             categories["POLICY_EXPECTATION_CHANGES"].append(failure)
-        elif "test_preflight" in failure:
-            categories["CLI_COMMAND_CHANGES"].append(failure)
-        elif "test_chunk_" in failure and "CLI" in failure:
+        elif "test_preflight" in failure or ("test_chunk_" in failure and "CLI" in failure):
             categories["CLI_COMMAND_CHANGES"].append(failure)
         else:
             categories["OTHER"].append(failure)
@@ -78,24 +75,18 @@ def print_fix_plan(categories):
     api_failures = categories["API_INTERFACE_CHANGES"]
     print(f"Tests to fix: {len(api_failures)}")
     print("Strategy: Use compatibility layer in tests/compat/")
-    print(
-        "Files to update: tests/compat/embed_loader_compat.py (already started)"
-    )
+    print("Files to update: tests/compat/embed_loader_compat.py (already started)")
     print("Estimated effort: 2-3 days")
 
     print("\n🎯 PRIORITY 3: Policy & Other Changes (Lower Priority)")
     print("-" * 40)
-    other_failures = (
-        categories["OTHER"] + categories["POLICY_EXPECTATION_CHANGES"]
-    )
+    other_failures = categories["OTHER"] + categories["POLICY_EXPECTATION_CHANGES"]
     print(f"Tests to fix: {len(other_failures)}")
     print("Strategy: Update test expectations to match current behavior")
     print("Estimated effort: 3-4 days")
 
     print("\n💡 QUICK WIN EXAMPLES:")
-    print(
-        "1. Update test_embed_preflight.py to use 'plan-preflight' instead of 'preflight'"
-    )
+    print("1. Update test_embed_preflight.py to use 'plan-preflight' instead of 'preflight'")
     print("2. Use cli_runner fixture from conftest.py for CLI tests")
     print("3. Use EmbedLoaderCompat for embed loader tests")
 

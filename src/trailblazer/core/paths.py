@@ -5,6 +5,7 @@ Human-managed inputs go under data/ (configurable via TRAILBLAZER_DATA_DIR).
 """
 
 from pathlib import Path
+
 from .config import SETTINGS
 
 # Repo root (3 levels up from this file)

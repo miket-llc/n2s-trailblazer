@@ -1,12 +1,18 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Tests for link resolution and classification helpers."""
 
 import pytest
+
 from trailblazer.pipeline.steps.ingest.link_resolver import (
-    normalize_url,
     classify_link_type,
     extract_confluence_page_id,
-    extract_links_from_storage_with_classification,
     extract_links_from_adf_with_classification,
+    extract_links_from_storage_with_classification,
+    normalize_url,
 )
 
 # Mark all tests as unit tests (no database needed)
@@ -116,21 +122,15 @@ class TestExtractLinksFromStorage:
         """
         confluence_base = "https://example.atlassian.net/wiki"
 
-        links = extract_links_from_storage_with_classification(
-            xhtml, confluence_base
-        )
+        links = extract_links_from_storage_with_classification(xhtml, confluence_base)
 
-        assert len(links) == 2
+        assert len(links) == EXPECTED_COUNT_2
 
-        external_link = next(
-            link for link in links if link.target_type == "external"
-        )
+        external_link = next(link for link in links if link.target_type == "external")
         assert external_link.raw_url == "https://example.com"
         assert external_link.text == "Example"
 
-        internal_link = next(
-            link for link in links if link.target_type == "confluence"
-        )
+        internal_link = next(link for link in links if link.target_type == "confluence")
         assert internal_link.raw_url == "/spaces/DEV/pages/123/Test"
         assert internal_link.target_page_id == "123"
         assert internal_link.text == "internal page"
@@ -139,23 +139,17 @@ class TestExtractLinksFromStorage:
         xhtml = '<p><a href="https://example.com#section1">Link with anchor</a></p>'
         confluence_base = "https://example.atlassian.net/wiki"
 
-        links = extract_links_from_storage_with_classification(
-            xhtml, confluence_base
-        )
+        links = extract_links_from_storage_with_classification(xhtml, confluence_base)
 
         assert len(links) == 1
         assert links[0].anchor == "section1"
         assert links[0].raw_url == "https://example.com#section1"
 
     def test_extract_empty_content(self):
-        links = extract_links_from_storage_with_classification(
-            "", "https://example.atlassian.net/wiki"
-        )
+        links = extract_links_from_storage_with_classification("", "https://example.atlassian.net/wiki")
         assert links == []
 
-        links = extract_links_from_storage_with_classification(
-            None, "https://example.atlassian.net/wiki"
-        )
+        links = extract_links_from_storage_with_classification(None, "https://example.atlassian.net/wiki")
         assert links == []
 
 
@@ -193,9 +187,7 @@ class TestExtractLinksFromAdf:
                             "marks": [
                                 {
                                     "type": "link",
-                                    "attrs": {
-                                        "href": "/spaces/DEV/pages/456/Internal"
-                                    },
+                                    "attrs": {"href": "/spaces/DEV/pages/456/Internal"},
                                 }
                             ],
                         },
@@ -205,32 +197,22 @@ class TestExtractLinksFromAdf:
         }
         confluence_base = "https://example.atlassian.net/wiki"
 
-        links = extract_links_from_adf_with_classification(
-            adf, confluence_base
-        )
+        links = extract_links_from_adf_with_classification(adf, confluence_base)
 
-        assert len(links) == 2
+        assert len(links) == EXPECTED_COUNT_2
 
-        external_link = next(
-            link for link in links if link.target_type == "external"
-        )
+        external_link = next(link for link in links if link.target_type == "external")
         assert external_link.raw_url == "https://example.com"
         assert external_link.text == "Example"
 
-        internal_link = next(
-            link for link in links if link.target_type == "confluence"
-        )
+        internal_link = next(link for link in links if link.target_type == "confluence")
         assert internal_link.raw_url == "/spaces/DEV/pages/456/Internal"
         assert internal_link.target_page_id == "456"
         assert internal_link.text == "internal"
 
     def test_extract_adf_empty_content(self):
-        links = extract_links_from_adf_with_classification(
-            {}, "https://example.atlassian.net/wiki"
-        )
+        links = extract_links_from_adf_with_classification({}, "https://example.atlassian.net/wiki")
         assert links == []
 
-        links = extract_links_from_adf_with_classification(
-            None, "https://example.atlassian.net/wiki"
-        )
+        links = extract_links_from_adf_with_classification(None, "https://example.atlassian.net/wiki")
         assert links == []

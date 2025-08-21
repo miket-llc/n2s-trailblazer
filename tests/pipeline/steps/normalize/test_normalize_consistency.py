@@ -1,7 +1,13 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 import pytest
+
 from trailblazer.pipeline.steps.normalize.html_to_md import (
-    _to_markdown_from_storage,
     _to_markdown_from_adf,
+    _to_markdown_from_storage,
 )
 
 # Mark all tests as unit tests (no database needed)

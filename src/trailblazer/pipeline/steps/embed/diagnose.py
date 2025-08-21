@@ -5,12 +5,12 @@ Diagnostic utilities for plan-preflight blocked runs.
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 from ....obs.events import emit_event
 
 
-def diagnose_blocked_runs(plan_bundle_dir: str) -> Dict[str, Any]:
+def diagnose_blocked_runs(plan_bundle_dir: str) -> dict[str, Any]:
     """
     Diagnose why runs are blocked in a plan-preflight bundle.
 
@@ -24,23 +24,21 @@ def diagnose_blocked_runs(plan_bundle_dir: str) -> Dict[str, Any]:
 
     bundle_dir = Path(plan_bundle_dir)
     if not bundle_dir.exists():
-        raise FileNotFoundError(
-            f"Plan bundle directory not found: {plan_bundle_dir}"
-        )
+        raise FileNotFoundError(f"Plan bundle directory not found: {plan_bundle_dir}")
 
     # Read the plan preflight results
     plan_file = bundle_dir / "plan_preflight.json"
     if not plan_file.exists():
         raise FileNotFoundError(f"Plan preflight file not found: {plan_file}")
 
-    with open(plan_file, "r") as f:
+    with open(plan_file) as f:
         json.load(f)  # Validate JSON format
 
     # Read blocked runs
     blocked_file = bundle_dir / "blocked.txt"
     blocked_runs = []
     if blocked_file.exists():
-        with open(blocked_file, "r") as f:
+        with open(blocked_file) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):
@@ -50,11 +48,7 @@ def diagnose_blocked_runs(plan_bundle_dir: str) -> Dict[str, Any]:
                     elif "#" in line:
                         run_id = Path(line.split("#")[0].strip()).name
                     else:
-                        run_id = (
-                            Path(line).name
-                            if line.startswith("var/runs/")
-                            else line
-                        )
+                        run_id = Path(line).name if line.startswith("var/runs/") else line
                     blocked_runs.append(run_id)
 
     # Analyze each blocked run
@@ -70,7 +64,7 @@ def diagnose_blocked_runs(plan_bundle_dir: str) -> Dict[str, Any]:
 
         if preflight_file.exists():
             try:
-                with open(preflight_file, "r") as f:
+                with open(preflight_file) as f:
                     preflight_data = json.load(f)
 
                 reasons = preflight_data.get("reasons", [])
@@ -133,9 +127,7 @@ def diagnose_blocked_runs(plan_bundle_dir: str) -> Dict[str, Any]:
     return result
 
 
-def write_diagnostic_pack(
-    result: Dict[str, Any], out_dir: str = "var/plan_diagnose"
-) -> Path:
+def write_diagnostic_pack(result: dict[str, Any], out_dir: str = "var/plan_diagnose") -> Path:
     """
     Write diagnostic pack with blocked run analysis.
 
@@ -165,11 +157,7 @@ def write_diagnostic_pack(
     }
 
     for reason, filename in reason_files.items():
-        runs_with_reason = [
-            item["rid"]
-            for item in result["blocked_details"]
-            if item["reason"] == reason
-        ]
+        runs_with_reason = [item["rid"] for item in result["blocked_details"] if item["reason"] == reason]
 
         with open(output_dir / filename, "w") as f:
             for run_id in runs_with_reason:
@@ -190,9 +178,7 @@ def write_diagnostic_pack(
         )
 
         # Sort reasons by count (descending)
-        sorted_reasons = sorted(
-            result["reason_counts"].items(), key=lambda x: x[1], reverse=True
-        )
+        sorted_reasons = sorted(result["reason_counts"].items(), key=lambda x: x[1], reverse=True)
 
         for reason, count in sorted_reasons:
             f.write(f"### {reason}: {count} runs\n\n")
@@ -206,25 +192,15 @@ def write_diagnostic_pack(
 
             # Add fix guidance
             if reason == "MISSING_ENRICH":
-                f.write(
-                    "**Fix:** Run `trailblazer enrich <RID>` for each run\n\n"
-                )
+                f.write("**Fix:** Run `trailblazer enrich <RID>` for each run\n\n")
             elif reason == "MISSING_CHUNKS":
-                f.write(
-                    "**Fix:** Run `trailblazer chunk <RID>` for each run\n\n"
-                )
+                f.write("**Fix:** Run `trailblazer chunk <RID>` for each run\n\n")
             elif reason == "TOKENIZER_MISSING":
-                f.write(
-                    "**Fix:** Install tiktoken: `pip install tiktoken`\n\n"
-                )
+                f.write("**Fix:** Install tiktoken: `pip install tiktoken`\n\n")
             elif reason == "CONFIG_INVALID":
-                f.write(
-                    "**Fix:** Check provider/model/dimension configuration\n\n"
-                )
+                f.write("**Fix:** Check provider/model/dimension configuration\n\n")
             elif reason == "EMBEDDABLE_DOCS=0":
-                f.write(
-                    "**Status:** Legitimate block - no quality documents available\n\n"
-                )
+                f.write("**Status:** Legitimate block - no quality documents available\n\n")
             else:
                 f.write("**Status:** Needs investigation\n\n")
 

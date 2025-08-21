@@ -1,32 +1,33 @@
+from pathlib import Path
+from typing import Any
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional, List, Dict, Any
-from pathlib import Path
 
 
 class Settings(BaseSettings):
     # Confluence (Cloud v2 + Basic auth)
     CONFLUENCE_BASE_URL: str = "https://ellucian.atlassian.net/wiki"
-    CONFLUENCE_EMAIL: Optional[str] = None
-    CONFLUENCE_API_TOKEN: Optional[str] = None
+    CONFLUENCE_EMAIL: str | None = None
+    CONFLUENCE_API_TOKEN: str | None = None
     CONFLUENCE_BODY_FORMAT: str = "atlas_doc_format"  # or "storage"
-    CONFLUENCE_SPACES: List[str] = []  # Default spaces to ingest
-    CONFLUENCE_SINCE: Optional[str] = None  # Default since timestamp
+    CONFLUENCE_SPACES: list[str] = []  # Default spaces to ingest
+    CONFLUENCE_SINCE: str | None = None  # Default since timestamp
     CONFLUENCE_AUTO_SINCE: bool = True  # Auto-read since from state
-    CONFLUENCE_MAX_PAGES: Optional[int] = None  # Limit for testing
+    CONFLUENCE_MAX_PAGES: int | None = None  # Limit for testing
     CONFLUENCE_ALLOW_EMPTY: bool = False  # Allow zero pages without error
 
     # DITA configuration
     DITA_ROOT: str = "data/raw/dita/ellucian-documentation"
-    DITA_INCLUDE: List[str] = []  # Default: **/*.dita, **/*.xml, **/*.ditamap
-    DITA_EXCLUDE: List[str] = []  # Exclude patterns
+    DITA_INCLUDE: list[str] = []  # Default: **/*.dita, **/*.xml, **/*.ditamap
+    DITA_EXCLUDE: list[str] = []  # Exclude patterns
 
     # Pipeline configuration
-    PIPELINE_PHASES: List[str] = ["ingest", "normalize", "enrich", "embed"]
+    PIPELINE_PHASES: list[str] = ["ingest", "normalize", "enrich", "embed"]
     PIPELINE_WORKERS: int = 2  # Default concurrency
 
     # Database (required for embed/ask)
-    TRAILBLAZER_DB_URL: Optional[str] = None
+    TRAILBLAZER_DB_URL: str | None = None
 
     # Embedding configuration
     EMBED_PROVIDER: str = "openai"
@@ -34,10 +35,10 @@ class Settings(BaseSettings):
     EMBED_DIMENSIONS: int = 1536
     EMBED_BATCH_SIZE: int = 128
     EMBED_CHANGED_ONLY: bool = True  # Only embed changed documents
-    EMBED_MAX_DOCS: Optional[int] = None  # Limit for testing
-    EMBED_MAX_CHUNKS: Optional[int] = None  # Limit for testing
+    EMBED_MAX_DOCS: int | None = None  # Limit for testing
+    EMBED_MAX_CHUNKS: int | None = None  # Limit for testing
     EMBED_DRY_RUN_COST: bool = False  # Show cost estimates
-    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: str | None = None
 
     # Retrieval/Ask configuration
     ASK_TOP_K: int = 8  # Number of top chunks to retrieve
@@ -47,8 +48,8 @@ class Settings(BaseSettings):
 
     # Enrichment configuration
     ENRICH_LLM: bool = False  # Enable LLM-based enrichment
-    ENRICH_MAX_DOCS: Optional[int] = None  # Limit for testing
-    ENRICH_BUDGET: Optional[str] = None  # Budget limit for LLM usage
+    ENRICH_MAX_DOCS: int | None = None  # Limit for testing
+    ENRICH_BUDGET: str | None = None  # Budget limit for LLM usage
 
     # Chunking configuration (v2.2 bottom-end controls)
     CHUNK_SOFT_MIN_TOKENS: int = 200  # Target minimum after glue
@@ -88,14 +89,12 @@ class Settings(BaseSettings):
         default=False,
         description="Enable testing mode for database integration tests",
     )
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @classmethod
-    def load_config(cls, config_file: Optional[str] = None) -> "Settings":
+    def load_config(cls, config_file: str | None = None) -> "Settings":
         """Load settings with config file -> env -> CLI precedence."""
-        config_data: Dict[str, Any] = {}
+        config_data: dict[str, Any] = {}
 
         # Find config file
         if config_file:

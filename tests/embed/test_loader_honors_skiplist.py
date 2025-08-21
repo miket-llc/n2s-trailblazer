@@ -1,9 +1,15 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test that embed loader honors doc_skiplist.json from preflight."""
 
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from trailblazer.pipeline.steps.embed.loader import load_chunks_to_db
@@ -28,18 +34,12 @@ def mock_embedder():
     mock_embedder = MagicMock()
     mock_embedder.provider_name = "dummy"
     mock_embedder.dim = 1536
-    mock_embedder.dimension = (
-        1536  # Add dimension attribute for loader compatibility
-    )
-    mock_embedder.embed.return_value = [
-        0.1
-    ] * 1536  # Current API uses embed() for single texts
+    mock_embedder.dimension = 1536  # Add dimension attribute for loader compatibility
+    mock_embedder.embed.return_value = [0.1] * 1536  # Current API uses embed() for single texts
     return mock_embedder
 
 
-def create_test_run_with_skiplist(
-    temp_dir: Path, run_id: str, skipped_docs: list
-):
+def create_test_run_with_skiplist(temp_dir: Path, run_id: str, skipped_docs: list):
     """Create a test run directory with chunks and skiplist."""
     run_dir = temp_dir / "var" / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -119,9 +119,7 @@ def create_test_run_with_skiplist(
     return chunks_file, skiplist_file
 
 
-def test_loader_honors_skiplist_skips_correct_docs(
-    mock_session_factory, mock_embedder
-):
+def test_loader_honors_skiplist_skips_correct_docs(mock_session_factory, mock_embedder):
     """Test that loader skips exactly the documents listed in skiplist."""
     mock_factory, mock_session = mock_session_factory
 
@@ -131,9 +129,7 @@ def test_loader_honors_skiplist_skips_correct_docs(
 
         # Create run with doc2 in skiplist
         skipped_docs = ["doc2"]
-        chunks_file, skiplist_file = create_test_run_with_skiplist(
-            temp_path, run_id, skipped_docs
-        )
+        chunks_file, skiplist_file = create_test_run_with_skiplist(temp_path, run_id, skipped_docs)
 
         # Patch paths and dependencies
         with (
@@ -156,12 +152,8 @@ def test_loader_honors_skiplist_skips_correct_docs(
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_event_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_event_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Run loader
             result = load_chunks_to_db(
@@ -172,9 +164,7 @@ def test_loader_honors_skiplist_skips_correct_docs(
             )
 
             # Verify skiplist was loaded and applied
-            assert result["chunks_skipped"] == 1, (
-                f"Expected 1 chunk skipped (doc2), got {result['chunks_skipped']}"
-            )
+            assert result["chunks_skipped"] == 1, f"Expected 1 chunk skipped (doc2), got {result['chunks_skipped']}"
             assert result["chunks_embedded"] == 3, (
                 f"Expected 3 chunks embedded (doc1:2 + doc3:1), got {result['chunks_embedded']}"
             )
@@ -189,9 +179,7 @@ def test_loader_honors_skiplist_skips_correct_docs(
             # Core skiplist functionality verified by chunks_embedded count
 
 
-def test_loader_honors_skiplist_multiple_docs(
-    mock_session_factory, mock_embedder
-):
+def test_loader_honors_skiplist_multiple_docs(mock_session_factory, mock_embedder):
     """Test that loader correctly skips multiple documents from skiplist."""
     mock_factory, mock_session = mock_session_factory
 
@@ -201,9 +189,7 @@ def test_loader_honors_skiplist_multiple_docs(
 
         # Create run with doc1 and doc3 in skiplist
         skipped_docs = ["doc1", "doc3"]
-        chunks_file, skiplist_file = create_test_run_with_skiplist(
-            temp_path, run_id, skipped_docs
-        )
+        chunks_file, skiplist_file = create_test_run_with_skiplist(temp_path, run_id, skipped_docs)
 
         # Patch dependencies
         with (
@@ -225,12 +211,8 @@ def test_loader_honors_skiplist_multiple_docs(
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_event_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_event_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Run loader
             result = load_chunks_to_db(
@@ -241,12 +223,8 @@ def test_loader_honors_skiplist_multiple_docs(
             )
 
             # Should skip 3 chunks (2 from doc1, 1 from doc3) and embed 1 (from doc2)
-            assert result["chunks_skipped"] == 3, (
-                f"Expected 3 chunks skipped, got {result['chunks_skipped']}"
-            )
-            assert result["chunks_embedded"] == 1, (
-                f"Expected 1 chunk embedded, got {result['chunks_embedded']}"
-            )
+            assert result["chunks_skipped"] == 3, f"Expected 3 chunks skipped, got {result['chunks_skipped']}"
+            assert result["chunks_embedded"] == 1, f"Expected 1 chunk embedded, got {result['chunks_embedded']}"
 
             # The core functionality test is already done above:
             # - result["chunks_embedded"] == 1 confirms only doc2 was processed
@@ -319,12 +297,8 @@ def test_loader_no_skiplist_embeds_all(mock_session_factory, mock_embedder):
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_event_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_event_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Run loader
             result = load_chunks_to_db(
@@ -335,12 +309,8 @@ def test_loader_no_skiplist_embeds_all(mock_session_factory, mock_embedder):
             )
 
             # Should embed all chunks
-            assert result["chunks_skipped"] == 0, (
-                f"Expected 0 chunks skipped, got {result['chunks_skipped']}"
-            )
-            assert result["chunks_embedded"] == 2, (
-                f"Expected 2 chunks embedded, got {result['chunks_embedded']}"
-            )
+            assert result["chunks_skipped"] == 0, f"Expected 0 chunks skipped, got {result['chunks_skipped']}"
+            assert result["chunks_embedded"] == 2, f"Expected 2 chunks embedded, got {result['chunks_embedded']}"
 
 
 def test_loader_empty_skiplist_embeds_all(mock_session_factory, mock_embedder):
@@ -353,9 +323,7 @@ def test_loader_empty_skiplist_embeds_all(mock_session_factory, mock_embedder):
 
         # Create run with empty skiplist
         skipped_docs = []  # Empty list
-        chunks_file, skiplist_file = create_test_run_with_skiplist(
-            temp_path, run_id, skipped_docs
-        )
+        chunks_file, skiplist_file = create_test_run_with_skiplist(temp_path, run_id, skipped_docs)
 
         # Patch dependencies
         with (
@@ -377,12 +345,8 @@ def test_loader_empty_skiplist_embeds_all(mock_session_factory, mock_embedder):
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_event_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_event_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Run loader
             result = load_chunks_to_db(
@@ -393,17 +357,11 @@ def test_loader_empty_skiplist_embeds_all(mock_session_factory, mock_embedder):
             )
 
             # Should embed all chunks
-            assert result["chunks_skipped"] == 0, (
-                f"Expected 0 chunks skipped, got {result['chunks_skipped']}"
-            )
-            assert result["chunks_embedded"] == 4, (
-                f"Expected 4 chunks embedded, got {result['chunks_embedded']}"
-            )
+            assert result["chunks_skipped"] == 0, f"Expected 0 chunks skipped, got {result['chunks_skipped']}"
+            assert result["chunks_embedded"] == 4, f"Expected 4 chunks embedded, got {result['chunks_embedded']}"
 
 
-def test_loader_skiplist_load_failure_continues(
-    mock_session_factory, mock_embedder
-):
+def test_loader_skiplist_load_failure_continues(mock_session_factory, mock_embedder):
     """Test that loader continues if skiplist loading fails."""
     mock_factory, mock_session = mock_session_factory
 
@@ -459,12 +417,8 @@ def test_loader_skiplist_load_failure_continues(
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_event_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_event_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Should not raise exception despite bad skiplist
             result = load_chunks_to_db(
@@ -475,6 +429,4 @@ def test_loader_skiplist_load_failure_continues(
             )
 
             # Should proceed to embed all chunks (skiplist loading failed)
-            assert result["chunks_embedded"] == 1, (
-                f"Expected 1 chunk embedded, got {result['chunks_embedded']}"
-            )
+            assert result["chunks_embedded"] == 1, f"Expected 1 chunk embedded, got {result['chunks_embedded']}"

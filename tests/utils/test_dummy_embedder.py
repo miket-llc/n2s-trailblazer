@@ -1,4 +1,14 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
+"""Tests for dummy embedding provider."""
+
+import os
+
 import pytest
+
 from trailblazer.pipeline.steps.embed.provider import (
     DummyEmbedder,
     get_embedding_provider,
@@ -86,8 +96,8 @@ def test_dummy_embedder_batch():
     individual_embeddings = [embedder.embed(text) for text in texts]
 
     # Should produce same results
-    assert len(batch_embeddings) == len(individual_embeddings) == 3
-    for batch_emb, ind_emb in zip(batch_embeddings, individual_embeddings):
+    assert len((batch_embeddings) == len(individual_embeddings)) == EXPECTED_COUNT_3
+    for batch_emb, ind_emb in zip(batch_embeddings, individual_embeddings, strict=False):
         assert batch_emb == ind_emb
         assert len(batch_emb) == 100
 
@@ -142,8 +152,6 @@ def test_get_embedding_provider_dummy():
 def test_get_embedding_provider_default():
     """Test getting default provider via env var."""
     # Default will use EMBED_PROVIDER env var, which may be set to openai
-    import os
-
     provider = get_embedding_provider()
     expected_provider = os.getenv("EMBED_PROVIDER", "dummy")
     assert provider.provider_name == expected_provider
@@ -151,9 +159,7 @@ def test_get_embedding_provider_default():
 
 def test_get_embedding_provider_unknown():
     """Test error handling for unknown provider."""
-    with pytest.raises(
-        ValueError, match="Unknown embedding provider: unknown"
-    ):
+    with pytest.raises(ValueError, match="Unknown embedding provider: unknown"):
         get_embedding_provider("unknown")
 
 

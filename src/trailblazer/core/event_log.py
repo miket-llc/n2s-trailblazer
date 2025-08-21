@@ -3,14 +3,15 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any, Union
+from typing import Any
+
 from ..core.logging import log
 
 
 class EventLogger:
     """NDJSON event logger for structured observability."""
 
-    def __init__(self, log_path: Union[str, Path], run_id: str):
+    def __init__(self, log_path: str | Path, run_id: str):
         """Initialize event logger.
 
         Args:
@@ -45,9 +46,7 @@ class EventLogger:
 
     def _write_event(self, event_type: str, **kwargs):
         """Write a structured event to the NDJSON log."""
-        timestamp = (
-            datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        )
+        timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         event = {
             "timestamp": timestamp,
@@ -57,24 +56,20 @@ class EventLogger:
         }
 
         try:
-            self._file.write(
-                json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n"
-            )
+            self._file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
             self._file.flush()  # Ensure immediate write
             self.metrics["events_written"] += 1
         except Exception as e:
-            log.error(
-                "event_log.write_failed", error=str(e), event_type=event_type
-            )
+            log.error("event_log.write_failed", error=str(e), event_type=event_type)
 
     # Space-level events
     def space_begin(
         self,
         source: str,
         space_key: str,
-        space_id: Optional[str] = None,
-        space_name: Optional[str] = None,
-        estimated_pages: Optional[int] = None,
+        space_id: str | None = None,
+        space_name: str | None = None,
+        estimated_pages: int | None = None,
     ):
         """Log space ingest begin event."""
         self._write_event(
@@ -90,7 +85,7 @@ class EventLogger:
         self,
         source: str,
         space_key: str,
-        space_id: Optional[str] = None,
+        space_id: str | None = None,
         pages_processed: int = 0,
         attachments_processed: int = 0,
         elapsed_seconds: float = 0.0,
@@ -113,11 +108,11 @@ class EventLogger:
         self,
         source: str,
         space_key: str,
-        space_id: Optional[str] = None,
-        page_id: Optional[str] = None,
-        title: Optional[str] = None,
-        url: Optional[str] = None,
-        version: Optional[int] = None,
+        space_id: str | None = None,
+        page_id: str | None = None,
+        title: str | None = None,
+        url: str | None = None,
+        version: int | None = None,
         since_mode: bool = False,
     ):
         """Log page fetch attempt event."""
@@ -137,15 +132,15 @@ class EventLogger:
         self,
         source: str,
         space_key: str,
-        space_id: Optional[str] = None,
-        page_id: Optional[str] = None,
-        title: Optional[str] = None,
-        url: Optional[str] = None,
-        version: Optional[int] = None,
-        content_sha256: Optional[str] = None,
-        body_repr: Optional[str] = None,
+        space_id: str | None = None,
+        page_id: str | None = None,
+        title: str | None = None,
+        url: str | None = None,
+        version: int | None = None,
+        content_sha256: str | None = None,
+        body_repr: str | None = None,
         attachment_count: int = 0,
-        bytes_written: Optional[int] = None,
+        bytes_written: int | None = None,
     ):
         """Log page write success event."""
         self._write_event(
@@ -168,11 +163,11 @@ class EventLogger:
         self,
         source: str,
         page_id: str,
-        attachment_id: Optional[str] = None,
-        attachment_title: Optional[str] = None,
-        mime: Optional[str] = None,
-        download_url: Optional[str] = None,
-        file_size: Optional[int] = None,
+        attachment_id: str | None = None,
+        attachment_title: str | None = None,
+        mime: str | None = None,
+        download_url: str | None = None,
+        file_size: int | None = None,
     ):
         """Log attachment fetch attempt event."""
         self._write_event(
@@ -190,12 +185,12 @@ class EventLogger:
         self,
         source: str,
         page_id: str,
-        attachment_id: Optional[str] = None,
-        attachment_title: Optional[str] = None,
-        mime: Optional[str] = None,
-        sha256: Optional[str] = None,
-        bytes: Optional[int] = None,
-        local_path: Optional[str] = None,
+        attachment_id: str | None = None,
+        attachment_title: str | None = None,
+        mime: str | None = None,
+        sha256: str | None = None,
+        bytes: int | None = None,
+        local_path: str | None = None,
     ):
         """Log attachment write success event."""
         self._write_event(
@@ -217,10 +212,10 @@ class EventLogger:
         processed: int,
         rate: float,
         elapsed: float,
-        eta: Optional[float] = None,
-        last_api_status: Optional[str] = None,
+        eta: float | None = None,
+        last_api_status: str | None = None,
         retries: int = 0,
-        memory_mb: Optional[float] = None,
+        memory_mb: float | None = None,
     ):
         """Log periodic heartbeat event."""
         self._write_event(
@@ -235,7 +230,7 @@ class EventLogger:
             memory_mb=memory_mb,
         )
 
-    def metrics_snapshot(self, phase: str, **metrics: Union[int, float, str]):
+    def metrics_snapshot(self, phase: str, **metrics: int | float | str):
         """Log metrics snapshot event."""
         self._write_event(
             "metrics.snapshot",
@@ -243,20 +238,16 @@ class EventLogger:
             metrics=metrics,
         )
 
-    def warning(
-        self, message: str, context: Optional[Dict[str, Any]] = None, **kwargs
-    ):
+    def warning(self, message: str, context: dict[str, Any] | None = None, **kwargs):
         """Log warning event."""
         self.metrics["warnings"] += 1
-        self._write_event(
-            "warning", message=message, context=context or {}, **kwargs
-        )
+        self._write_event("warning", message=message, context=context or {}, **kwargs)
 
     def error(
         self,
         message: str,
-        error_type: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        error_type: str | None = None,
+        context: dict[str, Any] | None = None,
         retry_count: int = 0,
         **kwargs,
     ):
@@ -280,8 +271,8 @@ class EventLogger:
         space_key: str,
         page_id: str,
         reason: str,
-        last_modified: Optional[str] = None,
-        current_version: Optional[int] = None,
+        last_modified: str | None = None,
+        current_version: int | None = None,
     ):
         """Log delta mode skip event (unchanged content)."""
         self._write_event(
@@ -300,9 +291,9 @@ class EventLogger:
         space_key: str,
         page_id: str,
         reason: str,
-        last_modified: Optional[str] = None,
-        current_version: Optional[int] = None,
-        previous_version: Optional[int] = None,
+        last_modified: str | None = None,
+        current_version: int | None = None,
+        previous_version: int | None = None,
     ):
         """Log delta mode fetch event (content changed)."""
         self._write_event(
@@ -318,10 +309,10 @@ class EventLogger:
 
 
 # Global event logger instance
-_event_logger: Optional[EventLogger] = None
+_event_logger: EventLogger | None = None
 
 
-def init_event_logger(log_path: Union[str, Path], run_id: str) -> EventLogger:
+def init_event_logger(log_path: str | Path, run_id: str) -> EventLogger:
     """Initialize global event logger."""
     global _event_logger
     if _event_logger:
@@ -330,7 +321,7 @@ def init_event_logger(log_path: Union[str, Path], run_id: str) -> EventLogger:
     return _event_logger
 
 
-def get_event_logger() -> Optional[EventLogger]:
+def get_event_logger() -> EventLogger | None:
     """Get the global event logger instance."""
     return _event_logger
 

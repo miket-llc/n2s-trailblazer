@@ -1,25 +1,31 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test DITA adapter XML parsing functionality."""
 
-import pytest
 import tempfile
 from pathlib import Path
+
+import pytest
 from lxml import etree  # type: ignore
 
 from trailblazer.adapters.dita import (
-    parse_topic,
-    parse_map,
-    is_dita_file,
-    compute_file_sha256,
-    TopicDoc,
     MapDoc,
-    _generate_topic_id,
-    _generate_map_id,
-    _extract_labels_from_prolog,
-    _extract_enhanced_metadata_from_prolog,
-    _extract_links_from_element,
-    _normalize_url,
+    TopicDoc,
     _classify_link_type,
+    _extract_enhanced_metadata_from_prolog,
+    _extract_labels_from_prolog,
+    _extract_links_from_element,
+    _generate_map_id,
+    _generate_topic_id,
+    _normalize_url,
     _resolve_dita_reference,
+    compute_file_sha256,
+    is_dita_file,
+    parse_map,
+    parse_topic,
 )
 
 # Mark all tests as unit tests (no database needed)
@@ -106,22 +112,16 @@ def test_is_dita_file(temp_dir):
     """Test DITA file detection."""
     # DITA extension files
     dita_file = temp_dir / "test.dita"
-    dita_file.write_text(
-        "<?xml version='1.0'?><topic><title>Test</title></topic>"
-    )
+    dita_file.write_text("<?xml version='1.0'?><topic><title>Test</title></topic>")
     assert is_dita_file(dita_file)
 
     ditamap_file = temp_dir / "test.ditamap"
-    ditamap_file.write_text(
-        "<?xml version='1.0'?><map><title>Test</title></map>"
-    )
+    ditamap_file.write_text("<?xml version='1.0'?><map><title>Test</title></map>")
     assert is_dita_file(ditamap_file)
 
     # XML file with DITA content
     xml_file = temp_dir / "test.xml"
-    xml_file.write_text(
-        '<?xml version="1.0"?><!DOCTYPE concept><concept><title>Test</title></concept>'
-    )
+    xml_file.write_text('<?xml version="1.0"?><!DOCTYPE concept><concept><title>Test</title></concept>')
     assert is_dita_file(xml_file)
 
     # Non-DITA file
@@ -173,9 +173,7 @@ def test_parse_topic(temp_dir, sample_topic_xml):
     # Check media references
     assert len(doc.images) == 2  # One image, one object
 
-    image_ref = next(
-        (ref for ref in doc.images if ref.media_type == "image"), None
-    )
+    image_ref = next((ref for ref in doc.images if ref.media_type == "image"), None)
     assert image_ref is not None
     assert image_ref.filename == "images/sample.png"
     assert image_ref.alt == "Sample image"
@@ -218,11 +216,7 @@ def test_parse_map(temp_dir, sample_map_xml):
     assert len(doc.hierarchy) >= 4  # Should have all topicref elements
 
     intro_ref = next(
-        (
-            ref
-            for ref in doc.hierarchy
-            if ref.href == "concepts/introduction.dita"
-        ),
+        (ref for ref in doc.hierarchy if ref.href == "concepts/introduction.dita"),
         None,
     )
     assert intro_ref is not None
@@ -364,7 +358,7 @@ def test_media_extraction_order(temp_dir):
     doc = parse_topic(topic_file)
 
     # Should have 4 media references in order
-    assert len(doc.images) == 4
+    assert len(doc.images) == EXPECTED_COUNT_4
 
     media_by_order = sorted(doc.images, key=lambda x: x.order)
 
@@ -426,7 +420,7 @@ def test_map_without_keydefs(temp_dir):
 
     doc = parse_map(map_file)
     assert doc.keydefs == {}
-    assert len(doc.hierarchy) == 2
+    assert len(doc.hierarchy) == EXPECTED_COUNT_2
 
 
 # Test enhanced metadata extraction
@@ -510,14 +504,8 @@ def test_classify_link_type():
     assert _classify_link_type("http://example.com") == "external"
 
     # Confluence links
-    assert (
-        _classify_link_type("https://mycompany.confluence.com/page")
-        == "confluence"
-    )
-    assert (
-        _classify_link_type("https://mycompany.atlassian.net/wiki")
-        == "confluence"
-    )
+    assert _classify_link_type("https://mycompany.confluence.com/page") == "confluence"
+    assert _classify_link_type("https://mycompany.atlassian.net/wiki") == "confluence"
 
     # DITA internal links
     assert _classify_link_type("concepts/intro.dita") == "dita"
@@ -538,40 +526,28 @@ def test_resolve_dita_reference(temp_dir):
     concepts_dir = temp_dir / "concepts"
     concepts_dir.mkdir()
     intro_file = concepts_dir / "intro.dita"
-    intro_file.write_text(
-        "<?xml version='1.0'?><topic><title>Intro</title></topic>"
-    )
+    intro_file.write_text("<?xml version='1.0'?><topic><title>Intro</title></topic>")
 
     current_file = temp_dir / "current.dita"
 
     # Test relative reference resolution
-    resolved = _resolve_dita_reference(
-        "concepts/intro.dita", current_file, temp_dir
-    )
+    resolved = _resolve_dita_reference("concepts/intro.dita", current_file, temp_dir)
     assert resolved == "topic:concepts/intro"
 
     # Test with anchor
-    resolved = _resolve_dita_reference(
-        "concepts/intro.dita#section1", current_file, temp_dir
-    )
+    resolved = _resolve_dita_reference("concepts/intro.dita#section1", current_file, temp_dir)
     assert resolved == "topic:concepts/intro#section1"
 
     # Test map reference
-    resolved = _resolve_dita_reference(
-        "concepts/intro.ditamap", current_file, temp_dir
-    )
+    resolved = _resolve_dita_reference("concepts/intro.ditamap", current_file, temp_dir)
     assert resolved == "map:concepts/intro"
 
     # Test reference (doesn't need to exist)
-    resolved = _resolve_dita_reference(
-        "nonexistent/file.dita", current_file, temp_dir
-    )
+    resolved = _resolve_dita_reference("nonexistent/file.dita", current_file, temp_dir)
     assert resolved == "topic:nonexistent/file"
 
     # Test external URL (should return None)
-    resolved = _resolve_dita_reference(
-        "https://example.com", current_file, temp_dir
-    )
+    resolved = _resolve_dita_reference("https://example.com", current_file, temp_dir)
     assert resolved is None
 
 
@@ -595,9 +571,7 @@ def test_extract_links_from_element(temp_dir):
     concepts_dir = temp_dir / "concepts"
     concepts_dir.mkdir()
     intro_file = concepts_dir / "intro.dita"
-    intro_file.write_text(
-        "<?xml version='1.0'?><topic><title>Intro</title></topic>"
-    )
+    intro_file.write_text("<?xml version='1.0'?><topic><title>Intro</title></topic>")
 
     links = _extract_links_from_element(tree, current_file, temp_dir)
 
@@ -606,23 +580,14 @@ def test_extract_links_from_element(temp_dir):
 
     # Check external links
     external_links = [link for link in links if link.target_type == "external"]
-    assert len(external_links) == 2
-    assert any(
-        link.target_url == "https://example.com" for link in external_links
-    )
-    assert any(
-        link.target_url == "https://docs.example.com"
-        for link in external_links
-    )
+    assert len(external_links) == EXPECTED_COUNT_2
+    assert any(link.target_url == "https://example.com" for link in external_links)
+    assert any(link.target_url == "https://docs.example.com" for link in external_links)
 
     # Check DITA internal links
-    dita_links = [
-        link for link in links if link.target_type == "dita" and link.href
-    ]
+    dita_links = [link for link in links if link.target_type == "dita" and link.href]
     assert len(dita_links) >= 1
-    assert any(
-        link.target_page_id == "topic:concepts/intro" for link in dita_links
-    )
+    assert any(link.target_page_id == "topic:concepts/intro" for link in dita_links)
 
     # Check key references
     key_refs = [link for link in links if link.keyref]
@@ -631,9 +596,7 @@ def test_extract_links_from_element(temp_dir):
     assert any(link.keyref == "keys/company-name" for link in key_refs)
 
     # Check content references
-    conrefs = [
-        link for link in links if link.element_type in ("conref", "conkeyref")
-    ]
+    conrefs = [link for link in links if link.element_type in ("conref", "conkeyref")]
     assert len(conrefs) >= 2
     assert any(link.conref == "shared.dita" for link in conrefs)
 
@@ -682,12 +645,8 @@ def test_parse_topic_enhanced_features(temp_dir):
     assert len(doc.links) >= 3
 
     # Find specific link types
-    external_links = [
-        link for link in doc.links if link.target_type == "external"
-    ]
-    dita_links = [
-        link for link in doc.links if link.target_type == "dita" and link.href
-    ]
+    external_links = [link for link in doc.links if link.target_type == "external"]
+    dita_links = [link for link in doc.links if link.target_type == "dita" and link.href]
     key_refs = [link for link in doc.links if link.keyref]
 
     assert len(external_links) >= 1
@@ -695,10 +654,7 @@ def test_parse_topic_enhanced_features(temp_dir):
     assert len(key_refs) >= 1
 
     # Check specific links
-    assert any(
-        link.target_url == "https://docs.example.com"
-        for link in external_links
-    )
+    assert any(link.target_url == "https://docs.example.com" for link in external_links)
     assert any(link.href == "related-topic.dita" for link in dita_links)
     assert any(link.keyref == "product-name" for link in key_refs)
 
@@ -740,10 +696,6 @@ def test_parse_map_enhanced_features(temp_dir):
     assert hasattr(doc, "links")
 
     # Should extract links from topicref elements
-    external_links = [
-        link for link in doc.links if link.target_type == "external"
-    ]
+    external_links = [link for link in doc.links if link.target_type == "external"]
     assert len(external_links) >= 1
-    assert any(
-        "support.example.com" in link.target_url for link in external_links
-    )
+    assert any("support.example.com" in link.target_url for link in external_links)

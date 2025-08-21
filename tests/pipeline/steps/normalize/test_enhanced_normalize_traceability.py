@@ -1,8 +1,15 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Tests for enhanced traceability preservation in normalize step."""
 
 import json
-import pytest
 from unittest.mock import patch
+
+import pytest
+
 from trailblazer.pipeline.steps.normalize.html_to_md import (
     normalize_from_ingest,
 )
@@ -93,9 +100,7 @@ def test_normalize_preserves_enhanced_traceability(tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
-        out = (
-            (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
-        )
+        out = (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
         normalized = json.loads(out)
 
         # Verify core traceability fields preserved
@@ -103,10 +108,7 @@ def test_normalize_preserves_enhanced_traceability(tmp_path):
         assert normalized["title"] == "Enhanced Traceability Test"
         assert normalized["space_key"] == "DEV"
         assert normalized["space_id"] == "111"
-        assert (
-            normalized["url"]
-            == "https://example.atlassian.net/wiki/spaces/DEV/pages/p1/test"
-        )
+        assert normalized["url"] == "https://example.atlassian.net/wiki/spaces/DEV/pages/p1/test"
         assert normalized["version"] == 2
         assert normalized["created_at"] == "2025-08-01T00:00:00Z"
         assert normalized["updated_at"] == "2025-08-03T00:00:00Z"
@@ -140,10 +142,7 @@ def test_normalize_preserves_enhanced_traceability(tmp_path):
         assert len(attachments) == 1
         attachment = attachments[0]
         assert attachment["filename"] == "api-spec.json"
-        assert (
-            attachment["url"]
-            == "https://example.atlassian.net/download/attachments/p1/api-spec.json"
-        )
+        assert attachment["url"] == "https://example.atlassian.net/download/attachments/p1/api-spec.json"
 
         # Verify markdown content generated
         assert "text_md" in normalized
@@ -181,9 +180,7 @@ def test_normalize_handles_minimal_traceability(tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
-        out = (
-            (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
-        )
+        out = (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
         normalized = json.loads(out)
 
         # Verify minimal fields preserved
@@ -228,9 +225,7 @@ def test_normalize_backward_compatibility(tmp_path):
         m = normalize_from_ingest(outdir=str(outdir), input_file=str(nd))
         assert m["pages"] == 1
 
-        out = (
-            (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
-        )
+        out = (outdir / "normalized.ndjson").read_text(encoding="utf-8").strip()
         normalized = json.loads(out)
 
         # Verify core fields preserved

@@ -1,7 +1,6 @@
 """Media extraction from ADF and Storage formats."""
 
-from typing import Dict, List, Optional, Union
-from bs4 import BeautifulSoup, Tag, PageElement
+from bs4 import BeautifulSoup, PageElement, Tag
 
 
 class MediaInfo:
@@ -11,10 +10,10 @@ class MediaInfo:
         self,
         order: int,
         media_type: str,  # image|file|media
-        filename: Optional[str] = None,
-        attachment_id: Optional[str] = None,
-        download_url: Optional[str] = None,
-        context: Optional[Dict] = None,
+        filename: str | None = None,
+        attachment_id: str | None = None,
+        download_url: str | None = None,
+        context: dict | None = None,
     ):
         self.order = order
         self.media_type = media_type
@@ -24,7 +23,7 @@ class MediaInfo:
         self.context = context or {}
 
 
-def extract_media_from_adf(adf: Optional[dict]) -> List[MediaInfo]:
+def extract_media_from_adf(adf: dict | None) -> list[MediaInfo]:
     """
     Extract media from ADF format with position awareness.
 
@@ -40,7 +39,7 @@ def extract_media_from_adf(adf: Optional[dict]) -> List[MediaInfo]:
     media_items = []
     order_counter = 0
 
-    def walk_adf(node: dict, path: List[int]):
+    def walk_adf(node: dict, path: list[int]):
         """Walk ADF tree and extract media nodes."""
         nonlocal order_counter
 
@@ -70,9 +69,7 @@ def extract_media_from_adf(adf: Optional[dict]) -> List[MediaInfo]:
                 media_items.append(
                     MediaInfo(
                         order=order_counter,
-                        media_type=(
-                            "image" if attrs.get("type") == "file" else "media"
-                        ),
+                        media_type=("image" if attrs.get("type") == "file" else "media"),
                         filename=filename,
                         attachment_id=attachment_id,
                         download_url=attrs.get("url"),
@@ -104,9 +101,7 @@ def extract_media_from_adf(adf: Optional[dict]) -> List[MediaInfo]:
             media_items.append(
                 MediaInfo(
                     order=order_counter,
-                    media_type=(
-                        "image" if attrs.get("type") == "file" else "media"
-                    ),
+                    media_type=("image" if attrs.get("type") == "file" else "media"),
                     filename=filename,
                     attachment_id=attachment_id,
                     download_url=attrs.get("url"),
@@ -124,13 +119,13 @@ def extract_media_from_adf(adf: Optional[dict]) -> List[MediaInfo]:
         if isinstance(content, list):
             for i, child in enumerate(content):
                 if isinstance(child, dict):
-                    walk_adf(child, path + [i])
+                    walk_adf(child, [*path, i])
 
     walk_adf(adf, [])
     return media_items
 
 
-def extract_media_from_storage(storage_html: Optional[str]) -> List[MediaInfo]:
+def extract_media_from_storage(storage_html: str | None) -> list[MediaInfo]:
     """
     Extract media from Storage format HTML.
 
@@ -149,32 +144,24 @@ def extract_media_from_storage(storage_html: Optional[str]) -> List[MediaInfo]:
 
     # Find all media elements in document order
     # Note: We need to be careful not to double-count ri:attachment inside ac:image
-    media_elements: List[Union[Tag, PageElement]] = []
+    media_elements: list[Tag | PageElement] = []
 
     # First, find all ac:image elements (these may contain ri:attachment)
     ac_images = soup.find_all("ac:image")
-    media_elements.extend(
-        [elem for elem in ac_images if isinstance(elem, (Tag, PageElement))]
-    )
+    media_elements.extend([elem for elem in ac_images if isinstance(elem, Tag | PageElement)])
 
     # Then find ri:attachment that are NOT inside ac:image
     all_attachments = soup.find_all("ri:attachment")
     for attachment in all_attachments:
-        if isinstance(attachment, (Tag, PageElement)):
+        if isinstance(attachment, Tag | PageElement):
             # Check if this attachment is inside an ac:image
-            parent_image = (
-                attachment.find_parent("ac:image")
-                if hasattr(attachment, "find_parent")
-                else None
-            )
+            parent_image = attachment.find_parent("ac:image") if hasattr(attachment, "find_parent") else None
             if not parent_image:
                 media_elements.append(attachment)
 
     # Finally, add all img elements
     img_elements = soup.find_all("img")
-    media_elements.extend(
-        [elem for elem in img_elements if isinstance(elem, (Tag, PageElement))]
-    )
+    media_elements.extend([elem for elem in img_elements if isinstance(elem, Tag | PageElement)])
 
     for element in media_elements:
         # Only process Tag elements
@@ -194,9 +181,7 @@ def extract_media_from_storage(storage_html: Optional[str]) -> List[MediaInfo]:
                 filename_val = attachment_elem.get("ri:filename")
                 attachment_id_val = attachment_elem.get("ri:content-id")
                 filename = str(filename_val) if filename_val else None
-                attachment_id = (
-                    str(attachment_id_val) if attachment_id_val else None
-                )
+                attachment_id = str(attachment_id_val) if attachment_id_val else None
 
             context = {
                 "title": str(element.get("ac:title", "")),
@@ -210,9 +195,7 @@ def extract_media_from_storage(storage_html: Optional[str]) -> List[MediaInfo]:
             filename_val = element.get("ri:filename")
             attachment_id_val = element.get("ri:content-id")
             filename = str(filename_val) if filename_val else None
-            attachment_id = (
-                str(attachment_id_val) if attachment_id_val else None
-            )
+            attachment_id = str(attachment_id_val) if attachment_id_val else None
 
         elif element.name == "img":
             # Standard HTML img tag
@@ -259,9 +242,7 @@ def extract_media_from_storage(storage_html: Optional[str]) -> List[MediaInfo]:
     return media_items
 
 
-def resolve_attachment_ids(
-    media_items: List[MediaInfo], attachments: List[Dict]
-) -> List[MediaInfo]:
+def resolve_attachment_ids(media_items: list[MediaInfo], attachments: list[dict]) -> list[MediaInfo]:
     """
     Resolve attachment IDs by matching filenames to attachment list.
 
@@ -286,8 +267,6 @@ def resolve_attachment_ids(
             if matching_attachment:
                 media.attachment_id = matching_attachment.get("id")
                 if not media.download_url:
-                    media.download_url = matching_attachment.get(
-                        "download_url"
-                    )
+                    media.download_url = matching_attachment.get("download_url")
 
     return media_items

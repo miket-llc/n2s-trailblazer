@@ -1,3 +1,8 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test CLI flag standardization: --dimension (not --dimensions)."""
 
 import pytest
@@ -42,9 +47,7 @@ class TestFlagDimension:
 
     def test_embed_reembed_if_changed_has_dimension_flag(self):
         """Test that embed reembed-if-changed exposes --dimension flag."""
-        result = self.runner.invoke(
-            app, ["embed", "reembed-if-changed", "--help"]
-        )
+        result = self.runner.invoke(app, ["embed", "reembed-if-changed", "--help"])
 
         assert result.exit_code == 0
         assert "--dimension" in result.stdout
@@ -69,10 +72,7 @@ class TestFlagDimension:
         # Should fail with "no such option" error
         assert result.exit_code != 0
         # Check stderr for error message since typer outputs there
-        assert (
-            "no such option" in result.output.lower()
-            or "unrecognized" in result.output.lower()
-        )
+        assert "no such option" in result.output.lower() or "unrecognized" in result.output.lower()
 
     def test_embed_corpus_rejects_dimensions_flag(self):
         """Test that embed corpus rejects legacy --dimensions flag."""
@@ -91,10 +91,7 @@ class TestFlagDimension:
         # Should fail with "no such option" error
         assert result.exit_code != 0
         # Check stderr for error message since typer outputs there
-        assert (
-            "no such option" in result.output.lower()
-            or "unrecognized" in result.output.lower()
-        )
+        assert "no such option" in result.output.lower() or "unrecognized" in result.output.lower()
 
     def test_dimension_flag_help_text(self):
         """Test that --dimension flag has proper help text."""
@@ -132,6 +129,4 @@ class TestFlagDimension:
                 # Check that we don't have "dimensions" in flag names
                 for context in dimension_contexts:
                     if "--" in context:  # This is a flag line
-                        assert "--dimensions" not in context, (
-                            f"Found --dimensions in {cmd}: {context}"
-                        )
+                        assert "--dimensions" not in context, f"Found --dimensions in {cmd}: {context}"

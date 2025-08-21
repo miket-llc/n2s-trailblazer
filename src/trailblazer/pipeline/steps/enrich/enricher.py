@@ -11,8 +11,9 @@ import hashlib
 import json
 import re
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from ....core.logging import log
 
@@ -23,8 +24,8 @@ class DocumentEnricher:
     def __init__(
         self,
         llm_enabled: bool = False,
-        max_docs: Optional[int] = None,
-        budget: Optional[str] = None,
+        max_docs: int | None = None,
+        budget: str | None = None,
         min_quality: float = 0.60,
         max_below_threshold_pct: float = 0.20,
     ):
@@ -39,10 +40,10 @@ class DocumentEnricher:
         self.docs_processed = 0
         self.docs_llm = 0
         self.suggested_edges_count = 0
-        self.quality_flags_counts: Dict[str, int] = {}
-        self.quality_scores: List[float] = []
+        self.quality_flags_counts: dict[str, int] = {}
+        self.quality_scores: list[float] = []
 
-    def enrich_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+    def enrich_document(self, doc: dict[str, Any]) -> dict[str, Any]:
         """Enrich a single document with rule-based and optional LLM metadata."""
         enriched = self._apply_rule_based_enrichment(doc)
 
@@ -55,9 +56,7 @@ class DocumentEnricher:
         self.docs_processed += 1
         return enriched
 
-    def _apply_rule_based_enrichment(
-        self, doc: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _apply_rule_based_enrichment(self, doc: dict[str, Any]) -> dict[str, Any]:
         """Apply fast, deterministic rule-based enrichment."""
         text_md = doc.get("text_md", "")
         attachments = doc.get("attachments", [])
@@ -75,26 +74,18 @@ class DocumentEnricher:
         link_density = self._compute_link_density(text_md, links)
 
         # Determine quality flags
-        quality_flags = self._determine_quality_flags(
-            doc, text_md, attachments
-        )
+        quality_flags = self._determine_quality_flags(doc, text_md, attachments)
 
         # Compute new schema fields
         fingerprint = self._compute_document_fingerprint(doc)
         section_map = self._extract_section_map(text_md)
         chunk_hints = self._generate_chunk_hints(doc, text_md)
-        quality_metrics = self._compute_quality_metrics(
-            doc, text_md, attachments, quality_flags, readability
-        )
-        quality_score = self._compute_quality_score(
-            quality_metrics, quality_flags
-        )
+        quality_metrics = self._compute_quality_metrics(doc, text_md, attachments, quality_flags, readability)
+        quality_score = self._compute_quality_score(quality_metrics, quality_flags)
 
         # Update statistics
         for flag in quality_flags:
-            self.quality_flags_counts[flag] = (
-                self.quality_flags_counts.get(flag, 0) + 1
-            )
+            self.quality_flags_counts[flag] = self.quality_flags_counts.get(flag, 0) + 1
         self.quality_scores.append(quality_score)
 
         # Start with original document and add enrichment fields
@@ -119,7 +110,7 @@ class DocumentEnricher:
 
         return enriched
 
-    def _apply_llm_enrichment(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+    def _apply_llm_enrichment(self, doc: dict[str, Any]) -> dict[str, Any]:
         """Apply LLM-based enrichment (mocked for now)."""
         if not self.llm_enabled:
             return {}
@@ -140,7 +131,7 @@ class DocumentEnricher:
             "taxonomy_labels": taxonomy_labels,
         }
 
-    def _extract_collection(self, doc: Dict[str, Any]) -> Optional[str]:
+    def _extract_collection(self, doc: dict[str, Any]) -> str | None:
         """Extract or infer document collection."""
         # Use existing collection if available (from DITA)
         if doc.get("collection"):
@@ -154,7 +145,7 @@ class DocumentEnricher:
         # Fallback to source system
         return doc.get("source_system", "unknown")
 
-    def _extract_path_tags(self, doc: Dict[str, Any]) -> List[str]:
+    def _extract_path_tags(self, doc: dict[str, Any]) -> list[str]:
         """Extract or generate path-based tags."""
         # Use existing path_tags if available (from DITA)
         if doc.get("path_tags"):
@@ -193,7 +184,7 @@ class DocumentEnricher:
 
         return list(dict.fromkeys(tags))  # Remove duplicates, preserve order
 
-    def _compute_readability(self, text_md: str) -> Dict[str, float]:
+    def _compute_readability(self, text_md: str) -> dict[str, float]:
         """Compute readability metrics."""
         if not text_md or not text_md.strip():
             return {
@@ -219,12 +210,8 @@ class DocumentEnricher:
 
         # Ensure we don't divide by zero
         chars_per_word = char_count / word_count if word_count > 0 else 0.0
-        words_per_paragraph = (
-            word_count / paragraph_count if paragraph_count > 0 else 0.0
-        )
-        heading_ratio = (
-            heading_count / paragraph_count if paragraph_count > 0 else 0.0
-        )
+        words_per_paragraph = word_count / paragraph_count if paragraph_count > 0 else 0.0
+        heading_ratio = heading_count / paragraph_count if paragraph_count > 0 else 0.0
 
         return {
             "chars_per_word": round(chars_per_word, 2),
@@ -232,9 +219,7 @@ class DocumentEnricher:
             "heading_ratio": round(heading_ratio, 3),
         }
 
-    def _compute_media_density(
-        self, text_md: str, attachments: List[Dict]
-    ) -> float:
+    def _compute_media_density(self, text_md: str, attachments: list[dict]) -> float:
         """Compute media density (media refs per 1000 chars)."""
         if not text_md:
             return 0.0
@@ -250,7 +235,7 @@ class DocumentEnricher:
 
         return round(density, 2)
 
-    def _compute_link_density(self, text_md: str, links: List[str]) -> float:
+    def _compute_link_density(self, text_md: str, links: list[str]) -> float:
         """Compute link density (links per 1000 chars)."""
         if not text_md:
             return 0.0
@@ -266,9 +251,7 @@ class DocumentEnricher:
 
         return round(density, 2)
 
-    def _determine_quality_flags(
-        self, doc: Dict[str, Any], text_md: str, attachments: List[Dict]
-    ) -> List[str]:
+    def _determine_quality_flags(self, _doc: dict[str, Any], text_md: str, attachments: list[dict]) -> list[str]:
         """Determine quality flags for the document."""
         flags = []
 
@@ -304,9 +287,7 @@ class DocumentEnricher:
 
         return flags
 
-    def _compute_document_fingerprint(
-        self, doc: Dict[str, Any]
-    ) -> Dict[str, str]:
+    def _compute_document_fingerprint(self, doc: dict[str, Any]) -> dict[str, str]:
         """Compute document fingerprint with doc and version info."""
         # Create stable hash of document content for change detection
         # Normalize whitespace in text_md to make fingerprint stable
@@ -325,14 +306,12 @@ class DocumentEnricher:
             "url": doc.get("url"),
         }
 
-        canonical_json = json.dumps(
-            content_fields, sort_keys=True, ensure_ascii=False
-        )
+        canonical_json = json.dumps(content_fields, sort_keys=True, ensure_ascii=False)
         doc_hash = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
         return {"doc": doc_hash, "version": self.enrichment_version}
 
-    def _extract_section_map(self, text_md: str) -> List[Dict[str, Any]]:
+    def _extract_section_map(self, text_md: str) -> list[dict[str, Any]]:
         """Extract section map with heading, level, and character/token positions."""
         if not text_md:
             return []
@@ -342,9 +321,7 @@ class DocumentEnricher:
         current_pos = 0
 
         for line_num, line in enumerate(lines):
-            line_with_newline = (
-                line + "\n" if line_num < len(lines) - 1 else line
-            )
+            line_with_newline = line + "\n" if line_num < len(lines) - 1 else line
 
             # Match markdown headings
             heading_match = re.match(r"^(#{1,6})\s+(.+)", line.strip())
@@ -353,9 +330,7 @@ class DocumentEnricher:
                 heading_text = heading_match.group(2).strip()
 
                 # Estimate token positions (rough approximation)
-                token_start = max(
-                    0, current_pos // 4
-                )  # Rough chars-to-tokens ratio
+                token_start = max(0, current_pos // 4)  # Rough chars-to-tokens ratio
 
                 sections.append(
                     {
@@ -364,8 +339,7 @@ class DocumentEnricher:
                         "startChar": current_pos,
                         "endChar": current_pos + len(line_with_newline),
                         "tokenStart": token_start,
-                        "tokenEnd": token_start
-                        + max(1, len(line_with_newline) // 4),
+                        "tokenEnd": token_start + max(1, len(line_with_newline) // 4),
                     }
                 )
 
@@ -373,9 +347,7 @@ class DocumentEnricher:
 
         return sections
 
-    def _generate_chunk_hints(
-        self, doc: Dict[str, Any], text_md: str
-    ) -> Dict[str, Any]:
+    def _generate_chunk_hints(self, _doc: dict[str, Any], text_md: str) -> dict[str, Any]:
         """Generate chunking hints for the document."""
         # Default chunk hints
         chunk_hints = {
@@ -391,27 +363,19 @@ class DocumentEnricher:
         current_pos = 0
 
         for line_num, line in enumerate(lines):
-            line_with_newline = (
-                line + "\n" if line_num < len(lines) - 1 else line
-            )
+            line_with_newline = line + "\n" if line_num < len(lines) - 1 else line
 
             # Headings are good boundaries
             if re.match(r"^#{1,6}\s+", line.strip()):
                 soft_boundaries.append(current_pos)
 
             # Double line breaks (paragraph boundaries)
-            elif (
-                line.strip() == ""
-                and line_num > 0
-                and line_num < len(lines) - 1
-            ):
+            elif line.strip() == "" and line_num > 0 and line_num < len(lines) - 1:
                 if lines[line_num - 1].strip() and lines[line_num + 1].strip():
                     soft_boundaries.append(current_pos)
 
             # List item boundaries
-            elif re.match(r"^[\s]*[-*+]\s+", line) or re.match(
-                r"^[\s]*\d+\.\s+", line
-            ):
+            elif re.match(r"^[\s]*[-*+]\s+", line) or re.match(r"^[\s]*\d+\.\s+", line):
                 soft_boundaries.append(current_pos)
 
             current_pos += len(line_with_newline)
@@ -421,12 +385,12 @@ class DocumentEnricher:
 
     def _compute_quality_metrics(
         self,
-        doc: Dict[str, Any],
+        _doc: dict[str, Any],
         text_md: str,
-        attachments: List[Dict],
-        quality_flags: List[str],
-        readability: Dict[str, float],
-    ) -> Dict[str, Any]:
+        attachments: list[dict],
+        _quality_flags: list[str],
+        readability: dict[str, float],
+    ) -> dict[str, Any]:
         """Compute detailed quality metrics."""
         word_count = len(text_md.split()) if text_md else 0
         char_count = len(text_md) if text_md else 0
@@ -450,14 +414,10 @@ class DocumentEnricher:
             "tables": tables,
             "attachment_count": len(attachments),
             "readability_score": readability.get("chars_per_word", 0.0),
-            "structure_score": min(
-                1.0, heading_count / max(1, word_count / 200)
-            ),  # Headings per ~200 words
+            "structure_score": min(1.0, heading_count / max(1, word_count / 200)),  # Headings per ~200 words
         }
 
-    def _compute_quality_score(
-        self, quality_metrics: Dict[str, Any], quality_flags: List[str]
-    ) -> float:
+    def _compute_quality_score(self, quality_metrics: dict[str, Any], quality_flags: list[str]) -> float:
         """Compute overall quality score (0.0 to 1.0)."""
         score = 1.0
 
@@ -486,7 +446,7 @@ class DocumentEnricher:
 
         return round(score, 3)
 
-    def get_quality_distribution(self) -> Dict[str, Any]:
+    def get_quality_distribution(self) -> dict[str, Any]:
         """Get quality score distribution statistics."""
         if not self.quality_scores:
             return {
@@ -506,9 +466,7 @@ class DocumentEnricher:
         p50 = sorted_scores[min(p50_idx, n - 1)]
         p90 = sorted_scores[min(p90_idx, n - 1)]
 
-        below_threshold = sum(
-            1 for score in self.quality_scores if score < self.min_quality
-        )
+        below_threshold = sum(1 for score in self.quality_scores if score < self.min_quality)
         below_threshold_pct = below_threshold / n if n > 0 else 1.0
 
         return {
@@ -531,7 +489,7 @@ class DocumentEnricher:
 
         return first_sentence
 
-    def _extract_keywords(self, text_md: str) -> List[str]:
+    def _extract_keywords(self, text_md: str) -> list[str]:
         """Extract keywords (mocked)."""
         # Mock keyword extraction - in real implementation would use LLM
         # Simple heuristic: find capitalized words and common tech terms
@@ -545,9 +503,7 @@ class DocumentEnricher:
         keywords = list(dict.fromkeys(words + tech_terms))  # Remove duplicates
         return keywords[:8]  # Limit to 8 keywords
 
-    def _classify_taxonomy(
-        self, text_md: str, doc: Dict[str, Any]
-    ) -> List[str]:
+    def _classify_taxonomy(self, text_md: str, doc: dict[str, Any]) -> list[str]:
         """Classify document into taxonomy labels (mocked)."""
         # Mock taxonomy classification - in real implementation would use LLM
         labels = []
@@ -555,33 +511,19 @@ class DocumentEnricher:
         text_lower = text_md.lower()
 
         # Technical documentation categories
-        if any(
-            term in text_lower for term in ["api", "endpoint", "rest", "json"]
-        ):
+        if any(term in text_lower for term in ["api", "endpoint", "rest", "json"]):
             labels.append("api-documentation")
 
-        if any(
-            term in text_lower
-            for term in ["install", "setup", "configuration", "config"]
-        ):
+        if any(term in text_lower for term in ["install", "setup", "configuration", "config"]):
             labels.append("setup-guide")
 
-        if any(
-            term in text_lower
-            for term in ["tutorial", "how to", "step by step", "guide"]
-        ):
+        if any(term in text_lower for term in ["tutorial", "how to", "step by step", "guide"]):
             labels.append("tutorial")
 
-        if any(
-            term in text_lower
-            for term in ["release", "changelog", "version", "update"]
-        ):
+        if any(term in text_lower for term in ["release", "changelog", "version", "update"]):
             labels.append("release-notes")
 
-        if any(
-            term in text_lower
-            for term in ["troubleshoot", "error", "issue", "problem"]
-        ):
+        if any(term in text_lower for term in ["troubleshoot", "error", "issue", "problem"]):
             labels.append("troubleshooting")
 
         # Source system specific
@@ -591,9 +533,7 @@ class DocumentEnricher:
 
         return labels[:5]  # Limit to 5 labels
 
-    def generate_suggested_edges(
-        self, docs: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def generate_suggested_edges(self, docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Generate suggested edges between documents (mocked LLM)."""
         if not self.llm_enabled or len(docs) < 2:
             return []
@@ -610,9 +550,7 @@ class DocumentEnricher:
 
         return edges
 
-    def _suggest_edge_between_docs(
-        self, doc1: Dict[str, Any], doc2: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+    def _suggest_edge_between_docs(self, doc1: dict[str, Any], doc2: dict[str, Any]) -> dict[str, Any] | None:
         """Suggest an edge between two documents."""
         # Skip if same document
         if doc1.get("id") == doc2.get("id"):
@@ -649,9 +587,7 @@ class DocumentEnricher:
 
         return None
 
-    def compute_enrichment_fingerprint(
-        self, enriched_doc: Dict[str, Any]
-    ) -> str:
+    def compute_enrichment_fingerprint(self, enriched_doc: dict[str, Any]) -> str:
         """Compute a stable SHA256 fingerprint for enrichment state."""
         # Select fields that should trigger re-embedding if changed
         fingerprint_fields = {
@@ -668,14 +604,10 @@ class DocumentEnricher:
         if "keywords" in enriched_doc:
             fingerprint_fields["keywords"] = enriched_doc["keywords"]
         if "taxonomy_labels" in enriched_doc:
-            fingerprint_fields["taxonomy_labels"] = enriched_doc[
-                "taxonomy_labels"
-            ]
+            fingerprint_fields["taxonomy_labels"] = enriched_doc["taxonomy_labels"]
 
         # Create canonical JSON representation
-        canonical_json = json.dumps(
-            fingerprint_fields, sort_keys=True, ensure_ascii=False
-        )
+        canonical_json = json.dumps(fingerprint_fields, sort_keys=True, ensure_ascii=False)
 
         # Compute SHA256
         return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
@@ -684,13 +616,13 @@ class DocumentEnricher:
 def enrich_from_normalized(
     run_id: str,
     llm_enabled: bool = False,
-    max_docs: Optional[int] = None,
-    budget: Optional[str] = None,
+    max_docs: int | None = None,
+    budget: str | None = None,
     min_quality: float = 0.60,
     max_below_threshold_pct: float = 0.20,
-    progress_callback: Optional[Callable] = None,
-    emit_event: Optional[Callable] = None,
-) -> Dict[str, Any]:
+    progress_callback: Callable | None = None,
+    emit_event: Callable | None = None,
+) -> dict[str, Any]:
     """
     Enrich normalized documents with metadata and quality signals.
 
@@ -741,10 +673,10 @@ def enrich_from_normalized(
         )
 
     # Process documents
-    docs_for_edges: List[Dict[str, Any]] = []
+    docs_for_edges: list[dict[str, Any]] = []
 
     with (
-        open(input_file, "r", encoding="utf-8") as fin,
+        open(input_file, encoding="utf-8") as fin,
         open(enriched_file, "w", encoding="utf-8") as fout_enriched,
         open(fingerprints_file, "w", encoding="utf-8") as fout_fingerprints,
     ):
@@ -761,9 +693,7 @@ def enrich_from_normalized(
             fingerprint = enricher.compute_enrichment_fingerprint(enriched)
 
             # Write enriched document
-            fout_enriched.write(
-                json.dumps(enriched, ensure_ascii=False) + "\n"
-            )
+            fout_enriched.write(json.dumps(enriched, ensure_ascii=False) + "\n")
 
             # Write fingerprint
             fingerprint_rec = {
@@ -771,14 +701,10 @@ def enrich_from_normalized(
                 "enrichment_version": enricher.enrichment_version,
                 "fingerprint_sha256": fingerprint,
             }
-            fout_fingerprints.write(
-                json.dumps(fingerprint_rec, ensure_ascii=False) + "\n"
-            )
+            fout_fingerprints.write(json.dumps(fingerprint_rec, ensure_ascii=False) + "\n")
 
             # Collect docs for edge generation
-            if (
-                llm_enabled and len(docs_for_edges) < 1000
-            ):  # Limit for performance
+            if llm_enabled and len(docs_for_edges) < 1000:  # Limit for performance
                 docs_for_edges.append(doc)
 
             # Emit progress

@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Any
+from typing import Any
 
 
-def group_by_doc(
-    hits: List[Dict[str, Any]], max_chunks_per_doc: int
-) -> List[Dict[str, Any]]:
+def group_by_doc(hits: list[dict[str, Any]], max_chunks_per_doc: int) -> list[dict[str, Any]]:
     """
     Group hits by document and limit chunks per document.
 
@@ -23,7 +21,7 @@ def group_by_doc(
         return []
 
     # Track seen docs and their counts
-    doc_counts: Dict[str, int] = {}
+    doc_counts: dict[str, int] = {}
     result = []
 
     # Process hits in original order, limiting per doc
@@ -60,7 +58,7 @@ def _is_inside_code_block(text: str, position: int) -> bool:
     return False
 
 
-def pack_context(hits: List[Dict[str, Any]], max_chars: int = 6000) -> str:
+def pack_context(hits: list[dict[str, Any]], max_chars: int = 6000) -> str:
     """
     Pack hit results into a context string respecting character budget.
 
@@ -74,7 +72,7 @@ def pack_context(hits: List[Dict[str, Any]], max_chars: int = 6000) -> str:
     if not hits:
         return ""
 
-    context_parts: List[str] = []
+    context_parts: list[str] = []
     current_chars = 0
 
     for i, hit in enumerate(hits):
@@ -104,9 +102,7 @@ def pack_context(hits: List[Dict[str, Any]], max_chars: int = 6000) -> str:
                 remaining_budget = max_chars - current_chars
 
             # Try to find a safe truncation point outside code blocks
-            if (
-                remaining_budget > len(separator) + 50
-            ):  # Minimum useful content
+            if remaining_budget > len(separator) + 50:  # Minimum useful content
                 # Add separator first
                 safe_separator = separator
                 remaining_after_sep = remaining_budget - len(separator)
@@ -122,9 +118,7 @@ def pack_context(hits: List[Dict[str, Any]], max_chars: int = 6000) -> str:
 
                 # Add truncated content if meaningful
                 if len(truncated_text.strip()) > 20:
-                    context_parts.append(
-                        safe_separator + truncated_text + "\n[... truncated]"
-                    )
+                    context_parts.append(safe_separator + truncated_text + "\n[... truncated]")
 
             break
 
@@ -137,10 +131,10 @@ def pack_context(hits: List[Dict[str, Any]], max_chars: int = 6000) -> str:
 
 def create_context_summary(
     query: str,
-    hits: List[Dict[str, Any]],
+    hits: list[dict[str, Any]],
     provider: str,
-    timing_info: Dict[str, Any],
-) -> Dict[str, Any]:
+    timing_info: dict[str, Any],
+) -> dict[str, Any]:
     """
     Create a summary dictionary for the retrieval results.
 

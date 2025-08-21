@@ -1,53 +1,54 @@
-from pydantic import BaseModel
 from datetime import datetime
-from typing import List, Dict, Optional, Any
+from typing import Any
+
+from pydantic import BaseModel
 
 
 class Attachment(BaseModel):
     id: str
-    filename: Optional[str] = None
-    media_type: Optional[str] = None
-    file_size: Optional[int] = None
-    download_url: Optional[str] = None  # absolute URL
-    sha256: Optional[str] = None  # file hash if computed
-    width: Optional[int] = None  # image dimensions if available
-    height: Optional[int] = None
+    filename: str | None = None
+    media_type: str | None = None
+    file_size: int | None = None
+    download_url: str | None = None  # absolute URL
+    sha256: str | None = None  # file hash if computed
+    width: int | None = None  # image dimensions if available
+    height: int | None = None
 
 
 class ConfluenceUser(BaseModel):
     account_id: str
-    display_name: Optional[str] = None
+    display_name: str | None = None
 
 
 class PageAncestor(BaseModel):
     id: str
     title: str
-    url: Optional[str] = None
+    url: str | None = None
 
 
 class Page(BaseModel):
     id: str
     title: str
-    space_key: Optional[str] = None
-    space_id: Optional[str] = None
-    space_name: Optional[str] = None  # space display name
-    space_type: Optional[str] = None  # personal, team, etc.
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None  # from version.createdAt
-    version: Optional[int] = None
-    body_html: Optional[str] = None  # from v2 body (storage|adf)
-    url: Optional[str] = None  # _links.webui full URL
-    attachments: List[Attachment] = []
+    space_key: str | None = None
+    space_id: str | None = None
+    space_name: str | None = None  # space display name
+    space_type: str | None = None  # personal, team, etc.
+    created_at: datetime | None = None
+    updated_at: datetime | None = None  # from version.createdAt
+    version: int | None = None
+    body_html: str | None = None  # from v2 body (storage|adf)
+    url: str | None = None  # _links.webui full URL
+    attachments: list[Attachment] = []
     source_system: str = "confluence"  # traceability field
 
     # Enhanced traceability fields
-    created_by: Optional[ConfluenceUser] = None
-    updated_by: Optional[ConfluenceUser] = None
-    labels: List[str] = []  # Confluence labels
-    ancestors: List[PageAncestor] = []  # ordered root→parent
-    content_sha256: Optional[str] = None  # content hash
+    created_by: ConfluenceUser | None = None
+    updated_by: ConfluenceUser | None = None
+    labels: list[str] = []  # Confluence labels
+    ancestors: list[PageAncestor] = []  # ordered root→parent
+    content_sha256: str | None = None  # content hash
     attachment_count: int = 0
     label_count: int = 0
     ancestor_count: int = 0
 
-    metadata: Dict[str, Any] = {}
+    metadata: dict[str, Any] = {}

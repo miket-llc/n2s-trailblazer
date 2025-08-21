@@ -1,8 +1,14 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test database doctor command functionality."""
 
 import os
-import pytest
 from unittest.mock import patch
+
+import pytest
 from typer.testing import CliRunner
 
 from trailblazer.cli.main import app
@@ -21,32 +27,26 @@ def test_db_doctor_postgres_healthy():
         "host": "localhost",
     }
 
-    with patch(
-        "trailblazer.db.engine.check_db_health", return_value=mock_health_info
-    ):
-        with patch(
+    with (
+        patch("trailblazer.db.engine.check_db_health", return_value=mock_health_info),
+        patch(
             "trailblazer.db.engine.get_db_url",
             return_value="postgresql://user:***@localhost:5432/test_db",
-        ):
-            with patch("trailblazer.db.engine.get_session") as mock_session:
-                # Mock the session and query result for embedding dimensions
-                mock_session.return_value.__enter__.return_value.execute.return_value = []
+        ),
+        patch("trailblazer.db.engine.get_session") as mock_session,
+    ):
+        # Mock the session and query result for embedding dimensions
+        mock_session.return_value.__enter__.return_value.execute.return_value = []
 
-                runner = CliRunner()
-                result = runner.invoke(app, ["db", "doctor"])
+        runner = CliRunner()
+        result = runner.invoke(app, ["db", "doctor"])
 
-                assert result.exit_code == 0
-                assert (
-                    "Database Doctor - Comprehensive Health Check"
-                    in result.stdout
-                )
-                assert "Connection successful!" in result.stdout
-                assert "PostgreSQL-specific checks:" in result.stdout
-                assert "pgvector extension: available" in result.stdout
-                assert (
-                    "Database health check completed successfully!"
-                    in result.stdout
-                )
+        assert result.exit_code == 0
+        assert "Database Doctor - Comprehensive Health Check" in result.stdout
+        assert "Connection successful!" in result.stdout
+        assert "PostgreSQL-specific checks:" in result.stdout
+        assert "pgvector extension: available" in result.stdout
+        assert "Database health check completed successfully!" in result.stdout
 
 
 def test_db_doctor_postgres_missing_pgvector():
@@ -59,19 +59,19 @@ def test_db_doctor_postgres_missing_pgvector():
         "host": "localhost",
     }
 
-    with patch(
-        "trailblazer.db.engine.check_db_health", return_value=mock_health_info
-    ):
-        with patch(
+    with (
+        patch("trailblazer.db.engine.check_db_health", return_value=mock_health_info),
+        patch(
             "trailblazer.db.engine.get_db_url",
             return_value="postgresql://user:***@localhost:5432/test_db",
-        ):
-            runner = CliRunner()
-            result = runner.invoke(app, ["db", "doctor"])
+        ),
+    ):
+        runner = CliRunner()
+        result = runner.invoke(app, ["db", "doctor"])
 
-            assert result.exit_code == 1
-            assert "pgvector extension: NOT available" in result.stdout
-            assert "Run 'trailblazer db init' or manually:" in result.stdout
+        assert result.exit_code == 1
+        assert "pgvector extension: NOT available" in result.stdout
+        assert "Run 'trailblazer db init' or manually:" in result.stdout
 
 
 def test_db_doctor_sqlite_in_test_mode():
@@ -84,20 +84,20 @@ def test_db_doctor_sqlite_in_test_mode():
         "host": "localhost",
     }
 
-    with patch(
-        "trailblazer.db.engine.check_db_health", return_value=mock_health_info
-    ):
-        with patch(
+    with (
+        patch("trailblazer.db.engine.check_db_health", return_value=mock_health_info),
+        patch(
             "trailblazer.db.engine.get_db_url",
             return_value="sqlite:///test.db",
-        ):
-            # TB_TESTING should be set by conftest.py, but let's be explicit
-            with patch.dict(os.environ, {"TB_TESTING": "1"}):
-                runner = CliRunner()
-                result = runner.invoke(app, ["db", "doctor"])
+        ),
+    ):
+        # TB_TESTING should be set by conftest.py, but let's be explicit
+        with patch.dict(os.environ, {"TB_TESTING": "1"}):
+            runner = CliRunner()
+            result = runner.invoke(app, ["db", "doctor"])
 
-                assert result.exit_code == 1
-                assert "Unsupported database: sqlite" in result.stdout
+            assert result.exit_code == 1
+            assert "Unsupported database: sqlite" in result.stdout
 
 
 def test_db_doctor_sqlite_in_production_mode():
@@ -110,43 +110,40 @@ def test_db_doctor_sqlite_in_production_mode():
         "host": "localhost",
     }
 
-    with patch(
-        "trailblazer.db.engine.check_db_health", return_value=mock_health_info
-    ):
-        with patch(
+    with (
+        patch("trailblazer.db.engine.check_db_health", return_value=mock_health_info),
+        patch(
             "trailblazer.db.engine.get_db_url",
             return_value="sqlite:///test.db",
-        ):
-            # Remove TB_TESTING to simulate production mode
-            with patch.dict(os.environ, {}, clear=True):
-                runner = CliRunner()
-                result = runner.invoke(app, ["db", "doctor"])
-
-                assert result.exit_code == 1
-                assert "Unsupported database: sqlite" in result.stdout
-
-
-def test_db_doctor_connection_failure():
-    """Test db doctor when database connection fails."""
-    with patch(
-        "trailblazer.db.engine.check_db_health",
-        side_effect=Exception("Connection refused"),
+        ),
     ):
-        with patch(
-            "trailblazer.db.engine.get_db_url",
-            return_value="postgresql://user:***@localhost:5432/test_db",
-        ):
+        # Remove TB_TESTING to simulate production mode
+        with patch.dict(os.environ, {}, clear=True):
             runner = CliRunner()
             result = runner.invoke(app, ["db", "doctor"])
 
             assert result.exit_code == 1
-            assert (
-                "Database doctor failed: Connection refused" in result.stderr
-            )
-            assert (
-                "1. Check TRAILBLAZER_DB_URL in your .env file"
-                in result.stdout
-            )
+            assert "Unsupported database: sqlite" in result.stdout
+
+
+def test_db_doctor_connection_failure():
+    """Test db doctor when database connection fails."""
+    with (
+        patch(
+            "trailblazer.db.engine.check_db_health",
+            side_effect=Exception("Connection refused"),
+        ),
+        patch(
+            "trailblazer.db.engine.get_db_url",
+            return_value="postgresql://user:***@localhost:5432/test_db",
+        ),
+    ):
+        runner = CliRunner()
+        result = runner.invoke(app, ["db", "doctor"])
+
+        assert result.exit_code == 1
+        assert "Database doctor failed: Connection refused" in result.stderr
+        assert "1. Check TRAILBLAZER_DB_URL in your .env file" in result.stdout
 
 
 def test_db_doctor_with_embedding_dimensions():
@@ -159,9 +156,7 @@ def test_db_doctor_with_embedding_dimensions():
         "host": "localhost",
     }
 
-    with patch(
-        "trailblazer.db.engine.check_db_health", return_value=mock_health_info
-    ):
+    with patch("trailblazer.db.engine.check_db_health", return_value=mock_health_info):
         with patch(
             "trailblazer.db.engine.get_db_url",
             return_value="postgresql://user:***@localhost:5432/test_db",
@@ -175,6 +170,4 @@ def test_db_doctor_with_embedding_dimensions():
                 result = runner.invoke(app, ["db", "doctor"])
 
                 assert result.exit_code == 0
-                assert (
-                    "Embedding dimensions found: [384, 768]" in result.stdout
-                )
+                assert "Embedding dimensions found: [384, 768]" in result.stdout

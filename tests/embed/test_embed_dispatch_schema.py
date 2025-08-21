@@ -1,6 +1,12 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test embed dispatch schema fallback functionality."""
 
 import json
+
 import pytest
 
 # Mark all tests as unit tests (no database needed)
@@ -23,7 +29,7 @@ def test_dispatcher_schema_fallback_new_keys(tmp_path):
         json.dump(plan_data, f)
 
     # Test JSON parsing directly (simpler than shell commands)
-    with open(plan_file, "r") as f:
+    with open(plan_file) as f:
         parsed_data = json.load(f)
 
     ready_count = parsed_data.get("ready_runs", 0)
@@ -51,7 +57,7 @@ def test_dispatcher_schema_fallback_legacy_keys(tmp_path):
         json.dump(plan_data, f)
 
     # Test JSON parsing directly (simpler than shell commands)
-    with open(plan_file, "r") as f:
+    with open(plan_file) as f:
         parsed_data = json.load(f)
 
     ready_count = parsed_data.get("runsReady", 0)

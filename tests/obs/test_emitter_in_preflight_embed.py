@@ -1,16 +1,22 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test that preflight and embed use EventEmitter consistently."""
 
-import pytest
-import tempfile
 import json
+import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from trailblazer.pipeline.steps.embed.preflight import (
-    run_preflight_check,
-    run_plan_preflight,
-)
+import pytest
+
 from trailblazer.pipeline.steps.embed.loader import load_chunks_to_db
+from trailblazer.pipeline.steps.embed.preflight import (
+    run_plan_preflight,
+    run_preflight_check,
+)
 
 # Mark all tests as integration tests (need database)
 pytestmark = pytest.mark.integration
@@ -69,18 +75,12 @@ def test_preflight_uses_event_emitter():
                 "trailblazer.core.paths.runs",
                 return_value=temp_path / "var" / "runs",
             ),
-            patch(
-                "trailblazer.pipeline.steps.embed.preflight.EventEmitter"
-            ) as mock_event_emitter,
+            patch("trailblazer.pipeline.steps.embed.preflight.EventEmitter") as mock_event_emitter,
         ):
             # Set up mock EventEmitter
             mock_emitter_instance = MagicMock()
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Run preflight
             result = run_preflight_check(
@@ -91,9 +91,7 @@ def test_preflight_uses_event_emitter():
             )
 
             # Verify EventEmitter was used as context manager
-            mock_event_emitter.assert_called_once_with(
-                run_id=run_id, phase="embed", component="preflight"
-            )
+            mock_event_emitter.assert_called_once_with(run_id=run_id, phase="embed", component="preflight")
 
             # Verify start event was emitted
             mock_emitter_instance.embed_start.assert_called_once_with(
@@ -131,18 +129,12 @@ def test_plan_preflight_uses_event_emitter():
                 "trailblazer.core.paths.runs",
                 return_value=temp_path / "var" / "runs",
             ),
-            patch(
-                "trailblazer.pipeline.steps.embed.preflight.EventEmitter"
-            ) as mock_event_emitter,
+            patch("trailblazer.pipeline.steps.embed.preflight.EventEmitter") as mock_event_emitter,
         ):
             # Set up mock EventEmitter for both preflight calls and plan-preflight
             mock_emitter_instance = MagicMock()
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Run plan preflight
             result = run_plan_preflight(
@@ -164,9 +156,7 @@ def test_plan_preflight_uses_event_emitter():
                     plan_preflight_call = call
                     break
 
-            assert plan_preflight_call is not None, (
-                "EventEmitter should be called for plan-preflight"
-            )
+            assert plan_preflight_call is not None, "EventEmitter should be called for plan-preflight"
             assert plan_preflight_call[1]["phase"] == "embed"
             assert plan_preflight_call[1]["component"] == "plan_preflight"
 
@@ -187,12 +177,8 @@ def test_embed_loader_uses_event_emitter():
         # Mock dependencies
         mock_session_factory = MagicMock()
         mock_session = MagicMock()
-        mock_session_factory.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_session_factory.return_value.__exit__ = MagicMock(
-            return_value=None
-        )
+        mock_session_factory.return_value.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_factory.return_value.__exit__ = MagicMock(return_value=None)
 
         mock_embedder = MagicMock()
         mock_embedder.provider_name = "dummy"
@@ -252,18 +238,12 @@ def test_event_emitter_consistent_fields():
                 "trailblazer.core.paths.runs",
                 return_value=temp_path / "var" / "runs",
             ),
-            patch(
-                "trailblazer.pipeline.steps.embed.preflight.EventEmitter"
-            ) as mock_event_emitter,
+            patch("trailblazer.pipeline.steps.embed.preflight.EventEmitter") as mock_event_emitter,
         ):
             # Set up mock to capture events
             mock_emitter_instance = MagicMock()
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Run preflight
             result = run_preflight_check(
@@ -277,20 +257,14 @@ def test_event_emitter_consistent_fields():
             start_call = mock_emitter_instance.embed_start.call_args
             assert start_call is not None
 
-            start_kwargs = (
-                start_call[1]
-                if start_call[1]
-                else start_call[0][0]
-                if start_call[0]
-                else {}
-            )
+            start_kwargs = start_call[1] if start_call[1] else start_call[0][0] if start_call[0] else {}
 
             # Should have standard embedding parameters
             expected_fields = ["provider", "model", "embedding_dims"]
             for field in expected_fields:
-                assert field in start_kwargs or any(
-                    field in str(arg) for arg in start_call[0]
-                ), f"Missing expected field '{field}' in embed_start call"
+                assert field in start_kwargs or any(field in str(arg) for arg in start_call[0]), (
+                    f"Missing expected field '{field}' in embed_start call"
+                )
 
             # Verify completion event has consistent parameters
             complete_call = mock_emitter_instance.embed_complete.call_args
@@ -299,10 +273,7 @@ def test_event_emitter_consistent_fields():
             # Should have counts and timing information
             if complete_call[1]:
                 complete_kwargs = complete_call[1]
-                assert (
-                    "total_embedded" in complete_kwargs
-                    or "counts" in complete_kwargs
-                )
+                assert "total_embedded" in complete_kwargs or "counts" in complete_kwargs
 
             assert result["status"] in ["READY", "BLOCKED"]
 

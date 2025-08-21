@@ -1,4 +1,10 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 import json
+
 import pytest
 
 # Mark all tests as unit tests (no database needed)
@@ -12,10 +18,10 @@ def test_ingest_writes_ndjson(tmp_path, monkeypatch):
     class FakeClient:
         site_base = "https://example.atlassian.net/wiki"
 
-        def get_spaces(self, keys=None, limit=100):
+        def get_spaces(self, _keys=None, _limit=100):
             yield {"id": "111", "key": "DEV"}
 
-        def get_pages(self, space_id=None, body_format=None, limit=100):
+        def get_pages(self, _space_id=None, _body_format=None, _limit=100):
             yield {
                 "id": "p1",
                 "title": "T1",
@@ -35,8 +41,8 @@ def test_ingest_writes_ndjson(tmp_path, monkeypatch):
                 "body": {"storage": {"value": "<p>bye</p>"}},
             }
 
-        def get_page_by_id(self, page_id, body_format=None):
-            if page_id == "p1":
+        def get_page_by_id(self, _page_id, _body_format=None):
+            if _page_id == "p1":
                 return {
                     "id": "p1",
                     "title": "T1",
@@ -49,7 +55,7 @@ def test_ingest_writes_ndjson(tmp_path, monkeypatch):
                     "createdAt": "2025-08-01T00:00:00Z",
                     "body": {"storage": {"value": "<p>hi</p>"}},
                 }
-            elif page_id == "p2":
+            elif _page_id == "p2":
                 return {
                     "id": "p2",
                     "title": "T2",
@@ -64,17 +70,15 @@ def test_ingest_writes_ndjson(tmp_path, monkeypatch):
                 }
             return {}
 
-        def get_attachments_for_page(self, page_id, limit=100):
-            if page_id == "p1":
+        def get_attachments_for_page(self, _page_id, _limit=100):
+            if _page_id == "p1":
                 yield {
                     "id": "a1",
                     "title": "file.png",
-                    "_links": {
-                        "download": "/download/attachments/p1/file.png"
-                    },
+                    "_links": {"download": "/download/attachments/p1/file.png"},
                 }
 
-        def search_cql(self, cql, start=0, limit=50, expand=None):
+        def search_cql(self, _cql, _start=0, _limit=50, _expand=None):
             return {"results": []}
 
     monkeypatch.setattr(step, "ConfluenceClient", lambda: FakeClient())
@@ -90,7 +94,7 @@ def test_ingest_writes_ndjson(tmp_path, monkeypatch):
     nd = out / "confluence.ndjson"
     assert nd.exists()
     lines = nd.read_text(encoding="utf-8").strip().splitlines()
-    assert len(lines) == 2
+    assert len(lines) == EXPECTED_COUNT_2
     rec = json.loads(lines[0])
     assert rec["id"] == "p1"
     assert rec["attachments"][0]["filename"] == "file.png"

@@ -13,18 +13,19 @@ from __future__ import annotations
 import json
 import math
 import re
-import yaml  # type: ignore
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+
+import yaml  # type: ignore
 
 from ..core.logging import log
 from ..retrieval.dense import DenseRetriever
-from ..retrieval.pack import pack_context, group_by_doc
+from ..retrieval.pack import group_by_doc, pack_context
 
 
-def load_queries(queries_file: str) -> List[Dict[str, Any]]:
+def load_queries(queries_file: str) -> list[dict[str, Any]]:
     """
     Load queries from YAML file.
 
@@ -42,7 +43,7 @@ def load_queries(queries_file: str) -> List[Dict[str, Any]]:
     if not queries_path.exists():
         raise FileNotFoundError(f"Queries file not found: {queries_file}")
 
-    with open(queries_path, "r", encoding="utf-8") as f:
+    with open(queries_path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     # Handle both list format and dict with queries key
@@ -82,7 +83,7 @@ def create_query_slug(query_id: str) -> str:
     return slug
 
 
-def compute_doc_diversity(hits: List[Dict[str, Any]]) -> float:
+def compute_doc_diversity(hits: list[dict[str, Any]]) -> float:
     """
     Compute document diversity using Shannon entropy.
 
@@ -109,7 +110,7 @@ def compute_doc_diversity(hits: List[Dict[str, Any]]) -> float:
     return entropy
 
 
-def compute_tie_rate(hits: List[Dict[str, Any]]) -> float:
+def compute_tie_rate(hits: list[dict[str, Any]]) -> float:
     """
     Compute tie rate (frequency of identical scores).
 
@@ -132,7 +133,7 @@ def compute_tie_rate(hits: List[Dict[str, Any]]) -> float:
     return tied_count / len(hits)
 
 
-def compute_duplication_rate(hits: List[Dict[str, Any]]) -> float:
+def compute_duplication_rate(hits: list[dict[str, Any]]) -> float:
     """
     Compute duplication rate (repeated chunk_id/doc_id pairs).
 
@@ -152,7 +153,7 @@ def compute_duplication_rate(hits: List[Dict[str, Any]]) -> float:
     return 1.0 - (len(unique_pairs) / len(pairs))
 
 
-def check_traceability(hits: List[Dict[str, Any]]) -> Dict[str, Any]:
+def check_traceability(hits: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Check traceability fields in hits.
 
@@ -202,12 +203,12 @@ def check_traceability(hits: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def evaluate_query_health(
-    query: Dict[str, Any],
-    hits_by_budget: Dict[int, List[Dict[str, Any]]],
+    query: dict[str, Any],
+    hits_by_budget: dict[int, list[dict[str, Any]]],
     min_unique_docs: int,
     max_tie_rate: float,
     require_traceability: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Evaluate health metrics for a single query across budgets.
 
@@ -244,9 +245,7 @@ def evaluate_query_health(
         # Check thresholds
         if unique_docs < min_unique_docs:
             budget_pass = False
-            budget_failures.append(
-                f"unique_docs={unique_docs} < {min_unique_docs}"
-            )
+            budget_failures.append(f"unique_docs={unique_docs} < {min_unique_docs}")
 
         if tie_rate > max_tie_rate:
             budget_pass = False
@@ -255,14 +254,10 @@ def evaluate_query_health(
         if require_traceability:
             if traceability["missing_title"] > 0:
                 budget_pass = False
-                budget_failures.append(
-                    f"missing_title={traceability['missing_title']}"
-                )
+                budget_failures.append(f"missing_title={traceability['missing_title']}")
             if traceability["missing_url"] > 0:
                 budget_pass = False
-                budget_failures.append(
-                    f"missing_url={traceability['missing_url']}"
-                )
+                budget_failures.append(f"missing_url={traceability['missing_url']}")
 
         results["budgets"][budget] = {
             "total_hits": len(hits),
@@ -277,19 +272,17 @@ def evaluate_query_health(
 
         if not budget_pass:
             results["overall_pass"] = False
-            results["failure_reasons"].extend(
-                [f"budget_{budget}: {reason}" for reason in budget_failures]
-            )
+            results["failure_reasons"].extend([f"budget_{budget}: {reason}" for reason in budget_failures])
 
     return results
 
 
 def run_single_query(
-    query: Dict[str, Any],
-    budgets: List[int],
+    query: dict[str, Any],
+    budgets: list[int],
     retriever: DenseRetriever,
     top_k: int,
-) -> Tuple[Dict[int, List[Dict[str, Any]]], Dict[int, str]]:
+) -> tuple[dict[int, list[dict[str, Any]]], dict[int, str]]:
     """
     Run a single query across multiple budgets.
 
@@ -335,9 +328,9 @@ def run_single_query(
 
 
 def save_query_artifacts(
-    query: Dict[str, Any],
-    hits_by_budget: Dict[int, List[Dict[str, Any]]],
-    packed_contexts_by_budget: Dict[int, str],
+    query: dict[str, Any],
+    hits_by_budget: dict[int, list[dict[str, Any]]],
+    packed_contexts_by_budget: dict[int, str],
     output_dir: Path,
 ) -> None:
     """
@@ -389,9 +382,7 @@ def save_query_artifacts(
             json.dump(artifact, f, indent=2, ensure_ascii=False)
 
 
-def compute_pack_stats(
-    all_query_results: List[Dict[str, Any]], budgets: List[int]
-) -> Dict[str, Any]:
+def compute_pack_stats(all_query_results: list[dict[str, Any]], budgets: list[int]) -> dict[str, Any]:
     """
     Compute aggregate statistics across all queries and budgets.
 
@@ -402,7 +393,7 @@ def compute_pack_stats(
     Returns:
         Pack statistics dictionary
     """
-    stats: Dict[str, Any] = {"budgets": {}}
+    stats: dict[str, Any] = {"budgets": {}}
 
     for budget in budgets:
         budget_stats = {
@@ -428,32 +419,24 @@ def compute_pack_stats(
                         # We don't have individual scores here, so use tie_rate as proxy
                         scores.append(1.0 - budget_data.get("tie_rate", 0.0))
                     tie_rates.append(budget_data.get("tie_rate", 0.0))
-                    doc_diversities.append(
-                        budget_data.get("doc_diversity", 0.0)
-                    )
+                    doc_diversities.append(budget_data.get("doc_diversity", 0.0))
                     unique_docs.append(budget_data.get("unique_docs", 0))
 
             if scores:
                 budget_stats["average_score"] = sum(scores) / len(scores)
             if tie_rates:
-                budget_stats["average_tie_rate"] = sum(tie_rates) / len(
-                    tie_rates
-                )
+                budget_stats["average_tie_rate"] = sum(tie_rates) / len(tie_rates)
             if doc_diversities:
-                budget_stats["average_doc_diversity"] = sum(
-                    doc_diversities
-                ) / len(doc_diversities)
+                budget_stats["average_doc_diversity"] = sum(doc_diversities) / len(doc_diversities)
             if unique_docs:
-                budget_stats["average_unique_docs"] = sum(unique_docs) / len(
-                    unique_docs
-                )
+                budget_stats["average_unique_docs"] = sum(unique_docs) / len(unique_docs)
 
         stats["budgets"][budget] = budget_stats
 
     return stats
 
 
-def get_latest_manifest_info() -> Optional[Dict[str, Any]]:
+def get_latest_manifest_info() -> dict[str, Any] | None:
     """
     Get information from the most recent embed manifest for provenance.
 
@@ -498,10 +481,10 @@ def get_latest_manifest_info() -> Optional[Dict[str, Any]]:
 
 
 def create_readiness_report(
-    all_query_results: List[Dict[str, Any]],
-    pack_stats: Dict[str, Any],
-    config: Dict[str, Any],
-) -> Dict[str, Any]:
+    all_query_results: list[dict[str, Any]],
+    pack_stats: dict[str, Any],
+    config: dict[str, Any],
+) -> dict[str, Any]:
     """
     Create overall readiness report.
 
@@ -514,9 +497,7 @@ def create_readiness_report(
         Readiness report dictionary
     """
     total_queries = len(all_query_results)
-    passed_queries = sum(
-        1 for result in all_query_results if result["overall_pass"]
-    )
+    passed_queries = sum(1 for result in all_query_results if result["overall_pass"])
     failed_queries = total_queries - passed_queries
     pass_rate = passed_queries / total_queries if total_queries > 0 else 0.0
 
@@ -561,9 +542,7 @@ def create_readiness_report(
     return report
 
 
-def create_overview_markdown(
-    readiness_report: Dict[str, Any], output_dir: Path
-) -> str:
+def create_overview_markdown(readiness_report: dict[str, Any], output_dir: Path) -> str:
     """
     Create human-readable overview markdown report.
 
@@ -615,12 +594,8 @@ def create_overview_markdown(
         )
 
     # Query results tables
-    passed_queries = [
-        r for r in readiness_report["query_results"] if r["overall_pass"]
-    ]
-    failed_queries = [
-        r for r in readiness_report["query_results"] if not r["overall_pass"]
-    ]
+    passed_queries = [r for r in readiness_report["query_results"] if r["overall_pass"]]
+    failed_queries = [r for r in readiness_report["query_results"] if not r["overall_pass"]]
 
     if passed_queries:
         md_lines.extend(
@@ -633,11 +608,7 @@ def create_overview_markdown(
         )
         for result in passed_queries:
             query_id = result["query_id"]
-            query_text = (
-                result["query_text"][:60] + "..."
-                if len(result["query_text"]) > 60
-                else result["query_text"]
-            )
+            query_text = result["query_text"][:60] + "..." if len(result["query_text"]) > 60 else result["query_text"]
             budgets = ", ".join(map(str, result["budgets"].keys()))
             md_lines.append(f"| `{query_id}` | {query_text} | {budgets} |")
         md_lines.append("")
@@ -653,11 +624,7 @@ def create_overview_markdown(
         )
         for result in failed_queries:
             query_id = result["query_id"]
-            query_text = (
-                result["query_text"][:40] + "..."
-                if len(result["query_text"]) > 40
-                else result["query_text"]
-            )
+            query_text = result["query_text"][:40] + "..." if len(result["query_text"]) > 40 else result["query_text"]
             reasons = "; ".join(result["failure_reasons"][:2])  # Limit reasons
 
             # Generate quick fixes based on failure reasons
@@ -673,9 +640,7 @@ def create_overview_markdown(
                     fixes.append("Fix URL references")
 
             quick_fixes = "; ".join(fixes[:2]) if fixes else "Review manually"
-            md_lines.append(
-                f"| `{query_id}` | {query_text} | {reasons} | {quick_fixes} |"
-            )
+            md_lines.append(f"| `{query_id}` | {query_text} | {reasons} | {quick_fixes} |")
         md_lines.append("")
 
     # Pack statistics
@@ -693,9 +658,7 @@ def create_overview_markdown(
             avg_docs = stats.get("average_unique_docs", 0)
             avg_diversity = stats.get("average_doc_diversity", 0)
             avg_tie_rate = stats.get("average_tie_rate", 0)
-            md_lines.append(
-                f"| {budget} | {avg_docs:.1f} | {avg_diversity:.2f} | {avg_tie_rate:.3f} |"
-            )
+            md_lines.append(f"| {budget} | {avg_docs:.1f} | {avg_diversity:.2f} | {avg_tie_rate:.3f} |")
         md_lines.append("")
 
     # Artifacts section
@@ -732,12 +695,8 @@ def create_overview_markdown(
         )
 
         # Generate specific recommendations
-        all_failure_reasons = [
-            r for result in failed_queries for r in result["failure_reasons"]
-        ]
-        reason_counts = Counter(
-            reason.split(":")[0] for reason in all_failure_reasons
-        )
+        all_failure_reasons = [r for result in failed_queries for r in result["failure_reasons"]]
+        reason_counts = Counter(reason.split(":")[0] for reason in all_failure_reasons)
 
         for reason_type, count in reason_counts.most_common(3):
             if "unique_docs" in reason_type:
@@ -745,12 +704,8 @@ def create_overview_markdown(
                     f"- **Diversity Issue ({count} queries):** Add more diverse content or adjust chunking strategy"
                 )
             elif "tie_rate" in reason_type:
-                md_lines.append(
-                    f"- **Ranking Issue ({count} queries):** Review embedding quality or model selection"
-                )
-            elif (
-                "missing_title" in reason_type or "missing_url" in reason_type
-            ):
+                md_lines.append(f"- **Ranking Issue ({count} queries):** Review embedding quality or model selection")
+            elif "missing_title" in reason_type or "missing_url" in reason_type:
                 md_lines.append(
                     f"- **Metadata Issue ({count} queries):** Fix document ingestion to include complete metadata"
                 )
@@ -760,7 +715,7 @@ def create_overview_markdown(
 
 def run_retrieval_qa(
     queries_file: str,
-    budgets: List[int],
+    budgets: list[int],
     top_k: int,
     provider: str,
     model: str,
@@ -769,7 +724,7 @@ def run_retrieval_qa(
     min_unique_docs: int = 3,
     max_tie_rate: float = 0.35,
     require_traceability: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Run the complete retrieval QA harness.
 
@@ -807,14 +762,10 @@ def run_retrieval_qa(
         log.info("qa.retrieval.query_start", query_id=query["id"])
 
         # Run query across budgets
-        hits_by_budget, packed_contexts_by_budget = run_single_query(
-            query, budgets, retriever, top_k
-        )
+        hits_by_budget, packed_contexts_by_budget = run_single_query(query, budgets, retriever, top_k)
 
         # Save query artifacts
-        save_query_artifacts(
-            query, hits_by_budget, packed_contexts_by_budget, output_dir
-        )
+        save_query_artifacts(query, hits_by_budget, packed_contexts_by_budget, output_dir)
 
         # Evaluate health
         health_result = evaluate_query_health(
@@ -854,9 +805,7 @@ def run_retrieval_qa(
     }
 
     # Create readiness report
-    readiness_report = create_readiness_report(
-        all_query_results, pack_stats, config
-    )
+    readiness_report = create_readiness_report(all_query_results, pack_stats, config)
 
     # Save readiness report
     readiness_file = output_dir / "readiness.json"

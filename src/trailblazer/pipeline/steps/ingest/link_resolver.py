@@ -1,8 +1,7 @@
 """Link resolution helpers for traceability."""
 
 import re
-from typing import List, Optional
-from urllib.parse import urlparse, parse_qs, urlunparse
+from urllib.parse import parse_qs, urlparse, urlunparse
 
 
 class LinkInfo:
@@ -12,10 +11,10 @@ class LinkInfo:
         self,
         raw_url: str,
         normalized_url: str,
-        anchor: Optional[str] = None,
-        text: Optional[str] = None,
+        anchor: str | None = None,
+        text: str | None = None,
         target_type: str = "external",
-        target_page_id: Optional[str] = None,
+        target_page_id: str | None = None,
     ):
         self.raw_url = raw_url
         self.normalized_url = normalized_url
@@ -58,15 +57,10 @@ def normalize_url(url: str) -> str:
     if parsed.query:
         query_params = parse_qs(parsed.query, keep_blank_values=True)
         # Remove tracking params
-        filtered_params = {
-            k: v for k, v in query_params.items() if k not in tracking_params
-        }
+        filtered_params = {k: v for k, v in query_params.items() if k not in tracking_params}
 
         # Rebuild query string
-        new_query = "&".join(
-            f"{k}={v[0]}" if v and v[0] else k
-            for k, v in filtered_params.items()
-        )
+        new_query = "&".join(f"{k}={v[0]}" if v and v[0] else k for k, v in filtered_params.items())
 
         # Reconstruct URL
         normalized = urlunparse(
@@ -124,7 +118,7 @@ def classify_link_type(url: str, confluence_base_url: str) -> str:
     return "external"
 
 
-def extract_confluence_page_id(url: str) -> Optional[str]:
+def extract_confluence_page_id(url: str) -> str | None:
     """
     Extract page ID from a Confluence URL.
 
@@ -155,9 +149,7 @@ def extract_confluence_page_id(url: str) -> Optional[str]:
     return None
 
 
-def extract_links_from_storage_with_classification(
-    xhtml: Optional[str], confluence_base_url: str
-) -> List[LinkInfo]:
+def extract_links_from_storage_with_classification(xhtml: str | None, confluence_base_url: str) -> list[LinkInfo]:
     """
     Extract and classify links from Confluence Storage format.
 
@@ -212,9 +204,7 @@ def extract_links_from_storage_with_classification(
     return links
 
 
-def extract_links_from_adf_with_classification(
-    adf: Optional[dict], confluence_base_url: str
-) -> List[LinkInfo]:
+def extract_links_from_adf_with_classification(adf: dict | None, confluence_base_url: str) -> list[LinkInfo]:
     """
     Extract and classify links from ADF format.
 
@@ -249,9 +239,7 @@ def extract_links_from_adf_with_classification(
                         anchor = raw_url.split("#", 1)[1]
 
                     normalized_url = normalize_url(raw_url)
-                    target_type = classify_link_type(
-                        raw_url, confluence_base_url
-                    )
+                    target_type = classify_link_type(raw_url, confluence_base_url)
                     target_page_id = None
 
                     if target_type == "confluence":

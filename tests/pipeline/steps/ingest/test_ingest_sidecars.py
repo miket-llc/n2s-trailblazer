@@ -1,10 +1,17 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test ingest confluence sidecar exports (CSV and summary JSON)."""
 
 import csv
 import json
-import pytest
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
+
 from trailblazer.pipeline.steps.ingest.confluence import ingest_confluence
 
 # Mark all tests as integration tests (need database)
@@ -87,17 +94,13 @@ def test_ingest_sidecars_csv_and_summary(tmp_path, tiny_ndjson_fixture):
     ndjson_file, expected_data = tiny_ndjson_fixture
 
     # Mock the confluence API to avoid real API calls
-    with patch(
-        "trailblazer.pipeline.steps.ingest.confluence.ConfluenceClient"
-    ) as mock_client_class:
+    with patch("trailblazer.pipeline.steps.ingest.confluence.ConfluenceClient") as mock_client_class:
         # We'll simulate processing by manually calling the enhanced function
         # but with mocked API responses that match our fixture data
 
         mock_client = mock_client_class.return_value
         mock_client.site_base = "https://example.com"
-        mock_client.get_spaces.return_value = iter(
-            [{"id": "1001", "key": "DEV"}, {"id": "2001", "key": "PROD"}]
-        )
+        mock_client.get_spaces.return_value = iter([{"id": "1001", "key": "DEV"}, {"id": "2001", "key": "PROD"}])
 
         # Mock the page retrieval to return our test data
         def mock_get_pages(space_id=None, body_format="storage"):
@@ -113,9 +116,7 @@ def test_ingest_sidecars_csv_and_summary(tmp_path, tiny_ndjson_fixture):
                                 "createdAt": "2025-01-10T10:00:00Z",
                             },
                             "createdAt": "2025-01-01T10:00:00Z",
-                            "body": {
-                                "storage": {"value": "<p>Content here</p>"}
-                            },
+                            "body": {"storage": {"value": "<p>Content here</p>"}},
                             "_links": {"webui": "/page1"},
                         },
                         {
@@ -144,11 +145,7 @@ def test_ingest_sidecars_csv_and_summary(tmp_path, tiny_ndjson_fixture):
                                 "createdAt": "2025-01-05T08:15:00Z",
                             },
                             "createdAt": "2025-01-03T08:15:00Z",
-                            "body": {
-                                "storage": {
-                                    "value": "<p>Production content with some text here</p>"
-                                }
-                            },
+                            "body": {"storage": {"value": "<p>Production content with some text here</p>"}},
                             "_links": {"webui": "/page3"},
                         }
                     ]
@@ -222,7 +219,7 @@ def test_ingest_sidecars_csv_and_summary(tmp_path, tiny_ndjson_fixture):
             pages_rows = list(reader)
 
         # Should be sorted by space_key, page_id
-        assert len(pages_rows) == 3
+        assert len(pages_rows) == EXPECTED_COUNT_3
         assert pages_rows[0]["space_key"] == "DEV"
         assert pages_rows[0]["page_id"] == "123"
         assert pages_rows[0]["title"] == "Test Page 1"
@@ -245,7 +242,7 @@ def test_ingest_sidecars_csv_and_summary(tmp_path, tiny_ndjson_fixture):
             att_rows = list(reader)
 
         # Should be sorted by page_id, filename
-        assert len(att_rows) == 3
+        assert len(att_rows) == EXPECTED_COUNT_3
         assert att_rows[0]["page_id"] == "123"
         assert att_rows[0]["filename"] == "doc1.pdf"
         assert att_rows[1]["page_id"] == "456"

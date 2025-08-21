@@ -1,13 +1,19 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Tests for observability and assurance features."""
 
 import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
+
 import pytest
 
-from trailblazer.core.event_log import EventLogger, init_event_logger
 from trailblazer.core.assurance import generate_assurance_report
+from trailblazer.core.event_log import EventLogger, init_event_logger
 from trailblazer.core.progress import ProgressRenderer
 
 # Mark all tests as unit tests (no database needed)
@@ -61,17 +67,15 @@ class TestEventLogger:
                     bytes_written=1024,
                 )
 
-                logger.error(
-                    message="Test error", error_type="api_error", retry_count=2
-                )
+                logger.error(message="Test error", error_type="api_error", retry_count=2)
 
             # Read and verify events
             events = []
-            with open(log_path, "r") as f:
+            with open(log_path) as f:
                 for line in f:
                     events.append(json.loads(line.strip()))
 
-            assert len(events) == 4
+            assert len(events) == EXPECTED_COUNT_4
 
             # Check space.begin event
             space_begin = events[0]
@@ -118,7 +122,7 @@ class TestEventLogger:
                     retries=1,
                 )
 
-            with open(log_path, "r") as f:
+            with open(log_path) as f:
                 event = json.loads(f.read().strip())
 
             assert event["event_type"] == "heartbeat"
@@ -230,7 +234,7 @@ class TestAssuranceReport:
 
             # Verify JSON report
             assert json_path.exists()
-            with open(json_path, "r") as f:
+            with open(json_path) as f:
                 report = json.load(f)
 
             assert report["run_id"] == "test-run-123"
@@ -241,10 +245,7 @@ class TestAssuranceReport:
 
             # Check quality issues
             assert len(report["quality_issues"]["zero_body_pages"]) == 1
-            assert (
-                report["quality_issues"]["zero_body_pages"][0]["page_id"]
-                == "page2"
-            )
+            assert report["quality_issues"]["zero_body_pages"][0]["page_id"] == "page2"
 
             assert len(report["performance"]["top_10_largest_pages"]) >= 1
             large_page = report["performance"]["top_10_largest_pages"][0]
@@ -263,7 +264,7 @@ class TestAssuranceReport:
 
             # Verify Markdown report
             assert md_path.exists()
-            with open(md_path, "r") as f:
+            with open(md_path) as f:
                 md_content = f.read()
 
             assert "# Assurance Report: Confluence Ingest" in md_content
@@ -292,7 +293,7 @@ class TestProgressRenderer:
         assert renderer.console is not None
 
     @patch("sys.stderr")
-    def test_progress_banner(self, mock_stderr):
+    def test_progress_banner(self, _mock_stderr):
         """Test progress banner output."""
         renderer = ProgressRenderer(enabled=True, no_color=True)
 
@@ -320,9 +321,7 @@ class TestProgressRenderer:
                 "avg_chars": 2000,
             },
         }
-        renderer.finish_banner(
-            run_id="test-123", space_stats=space_stats, elapsed=30.5
-        )
+        renderer.finish_banner(run_id="test-123", space_stats=space_stats, elapsed=30.5)
 
         # Basic verification that methods don't crash
         assert True
@@ -363,9 +362,7 @@ class TestProgressRenderer:
         """Test attachment verification error display."""
         renderer = ProgressRenderer(enabled=True, no_color=True)
 
-        renderer.attachment_verification_error(
-            page_id="123456", expected=5, actual=3
-        )
+        renderer.attachment_verification_error(page_id="123456", expected=5, actual=3)
 
         # Should increment error count
         assert renderer.error_count == 1
@@ -399,6 +396,6 @@ class TestGlobalLoggerManagement:
 
             # Verify event was written
             assert log_path.exists()
-            with open(log_path, "r") as f:
+            with open(log_path) as f:
                 event = json.loads(f.read().strip())
             assert event["space_key"] == "GLOBAL"

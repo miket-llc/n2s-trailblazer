@@ -5,8 +5,9 @@ Ground truth = chunks.ndjson files on disk.
 """
 
 import json
-import psycopg2
 from pathlib import Path
+
+import psycopg2
 
 db_url = "postgresql://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer"
 
@@ -26,7 +27,7 @@ def audit_completeness():
                 chunk_count = 0
                 chunk_ids = []
                 try:
-                    with open(chunks_file, "r") as f:
+                    with open(chunks_file) as f:
                         for line in f:
                             if line.strip():
                                 chunk = json.loads(line.strip())
@@ -40,9 +41,7 @@ def audit_completeness():
                     print(f"❌ Error reading {chunks_file}: {e}")
 
     print(f"📊 Found {len(chunks_on_disk)} runs with chunks on disk")
-    total_chunks_on_disk = sum(
-        data["count"] for data in chunks_on_disk.values()
-    )
+    total_chunks_on_disk = sum(data["count"] for data in chunks_on_disk.values())
     print(f"📊 Total chunks on disk: {total_chunks_on_disk:,}")
 
     # Check what's in the database
@@ -51,9 +50,7 @@ def audit_completeness():
     cur = conn.cursor()
 
     # Get all embedded chunk_ids
-    cur.execute(
-        "SELECT chunk_id FROM chunk_embeddings WHERE provider='openai'"
-    )
+    cur.execute("SELECT chunk_id FROM chunk_embeddings WHERE provider='openai'")
     embedded_chunk_ids = set(row[0] for row in cur.fetchall())
 
     print(f"📊 Embedded chunks in database: {len(embedded_chunk_ids):,}")
@@ -76,11 +73,7 @@ def audit_completeness():
                     "run_id": run_id,
                     "total_chunks": run_data["count"],
                     "missing_chunks": len(missing_in_run),
-                    "completion_pct": (
-                        (run_data["count"] - len(missing_in_run))
-                        / run_data["count"]
-                    )
-                    * 100,
+                    "completion_pct": ((run_data["count"] - len(missing_in_run)) / run_data["count"]) * 100,
                 }
             )
 
@@ -100,9 +93,7 @@ def audit_completeness():
     print(f"  Chunks on disk: {total_chunks_on_disk:,}")
     print(f"  Chunks embedded: {len(embedded_chunk_ids):,}")
     print(f"  Missing: {len(missing_chunk_ids):,}")
-    print(
-        f"  Completion: {(len(embedded_chunk_ids) / total_chunks_on_disk) * 100:.1f}%"
-    )
+    print(f"  Completion: {(len(embedded_chunk_ids) / total_chunks_on_disk) * 100:.1f}%")
 
     # Generate fill-gaps script
     if runs_with_gaps:

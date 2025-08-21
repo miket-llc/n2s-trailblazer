@@ -1,11 +1,19 @@
-"""Smoke tests for paths CLI functionality."""
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
+"""Smoke tests for CLI path commands."""
 
 import json
 import subprocess
 import tempfile
-import pytest
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
+
+from trailblazer.core.artifacts import new_run_id, phase_dir, runs_dir
 
 # Mark all tests as unit tests (no database needed)
 pytestmark = pytest.mark.unit
@@ -15,6 +23,7 @@ def test_paths_show_command():
     """Test that 'trailblazer paths show' works."""
     result = subprocess.run(
         ["python", "-m", "trailblazer.cli.main", "paths", "show"],
+        check=False,
         capture_output=True,
         text=True,
     )
@@ -44,6 +53,7 @@ def test_paths_show_json_command():
             "show",
             "--json",
         ],
+        check=False,
         capture_output=True,
         text=True,
     )
@@ -73,6 +83,7 @@ def test_paths_ensure_command():
     """Test that 'trailblazer paths ensure' works."""
     result = subprocess.run(
         ["python", "-m", "trailblazer.cli.main", "paths", "ensure"],
+        check=False,
         capture_output=True,
         text=True,
     )
@@ -83,8 +94,6 @@ def test_paths_ensure_command():
 
 def test_artifacts_integration_smoke():
     """Smoke test that artifacts module works with new paths."""
-    from trailblazer.core.artifacts import new_run_id, runs_dir, phase_dir
-
     # Test basic functionality
     run_id = new_run_id()
     assert isinstance(run_id, str)

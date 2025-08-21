@@ -1,6 +1,11 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Tests for dense retrieval functionality."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -78,7 +83,7 @@ def test_pack_context_basic(sample_hits):
     context_str, selected_hits = pack_context(sample_hits, max_chars=1000)
 
     # Should include all hits since they fit in 1000 chars
-    assert len(selected_hits) == 3
+    assert len(selected_hits) == EXPECTED_COUNT_3
     assert "Test Document 1" in context_str
     assert "Test Document 2" in context_str
     assert "confluence" in context_str
@@ -97,17 +102,15 @@ def test_pack_context_char_limit(sample_hits):
 
 def test_pack_context_max_chunks_per_doc(sample_hits):
     """Test context packing respects max chunks per document."""
-    context_str, selected_hits = pack_context(
-        sample_hits, max_chars=6000, max_chunks_per_doc=1
-    )
+    context_str, selected_hits = pack_context(sample_hits, max_chars=6000, max_chunks_per_doc=1)
 
     # Should only include 2 hits (1 per document)
-    assert len(selected_hits) == 2
+    assert len(selected_hits) == EXPECTED_COUNT_2
     assert selected_hits[0].doc_id == "doc1"
     assert selected_hits[1].doc_id == "doc2"
 
 
-def test_pack_context_preserves_code_blocks(sample_hits):
+def test_pack_context_preserves_code_blocks(_sample_hits):
     """Test that context packing doesn't split code blocks."""
     # Create a hit with a code block that would be truncated
     hits_with_code = [
@@ -128,9 +131,7 @@ def test_pack_context_preserves_code_blocks(sample_hits):
     # Should either include the full hit or exclude it entirely
     if selected_hits:
         assert "```python" in context_str
-        assert (
-            "```" in context_str[context_str.find("```python") + 9 :]
-        )  # Closing ```
+        assert "```" in context_str[context_str.find("```python") + 9 :]  # Closing ```
 
 
 def test_pack_context_includes_media_placeholder(sample_hits):
@@ -160,47 +161,33 @@ def test_dense_retriever_initialization():
 
 def test_dense_retriever_embed_query():
     """Test query embedding functionality."""
-    with patch(
-        "trailblazer.pipeline.steps.retrieve.retriever.get_embedding_provider"
-    ) as mock_provider:
+    with patch("trailblazer.pipeline.steps.retrieve.retriever.get_embedding_provider") as mock_provider:
         mock_embedder = MagicMock()
         mock_embedder.embed.return_value = [0.1, 0.2, 0.3]
         mock_provider.return_value = mock_embedder
 
-        retriever = DenseRetriever(
-            "postgresql://test:test@localhost:5432/test", "dummy"
-        )
+        retriever = DenseRetriever("postgresql://test:test@localhost:5432/test", "dummy")
         result = retriever.embed_query("test query")
 
         assert result == [0.1, 0.2, 0.3]
         mock_embedder.embed.assert_called_once_with("test query")
 
 
-def test_deterministic_ranking(sample_hits):
+def test_deterministic_ranking(_sample_hits):
     """Test that ranking is deterministic."""
     # Create hits with same scores to test tie-breaking
     tied_hits = [
-        SearchHit(
-            "doc2:0001", "doc2", "Title B", "", "Content B", 0.8, "test"
-        ),
-        SearchHit(
-            "doc1:0001", "doc1", "Title A", "", "Content A", 0.8, "test"
-        ),
-        SearchHit(
-            "doc1:0000", "doc1", "Title A", "", "Content A", 0.8, "test"
-        ),
-        SearchHit(
-            "doc2:0000", "doc2", "Title B", "", "Content B", 0.8, "test"
-        ),
+        SearchHit("doc2:0001", "doc2", "Title B", "", "Content B", 0.8, "test"),
+        SearchHit("doc1:0001", "doc1", "Title A", "", "Content A", 0.8, "test"),
+        SearchHit("doc1:0000", "doc1", "Title A", "", "Content A", 0.8, "test"),
+        SearchHit("doc2:0000", "doc2", "Title B", "", "Content B", 0.8, "test"),
     ]
 
     # Sort hits to simulate what the retriever would do (score DESC, doc_id ASC, chunk_id ASC)
-    sorted_hits = sorted(
-        tied_hits, key=lambda h: (-h.score, h.doc_id, h.chunk_id)
-    )
+    sorted_hits = sorted(tied_hits, key=lambda h: (-h.score, h.doc_id, h.chunk_id))
     context_str, selected_hits = pack_context(sorted_hits, max_chars=6000)
 
-    assert len(selected_hits) == 4
+    assert len(selected_hits) == EXPECTED_COUNT_4
     assert selected_hits[0].chunk_id == "doc1:0000"
     assert selected_hits[1].chunk_id == "doc1:0001"
     assert selected_hits[2].chunk_id == "doc2:0000"

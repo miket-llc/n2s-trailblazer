@@ -17,11 +17,12 @@ import argparse
 import json
 import os
 import sys
-import yaml  # type: ignore[import-untyped]
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+
+import yaml  # type: ignore[import-untyped]
 
 # Load .env file if it exists (same approach as Trailblazer scripts)
 env_file = Path(".env")
@@ -35,23 +36,26 @@ if env_file.exists():
 
 # Import existing Trailblazer components
 try:
-    from trailblazer.retrieval.dense import create_retriever  # type: ignore[import-untyped]
-    from trailblazer.retrieval.pack import pack_context, group_by_doc  # type: ignore[import-untyped]
+    from trailblazer.retrieval.dense import (
+        create_retriever,  # type: ignore[import-untyped]
+    )
+    from trailblazer.retrieval.pack import (  # type: ignore[import-untyped]
+        group_by_doc,
+        pack_context,
+    )
 except ImportError as e:
     print(f"Error: Could not import Trailblazer components: {e}")
-    print(
-        "Make sure you're running from the project root with the virtual environment activated."
-    )
+    print("Make sure you're running from the project root with the virtual environment activated.")
     sys.exit(1)
 
 
-def load_queries(queries_file: str) -> List[Dict[str, Any]]:
+def load_queries(queries_file: str) -> list[dict[str, Any]]:
     """Load queries from YAML file."""
     queries_path = Path(queries_file)
     if not queries_path.exists():
         raise FileNotFoundError(f"Queries file not found: {queries_file}")
 
-    with open(queries_path, "r", encoding="utf-8") as f:
+    with open(queries_path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     # Handle both list format and dict with queries key
@@ -60,9 +64,7 @@ def load_queries(queries_file: str) -> List[Dict[str, Any]]:
     elif isinstance(data, dict) and "queries" in data:
         queries = data["queries"]
     else:
-        raise ValueError(
-            "YAML file must contain a list of queries or a dict with 'queries' key"
-        )
+        raise ValueError("YAML file must contain a list of queries or a dict with 'queries' key")
 
     # Normalize query format: ensure 'text' field exists (map from 'q' if needed)
     normalized_queries = []
@@ -76,9 +78,7 @@ def load_queries(queries_file: str) -> List[Dict[str, Any]]:
     return normalized_queries
 
 
-def compute_metrics(
-    hits: List[Dict[str, Any]], expect_phrases: Optional[List[str]] = None
-) -> Dict[str, Any]:
+def compute_metrics(hits: list[dict[str, Any]], expect_phrases: list[str] | None = None) -> dict[str, Any]:
     """Compute health metrics for retrieval results."""
     if not hits:
         return {
@@ -86,7 +86,7 @@ def compute_metrics(
             "traceability_ok": True,
             "duplication_ok": True,
             "tie_rate_ok": True,
-            "expect_ok": True if not expect_phrases else False,
+            "expect_ok": bool(not expect_phrases),
             "notes": ["No hits returned"],
         }
 
@@ -97,10 +97,7 @@ def compute_metrics(
     diversity = len(unique_docs)
 
     # Traceability: all hits have non-empty title and url
-    traceability_ok = all(
-        hit.get("title", "").strip() and hit.get("url", "").strip()
-        for hit in hits
-    )
+    traceability_ok = all(hit.get("title", "").strip() and hit.get("url", "").strip() for hit in hits)
     if not traceability_ok:
         notes.append("Some hits missing title or url")
 
@@ -149,11 +146,11 @@ def compute_metrics(
 
 
 def run_single_query(
-    query: Dict[str, Any],
+    query: dict[str, Any],
     retriever: Any,
     top_k: int,
-    budgets: Optional[List[int]] = None,
-) -> Tuple[List[Dict[str, Any]], Dict[int, str]]:
+    budgets: list[int] | None = None,
+) -> tuple[list[dict[str, Any]], dict[int, str]]:
     """Run a single query and return hits plus packed contexts."""
     query_text = query["text"]
 
@@ -189,9 +186,7 @@ def run_single_query(
         if budgets:
             for budget in budgets:
                 # Group by document (max 3 chunks per doc for diversity)
-                grouped_hits = group_by_doc(
-                    serializable_hits, max_chunks_per_doc=3
-                )
+                grouped_hits = group_by_doc(serializable_hits, max_chunks_per_doc=3)
                 packed_context = pack_context(grouped_hits, max_chars=budget)
                 packed_contexts[budget] = packed_context
 
@@ -203,9 +198,9 @@ def run_single_query(
 
 
 def save_query_artifacts(
-    query: Dict[str, Any],
-    hits: List[Dict[str, Any]],
-    packed_contexts: Dict[int, str],
+    query: dict[str, Any],
+    hits: list[dict[str, Any]],
+    packed_contexts: dict[int, str],
     output_dir: Path,
 ) -> None:
     """Save query artifacts to files."""
@@ -224,20 +219,18 @@ def save_query_artifacts(
 
 
 def create_readiness_report(
-    queries: List[Dict[str, Any]],
-    query_results: List[Dict[str, Any]],
+    queries: list[dict[str, Any]],
+    query_results: list[dict[str, Any]],
     provider: str,
     dimension: int,
     top_k: int,
-    budgets: Optional[List[int]] = None,
-) -> Dict[str, Any]:
+    budgets: list[int] | None = None,
+) -> dict[str, Any]:
     """Create overall readiness report."""
     # Count passes for overall assessment
     traceability_passes = sum(1 for r in query_results if r["traceability_ok"])
     duplication_passes = sum(1 for r in query_results if r["duplication_ok"])
-    diversity_passes = sum(
-        1 for r in query_results if r["diversity"] >= 6
-    )  # Target >= 6 of 12
+    diversity_passes = sum(1 for r in query_results if r["diversity"] >= 6)  # Target >= 6 of 12
     expect_passes = sum(1 for r in query_results if r["expect_ok"])
 
     total_queries = len(query_results)
@@ -247,14 +240,8 @@ def create_readiness_report(
     overall_pass = (
         traceability_passes == total_queries
         and duplication_passes == total_queries
-        and (
-            diversity_passes / total_queries >= 0.8
-            if total_queries > 0
-            else True
-        )
-        and (
-            expect_passes / total_queries >= 0.8 if total_queries > 0 else True
-        )
+        and (diversity_passes / total_queries >= 0.8 if total_queries > 0 else True)
+        and (expect_passes / total_queries >= 0.8 if total_queries > 0 else True)
     )
 
     report = {
@@ -278,7 +265,7 @@ def create_readiness_report(
     return report
 
 
-def create_overview_markdown(report: Dict[str, Any]) -> str:
+def create_overview_markdown(report: dict[str, Any]) -> str:
     """Create human-readable overview in Markdown format."""
     lines = [
         "# Retrieval QA Overview",
@@ -291,9 +278,7 @@ def create_overview_markdown(report: Dict[str, Any]) -> str:
     ]
 
     if "budgets" in report:
-        lines.extend(
-            [f"**Budgets:** {', '.join(map(str, report['budgets']))}", ""]
-        )
+        lines.extend([f"**Budgets:** {', '.join(map(str, report['budgets']))}", ""])
 
     lines.extend(
         [
@@ -311,13 +296,9 @@ def create_overview_markdown(report: Dict[str, Any]) -> str:
         duplication = "✓" if query_result["duplication_ok"] else "✗"
         tie_rate = "✓" if query_result["tie_rate_ok"] else "✗"
         expect = "✓" if query_result["expect_ok"] else "✗"
-        notes = (
-            "; ".join(query_result["notes"]) if query_result["notes"] else ""
-        )
+        notes = "; ".join(query_result["notes"]) if query_result["notes"] else ""
 
-        lines.append(
-            f"| {query_id} | {diversity} | {traceability} | {duplication} | {tie_rate} | {expect} | {notes} |"
-        )
+        lines.append(f"| {query_id} | {diversity} | {traceability} | {duplication} | {tie_rate} | {expect} | {notes} |")
 
     return "\n".join(lines)
 
@@ -345,9 +326,7 @@ def main():
         "--out",
         help="Output directory (default: var/retrieval_qc/<timestamp>/)",
     )
-    parser.add_argument(
-        "--db-url", help="Database URL (optional; uses default if omitted)"
-    )
+    parser.add_argument("--db-url", help="Database URL (optional; uses default if omitted)")
     parser.add_argument(
         "--provider",
         default="openai",
@@ -368,9 +347,7 @@ def main():
         try:
             budgets = [int(b.strip()) for b in args.budgets.split(",")]
         except ValueError:
-            print(
-                "Error: Invalid budgets format. Use comma-separated integers."
-            )
+            print("Error: Invalid budgets format. Use comma-separated integers.")
             sys.exit(1)
 
     # Set output directory
@@ -389,9 +366,7 @@ def main():
         print(f"Loaded {len(queries)} queries from {args.queries_file}")
 
         # Initialize retriever using the same factory as the ask command
-        retriever = create_retriever(
-            db_url=args.db_url, provider_name=args.provider, dim=args.dimension
-        )
+        retriever = create_retriever(db_url=args.db_url, provider_name=args.provider, dim=args.dimension)
 
         # Process each query
         query_results = []
@@ -401,9 +376,7 @@ def main():
             print(f"Processing query: {query_id}")
 
             # Run the query
-            hits, packed_contexts = run_single_query(
-                query, retriever, args.top_k, budgets
-            )
+            hits, packed_contexts = run_single_query(query, retriever, args.top_k, budgets)
 
             # Compute metrics
             expect_phrases = query.get("expect", [])

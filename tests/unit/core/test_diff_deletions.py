@@ -1,9 +1,16 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test diff-deletions CLI functionality."""
 
 import json
-import pytest
 from unittest.mock import patch
+
+import pytest
 from typer.testing import CliRunner
+
 from trailblazer.cli.main import app
 
 # Mark all tests as unit tests (no database needed)
@@ -164,10 +171,7 @@ def test_diff_deletions_missing_baseline_file(tmp_path):
         )
 
         assert result.exit_code == 1
-        assert (
-            "Baseline file not found" in result.stdout
-            or "Baseline file not found" in result.stderr
-        )
+        assert "Baseline file not found" in result.stdout or "Baseline file not found" in result.stderr
 
 
 def test_diff_deletions_missing_current_file(tmp_path):
@@ -204,10 +208,7 @@ def test_diff_deletions_missing_current_file(tmp_path):
         )
 
         assert result.exit_code == 1
-        assert (
-            "Current file not found" in result.stdout
-            or "Current file not found" in result.stderr
-        )
+        assert "Current file not found" in result.stdout or "Current file not found" in result.stderr
 
 
 def test_diff_deletions_additions_only(tmp_path):

@@ -7,10 +7,9 @@ import json
 import statistics
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
 
 from .boundaries import count_tokens
-from .engine import calculate_coverage, Chunk
+from .engine import Chunk, calculate_coverage
 
 
 def verify_chunks(
@@ -21,7 +20,7 @@ def verify_chunks(
     require_traceability: bool = True,
     out_dir: str = "var/chunk_verify",
     tokenizer: str = "text-embedding-3-small",
-) -> Dict:
+) -> dict:
     """
     Verify all chunks across multiple runs for token cap compliance and traceability.
 
@@ -48,12 +47,12 @@ def verify_chunks(
     oversize_chunks = []
     missing_traceability_chunks = []
     small_chunks = []
-    gaps_by_doc: List[Dict] = []
+    gaps_by_doc: list[dict] = []
     run_count = 0
     coverage_percentages = []
 
     # Group chunks by document for coverage analysis
-    chunks_by_doc: Dict[str, Dict] = {}
+    chunks_by_doc: dict[str, dict] = {}
 
     for run_dir_str in run_dirs:
         run_dir = Path(run_dir_str)
@@ -64,7 +63,7 @@ def verify_chunks(
 
         run_count += 1
 
-        with open(chunks_file, "r") as f:
+        with open(chunks_file) as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -93,13 +92,9 @@ def verify_chunks(
                             "chunk_id": chunk.get("chunk_id", ""),
                             "run_id": run_dir.name,
                             "token_count": actual_tokens,
-                            "reported_token_count": chunk.get(
-                                "token_count", 0
-                            ),
+                            "reported_token_count": chunk.get("token_count", 0),
                             "char_count": chunk.get("char_count", 0),
-                            "split_strategy": chunk.get(
-                                "split_strategy", "unknown"
-                            ),
+                            "split_strategy": chunk.get("split_strategy", "unknown"),
                         }
                     )
 
@@ -122,9 +117,7 @@ def verify_chunks(
                             "run_id": run_dir.name,
                             "token_count": actual_tokens,
                             "reason": reason,
-                            "split_strategy": chunk.get(
-                                "split_strategy", "unknown"
-                            ),
+                            "split_strategy": chunk.get("split_strategy", "unknown"),
                         }
                     )
 
@@ -132,13 +125,9 @@ def verify_chunks(
                 if require_traceability:
                     has_title = bool(chunk.get("title", "").strip())
                     has_url = bool(chunk.get("url", "").strip())
-                    has_source_system = bool(
-                        chunk.get("source_system", "").strip()
-                    )
+                    has_source_system = bool(chunk.get("source_system", "").strip())
 
-                    if not has_source_system or (
-                        not has_title and not has_url
-                    ):
+                    if not has_source_system or (not has_title and not has_url):
                         missing_traceability_chunks.append(
                             {
                                 "chunk_id": chunk.get("chunk_id", ""),
@@ -174,19 +163,13 @@ def verify_chunks(
             chunk_objects.append(chunk_obj)
 
         # Estimate original document length
-        max_char_end = max(
-            (chunk.get("char_end", 0) for chunk in doc_chunks), default=0
-        )
+        max_char_end = max((chunk.get("char_end", 0) for chunk in doc_chunks), default=0)
         if max_char_end == 0:
             # Fallback: estimate from chunk char counts
-            max_char_end = sum(
-                chunk.get("char_count", 0) for chunk in doc_chunks
-            )
+            max_char_end = sum(chunk.get("char_count", 0) for chunk in doc_chunks)
 
         if max_char_end > 0:
-            coverage_pct, gaps = calculate_coverage(
-                chunk_objects, max_char_end
-            )
+            coverage_pct, gaps = calculate_coverage(chunk_objects, max_char_end)
             coverage_percentages.append(coverage_pct)
 
             if coverage_pct < 99.5:
@@ -207,15 +190,13 @@ def verify_chunks(
         actual_tokens = count_tokens(chunk.get("text_md", ""), tokenizer)
         token_counts.append(actual_tokens)
 
-    stats: Dict = {
+    stats: dict = {
         "total_runs": run_count,
         "total_chunks": len(all_chunks),
         "total_documents": len(chunks_by_doc),
         "token_stats": {
             "min": min(token_counts) if token_counts else 0,
-            "median": (
-                int(statistics.median(token_counts)) if token_counts else 0
-            ),
+            "median": (int(statistics.median(token_counts)) if token_counts else 0),
             "p95": (
                 int(statistics.quantiles(token_counts, n=20)[18])
                 if len(token_counts) > 20
@@ -225,14 +206,8 @@ def verify_chunks(
             "mean": int(statistics.mean(token_counts)) if token_counts else 0,
         },
         "coverage_stats": {
-            "avg_coverage_pct": (
-                statistics.mean(coverage_percentages)
-                if coverage_percentages
-                else 100.0
-            ),
-            "min_coverage_pct": (
-                min(coverage_percentages) if coverage_percentages else 100.0
-            ),
+            "avg_coverage_pct": (statistics.mean(coverage_percentages) if coverage_percentages else 100.0),
+            "min_coverage_pct": (min(coverage_percentages) if coverage_percentages else 100.0),
             "docs_with_gaps": len(gaps_by_doc),
             "docs_analyzed": len(chunks_by_doc),
         },
@@ -285,11 +260,7 @@ def verify_chunks(
         },
         "status": (
             "PASS"
-            if (
-                len(oversize_chunks) == 0
-                and len(missing_traceability_chunks) == 0
-                and len(gaps_by_doc) == 0
-            )
+            if (len(oversize_chunks) == 0 and len(missing_traceability_chunks) == 0 and len(gaps_by_doc) == 0)
             else "FAIL"
         ),
     }
@@ -339,17 +310,13 @@ def verify_chunks(
     if oversize_chunks:
         md_lines.extend(["", "### Oversize Chunks (Top 10)", ""])
         for chunk in oversize_chunks[:10]:
-            md_lines.append(
-                f"- `{chunk['chunk_id']}` ({chunk['run_id']}): {chunk['token_count']} tokens"
-            )
+            md_lines.append(f"- `{chunk['chunk_id']}` ({chunk['run_id']}): {chunk['token_count']} tokens")
 
     if missing_traceability_chunks:
         md_lines.extend(["", "### Missing Traceability (Top 10)", ""])
         for chunk in missing_traceability_chunks[:10]:
             missing = [k for k, v in chunk["missing_fields"].items() if v]
-            md_lines.append(
-                f"- `{chunk['chunk_id']}` ({chunk['run_id']}): missing {', '.join(missing)}"
-            )
+            md_lines.append(f"- `{chunk['chunk_id']}` ({chunk['run_id']}): missing {', '.join(missing)}")
 
     if small_chunks:
         md_lines.extend(["", "### Small Chunks (Top 10)", ""])
@@ -366,9 +333,7 @@ def verify_chunks(
             )
             # Show first few gaps
             for i, (gap_start, gap_end) in enumerate(doc_gap["gaps"][:3]):
-                md_lines.append(
-                    f"  - Gap {i + 1}: chars {gap_start}-{gap_end} ({gap_end - gap_start} chars)"
-                )
+                md_lines.append(f"  - Gap {i + 1}: chars {gap_start}-{gap_end} ({gap_end - gap_start} chars)")
 
     report_md_file = verify_dir / "report.md"
     with open(report_md_file, "w") as f:
@@ -382,16 +347,10 @@ def verify_chunks(
             f"Processed {stats['total_runs']} runs with {stats['total_chunks']} total chunks across {stats['total_documents']} documents\n"
         )
         f.write(f"Found {len(oversize_chunks)} oversize chunks\n")
-        f.write(
-            f"Found {len(missing_traceability_chunks)} chunks with missing traceability\n"
-        )
-        f.write(
-            f"Found {len(small_chunks)} small chunks (< {hard_min} tokens)\n"
-        )
+        f.write(f"Found {len(missing_traceability_chunks)} chunks with missing traceability\n")
+        f.write(f"Found {len(small_chunks)} small chunks (< {hard_min} tokens)\n")
         f.write(f"Found {len(gaps_by_doc)} documents with coverage gaps\n")
-        f.write(
-            f"Average coverage: {stats['coverage_stats']['avg_coverage_pct']:.1f}%\n"
-        )
+        f.write(f"Average coverage: {stats['coverage_stats']['avg_coverage_pct']:.1f}%\n")
         f.write(f"Status: {report['status']}\n")
 
     return report

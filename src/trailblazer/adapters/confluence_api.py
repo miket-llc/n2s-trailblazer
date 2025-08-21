@@ -1,8 +1,11 @@
-from typing import Dict, Iterable, Optional, List, Any
+from collections.abc import Iterable
+from typing import Any
+from urllib.parse import urljoin
+
 import httpx
 from httpx import BasicAuth
-from tenacity import retry, wait_exponential, stop_after_attempt
-from urllib.parse import urljoin
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from ..core.config import SETTINGS
 
 V2_PREFIX = "/api/v2"
@@ -11,9 +14,9 @@ V2_PREFIX = "/api/v2"
 class ConfluenceClient:
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        email: Optional[str] = None,
-        token: Optional[str] = None,
+        base_url: str | None = None,
+        email: str | None = None,
+        token: str | None = None,
     ):
         base = (base_url or SETTINGS.CONFLUENCE_BASE_URL or "").rstrip("/")
         if not base.endswith("/wiki"):
@@ -31,7 +34,7 @@ class ConfluenceClient:
         )
 
     # ---------- pagination helper ----------
-    def _next_link(self, resp: httpx.Response, data: Dict) -> Optional[str]:
+    def _next_link(self, resp: httpx.Response, data: dict) -> str | None:
         nxt = (data.get("_links") or {}).get("next")
         if nxt:
             # v2 returns absolute or relative; normalize
@@ -57,9 +60,7 @@ class ConfluenceClient:
                     return urljoin(base_without_wiki + "/", url.lstrip("/"))
         return None
 
-    def _paginate(
-        self, url: str, params: Optional[Dict] = None
-    ) -> Iterable[Dict]:
+    def _paginate(self, url: str, params: dict | None = None) -> Iterable[dict]:
         first = True
         while True:
             r = self._client.get(url, params=params if first else None)
@@ -73,10 +74,8 @@ class ConfluenceClient:
 
     # ---------- v2 ----------
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
-    def get_spaces(
-        self, keys: Optional[List[str]] = None, limit: int = 100
-    ) -> Iterable[Dict]:
-        params: Dict[str, Any] = {"limit": limit}
+    def get_spaces(self, keys: list[str] | None = None, limit: int = 100) -> Iterable[dict]:
+        params: dict[str, Any] = {"limit": limit}
         if keys:
             params["keys"] = ",".join(keys)
         yield from self._paginate(f"{V2_PREFIX}/spaces", params)
@@ -84,11 +83,11 @@ class ConfluenceClient:
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
     def get_pages(
         self,
-        space_id: Optional[str] = None,
-        body_format: Optional[str] = None,
+        space_id: str | None = None,
+        body_format: str | None = None,
         limit: int = 100,
-    ) -> Iterable[Dict]:
-        params: Dict[str, Any] = {"limit": limit}
+    ) -> Iterable[dict]:
+        params: dict[str, Any] = {"limit": limit}
         if space_id:
             params["space-id"] = space_id
         if body_format:
@@ -96,10 +95,8 @@ class ConfluenceClient:
         yield from self._paginate(f"{V2_PREFIX}/pages", params)
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
-    def get_page_by_id(
-        self, page_id: str, body_format: Optional[str] = None
-    ) -> Dict:
-        params: Dict[str, Any] = {}
+    def get_page_by_id(self, page_id: str, body_format: str | None = None) -> dict:
+        params: dict[str, Any] = {}
         if body_format:
             params["body-format"] = body_format
         r = self._client.get(f"{V2_PREFIX}/pages/{page_id}", params=params)
@@ -107,13 +104,9 @@ class ConfluenceClient:
         return r.json()
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
-    def get_attachments_for_page(
-        self, page_id: str, limit: int = 100
-    ) -> Iterable[Dict]:
-        params: Dict[str, Any] = {"limit": limit}
-        yield from self._paginate(
-            f"{V2_PREFIX}/pages/{page_id}/attachments", params
-        )
+    def get_attachments_for_page(self, page_id: str, limit: int = 100) -> Iterable[dict]:
+        params: dict[str, Any] = {"limit": limit}
+        yield from self._paginate(f"{V2_PREFIX}/pages/{page_id}/attachments", params)
 
     # ---------- v1 CQL (delta prefilter only) ----------
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(5))
@@ -122,9 +115,9 @@ class ConfluenceClient:
         cql: str,
         start: int = 0,
         limit: int = 50,
-        expand: Optional[str] = None,
-    ) -> Dict:
-        params: Dict[str, Any] = {"cql": cql, "start": start, "limit": limit}
+        expand: str | None = None,
+    ) -> dict:
+        params: dict[str, Any] = {"cql": cql, "start": start, "limit": limit}
         if expand:
             params["expand"] = expand
         r = self._client.get("/rest/api/content/search", params=params)
@@ -132,17 +125,13 @@ class ConfluenceClient:
         return r.json()
 
     # helpers
-    def absolute(self, rel_or_abs: Optional[str]) -> Optional[str]:
+    def absolute(self, rel_or_abs: str | None) -> str | None:
         if not rel_or_abs:
             return None
-        return (
-            rel_or_abs
-            if rel_or_abs.startswith("http")
-            else urljoin(self.site_base + "/", rel_or_abs.lstrip("/"))
-        )
+        return rel_or_abs if rel_or_abs.startswith("http") else urljoin(self.site_base + "/", rel_or_abs.lstrip("/"))
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(3))
-    def get_page_labels(self, page_id: str) -> List[Dict]:
+    def get_page_labels(self, page_id: str) -> list[dict]:
         """Get labels for a specific page."""
         try:
             response = self._client.get(f"{V2_PREFIX}/pages/{page_id}/labels")
@@ -154,12 +143,10 @@ class ConfluenceClient:
             return []
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(3))
-    def get_page_ancestors(self, page_id: str) -> List[Dict]:
+    def get_page_ancestors(self, page_id: str) -> list[dict]:
         """Get ancestor hierarchy for a page."""
         try:
-            response = self._client.get(
-                f"{V2_PREFIX}/pages/{page_id}", params={"expand": "ancestors"}
-            )
+            response = self._client.get(f"{V2_PREFIX}/pages/{page_id}", params={"expand": "ancestors"})
             response.raise_for_status()
             data = response.json()
             return data.get("ancestors", [])
@@ -168,12 +155,10 @@ class ConfluenceClient:
             return []
 
     @retry(wait=wait_exponential(min=1, max=30), stop=stop_after_attempt(3))
-    def get_space_details(self, space_key: str) -> Dict:
+    def get_space_details(self, space_key: str) -> dict:
         """Get detailed space information."""
         try:
-            response = self._client.get(
-                f"{V2_PREFIX}/spaces", params={"keys": space_key}
-            )
+            response = self._client.get(f"{V2_PREFIX}/spaces", params={"keys": space_key})
             response.raise_for_status()
             data = response.json()
             results = data.get("results", [])

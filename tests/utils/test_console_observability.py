@@ -1,18 +1,25 @@
-"""Tests for console observability and progress UX."""
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
 
+"""Tests for console observability utilities."""
+
+import json
+import re
 import sys
 from io import StringIO
 from unittest.mock import patch
 
 import pytest
 
+from trailblazer.core.logging import _should_use_json_format, setup_logging
 from trailblazer.core.progress import (
     ProgressRenderer,
-    is_tty,
     is_ci,
+    is_tty,
     should_use_pretty,
 )
-from trailblazer.core.logging import setup_logging, _should_use_json_format
 
 # Mark all tests as unit tests (no database needed)
 pytestmark = pytest.mark.unit
@@ -37,8 +44,6 @@ class TestProgressRenderer:
 
         content = output.getvalue()
         # Strip ANSI codes if any remain and check for content
-        import re
-
         clean_content = re.sub(r"\x1b\[[0-9;]*m", "", content)
         assert "test-123" in clean_content
         assert "Spaces targeted: 2" in clean_content
@@ -48,18 +53,14 @@ class TestProgressRenderer:
     def test_quiet_pretty_mode(self):
         """Test that quiet_pretty suppresses banners but not progress."""
         output = StringIO()
-        renderer = ProgressRenderer(
-            enabled=True, quiet_pretty=True, file=output
-        )
+        renderer = ProgressRenderer(enabled=True, quiet_pretty=True, file=output)
 
         # Banner should be suppressed
         renderer.start_banner("test-123", 2)
         assert output.getvalue() == ""
 
         # Progress should still work
-        renderer.progress_update(
-            "DEV", "12345", "Test Page", 3, "2025-01-01T00:00:00Z"
-        )
+        renderer.progress_update("DEV", "12345", "Test Page", 3, "2025-01-01T00:00:00Z")
         content = output.getvalue()
         assert "DEV" in content
         assert "Test Page" in content
@@ -78,7 +79,6 @@ class TestProgressRenderer:
         content = output.getvalue()
 
         # Strip ANSI codes and check content
-        import re
 
         clean_content = re.sub(r"\x1b\[[0-9;]*m", "", content)
         assert "Spaces to Ingest" in clean_content
@@ -93,9 +93,7 @@ class TestProgressRenderer:
 
         # First update should appear (page 1, throttle_every=1)
         renderer.progress_update("DEV", "1", "Page 1", 0, throttle_every=2)
-        assert (
-            "Page 1" not in output.getvalue()
-        )  # page_count=1, 1%2=1, so no output
+        assert "Page 1" not in output.getvalue()  # page_count=1, 1%2=1, so no output
 
         # Second update should appear (page 2, throttle_every=2)
         renderer.progress_update("DEV", "2", "Page 2", 0, throttle_every=2)
@@ -137,7 +135,6 @@ class TestProgressRenderer:
         content = output.getvalue()
 
         # Strip ANSI codes and check content
-        import re
 
         clean_content = re.sub(r"\x1b\[[0-9;]*m", "", content)
         assert "Completed ingest run: test-123" in clean_content
@@ -155,19 +152,19 @@ class TestLoggingConfiguration:
 
     @patch.dict("os.environ", {}, clear=True)
     @patch("sys.stdout.isatty", return_value=True)
-    def test_should_use_json_format_tty(self, mock_isatty):
+    def test_should_use_json_format_tty(self, _mock_isatty):
         """Test JSON format detection with TTY."""
         assert not _should_use_json_format()
 
     @patch.dict("os.environ", {}, clear=True)
     @patch("sys.stdout.isatty", return_value=False)
-    def test_should_use_json_format_redirect(self, mock_isatty):
+    def test_should_use_json_format_redirect(self, _mock_isatty):
         """Test JSON format detection with redirected stdout."""
         assert _should_use_json_format()
 
     @patch.dict("os.environ", {"CI": "true"}, clear=True)
     @patch("sys.stdout.isatty", return_value=True)
-    def test_should_use_json_format_ci(self, mock_isatty):
+    def test_should_use_json_format_ci(self, _mock_isatty):
         """Test JSON format detection in CI."""
         assert _should_use_json_format()
 
@@ -192,12 +189,12 @@ class TestEnvironmentDetection:
     """Test environment detection functions."""
 
     @patch("sys.stdout.isatty", return_value=True)
-    def test_is_tty_true(self, mock_isatty):
+    def test_is_tty_true(self, _mock_isatty):
         """Test TTY detection when stdout is a TTY."""
         assert is_tty()
 
     @patch("sys.stdout.isatty", return_value=False)
-    def test_is_tty_false(self, mock_isatty):
+    def test_is_tty_false(self, _mock_isatty):
         """Test TTY detection when stdout is redirected."""
         assert not is_tty()
 
@@ -213,19 +210,19 @@ class TestEnvironmentDetection:
 
     @patch("trailblazer.core.progress.is_tty", return_value=True)
     @patch("trailblazer.core.progress.is_ci", return_value=False)
-    def test_should_use_pretty_true(self, mock_is_ci, mock_is_tty):
+    def test_should_use_pretty_true(self, _mock_is_ci, _mock_is_tty):
         """Test pretty output decision when TTY and not CI."""
         assert should_use_pretty()
 
     @patch("trailblazer.core.progress.is_tty", return_value=False)
     @patch("trailblazer.core.progress.is_ci", return_value=False)
-    def test_should_use_pretty_false_no_tty(self, mock_is_ci, mock_is_tty):
+    def test_should_use_pretty_false_no_tty(self, _mock_is_ci, _mock_is_tty):
         """Test pretty output decision when not TTY."""
         assert not should_use_pretty()
 
     @patch("trailblazer.core.progress.is_tty", return_value=True)
     @patch("trailblazer.core.progress.is_ci", return_value=True)
-    def test_should_use_pretty_false_ci(self, mock_is_ci, mock_is_tty):
+    def test_should_use_pretty_false_ci(self, _mock_is_ci, _mock_is_tty):
         """Test pretty output decision when in CI."""
         assert not should_use_pretty()
 
@@ -233,7 +230,7 @@ class TestEnvironmentDetection:
 class TestProgressCheckpoints:
     """Test progress checkpoint functionality."""
 
-    def test_checkpoint_data_structure(self, tmp_path):
+    def test_checkpoint_data_structure(self, _tmp_path):
         """Test that progress checkpoints have the correct structure."""
         # This would be tested as part of the ingest integration
         # but we can test the expected data structure
@@ -266,7 +263,6 @@ class TestProgressCheckpoints:
 
         content = output.getvalue()
         # Strip ANSI codes and check content
-        import re
 
         clean_content = re.sub(r"\x1b\[[0-9;]*m", "", content)
         assert "Resuming from page 12345" in clean_content
@@ -283,7 +279,6 @@ class TestStreamSeparation:
         # with actual CLI commands, but we can test the principle
 
         from trailblazer.core.logging import log
-        import json
 
         # Capture stdout
         stdout_capture = StringIO()
@@ -298,11 +293,7 @@ class TestStreamSeparation:
         if output.strip():
             # If we got output, it should be valid JSON with the event
             try:
-                lines = [
-                    line.strip()
-                    for line in output.strip().split("\n")
-                    if line.strip()
-                ]
+                lines = [line.strip() for line in output.strip().split("\n") if line.strip()]
                 # Should have at least one JSON line
                 assert len(lines) >= 1
                 for line in lines:
@@ -311,11 +302,9 @@ class TestStreamSeparation:
                         # Found our event
                         return
                 # If no event found, fail
-                assert False, (
-                    f"Expected event 'test.event' not found in output: {output}"
-                )
+                raise AssertionError(f"Expected event 'test.event' not found in output: {output}")
             except json.JSONDecodeError:
-                assert False, f"Output is not valid JSON: {output}"
+                raise AssertionError(f"Output is not valid JSON: {output}") from None
         else:
             # If no output, the logging might be going elsewhere due to test configuration
             # This is acceptable for this integration test

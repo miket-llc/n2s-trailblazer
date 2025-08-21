@@ -1,9 +1,15 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Compatibility layer for embed loader tests to handle API changes."""
 
 import json
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Mark all tests as unit tests (no database needed)
 pytestmark = pytest.mark.unit
@@ -15,13 +21,9 @@ class EmbedLoaderCompat:
     @staticmethod
     def mock_old_loader_interface():
         """Mock the old loader interface that tests expect."""
-        with patch(
-            "trailblazer.pipeline.steps.embed.loader.load_normalized_to_db"
-        ) as mock_loader:
+        with patch("trailblazer.pipeline.steps.embed.loader.load_normalized_to_db") as mock_loader:
             # Mock the old function signature
-            def mock_load_normalized_to_db(
-                input_file=None, provider_name="dummy", max_docs=None, **kwargs
-            ):
+            def mock_load_normalized_to_db(input_file=None, provider_name="dummy", max_docs=None, **kwargs):
                 # Simulate the old behavior with all required fields
                 return {
                     "run_id": "test_run",
@@ -45,9 +47,7 @@ class EmbedLoaderCompat:
     @staticmethod
     def mock_chunk_loading():
         """Mock chunk loading functionality."""
-        with patch(
-            "trailblazer.pipeline.steps.embed.loader.load_chunks_to_db"
-        ) as mock_chunks:
+        with patch("trailblazer.pipeline.steps.embed.loader.load_chunks_to_db") as mock_chunks:
 
             def mock_load_chunks(input_file, **kwargs):
                 return {
@@ -83,19 +83,13 @@ def patch_embed_loader_for_tests():
     patches = []
 
     # Patch the old loader function
-    patches.append(
-        patch("trailblazer.pipeline.steps.embed.loader.load_normalized_to_db")
-    )
+    patches.append(patch("trailblazer.pipeline.steps.embed.loader.load_normalized_to_db"))
 
     # Patch chunk loading
-    patches.append(
-        patch("trailblazer.pipeline.steps.embed.loader.load_chunks_to_db")
-    )
+    patches.append(patch("trailblazer.pipeline.steps.embed.loader.load_chunks_to_db"))
 
     # Patch dimension guard
-    patches.append(
-        patch("trailblazer.pipeline.steps.embed.loader.get_embedding_provider")
-    )
+    patches.append(patch("trailblazer.pipeline.steps.embed.loader.get_embedding_provider"))
 
     return patches
 
@@ -114,9 +108,7 @@ def patch_embed_loader_tests():
     patches = []
 
     # Patch the loader function to handle old signature
-    def mock_load_normalized_to_db(
-        input_file=None, provider_name="dummy", max_docs=None, **kwargs
-    ):
+    def mock_load_normalized_to_db(input_file=None, provider_name="dummy", max_docs=None, **kwargs):
         """Mock that handles the old function signature and maps to new API."""
         # Detect test context and return appropriate results
         test_name = None

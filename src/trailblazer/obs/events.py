@@ -1,13 +1,15 @@
 """Enhanced event emitters with typed schemas and standard field names."""
 
+import contextlib
+import json
 import os
 import time
-import json
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, Optional, TextIO
-from pydantic import BaseModel, Field
 from enum import Enum
+from pathlib import Path
+from typing import Any, TextIO
+
+from pydantic import BaseModel, Field
 
 
 class EventLevel(str, Enum):
@@ -36,35 +38,29 @@ class ObservabilityEvent(BaseModel):
     # Required fields (exact names as specified)
     ts: str = Field(..., description="ISO 8601 timestamp with Z suffix")
     run_id: str = Field(..., description="Unique run identifier")
-    phase: str = Field(
-        ..., description="Pipeline phase (ingest, normalize, enrich, etc.)"
-    )
-    component: str = Field(
-        ..., description="Component name (confluence, dita, embedder, etc.)"
-    )
+    phase: str = Field(..., description="Pipeline phase (ingest, normalize, enrich, etc.)")
+    component: str = Field(..., description="Component name (confluence, dita, embedder, etc.)")
     pid: int = Field(..., description="Process ID")
     worker_id: str = Field(..., description="Worker identifier")
     level: EventLevel = Field(..., description="Event level")
     action: EventAction = Field(..., description="Event action")
-    duration_ms: Optional[int] = Field(
-        None, description="Duration in milliseconds"
-    )
+    duration_ms: int | None = Field(None, description="Duration in milliseconds")
 
     # Context fields (relevant to the phase)
-    space_key: Optional[str] = None
-    space_id: Optional[str] = None
-    page_id: Optional[str] = None
-    node_id: Optional[str] = None
-    chunk_id: Optional[str] = None
-    sourcefile: Optional[str] = None
-    bytes: Optional[int] = None
-    embedding_dims: Optional[int] = None
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    confidence: Optional[float] = None
+    space_key: str | None = None
+    space_id: str | None = None
+    page_id: str | None = None
+    node_id: str | None = None
+    chunk_id: str | None = None
+    sourcefile: str | None = None
+    bytes: int | None = None
+    embedding_dims: int | None = None
+    provider: str | None = None
+    model: str | None = None
+    confidence: float | None = None
 
     # Additional metadata
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class EventEmitter:
@@ -75,7 +71,7 @@ class EventEmitter:
         run_id: str,
         phase: str,
         component: str,
-        log_dir: Optional[str] = None,
+        log_dir: str | None = None,
     ):
         self.run_id = run_id
         self.phase = phase
@@ -95,7 +91,7 @@ class EventEmitter:
         # Symlinks for convenience
         self._create_symlinks()
 
-        self._file: Optional[TextIO] = None
+        self._file: TextIO | None = None
         self._start_time = time.time()
 
     def __enter__(self):
@@ -114,10 +110,8 @@ class EventEmitter:
         run_symlink = self.log_dir / f"{self.run_id}.ndjson"
         if run_symlink.exists() or run_symlink.is_symlink():
             run_symlink.unlink()
-        try:
+        with contextlib.suppress(OSError, FileExistsError):
             run_symlink.symlink_to(f"{self.run_id}/events.ndjson")
-        except (OSError, FileExistsError):
-            pass
 
         # Latest symlinks
         latest_ndjson = self.log_dir / "latest.ndjson"
@@ -129,10 +123,8 @@ class EventEmitter:
         ]:
             if link.exists() or link.is_symlink():
                 link.unlink()
-            try:
+            with contextlib.suppress(OSError, FileExistsError):
                 link.symlink_to(target)
-            except (OSError, FileExistsError):
-                pass
 
     def _rotate_if_needed(self):
         """Check if events.ndjson needs rotation and rotate if needed."""
@@ -141,21 +133,14 @@ class EventEmitter:
 
             max_size_bytes = SETTINGS.LOGS_ROTATION_MB * 1024 * 1024
 
-            if (
-                self.events_path.exists()
-                and self.events_path.stat().st_size > max_size_bytes
-            ):
+            if self.events_path.exists() and self.events_path.stat().st_size > max_size_bytes:
                 # Find next rotation number
                 rotation_num = 1
-                while (
-                    self.run_log_dir / f"events.ndjson.{rotation_num}"
-                ).exists():
+                while (self.run_log_dir / f"events.ndjson.{rotation_num}").exists():
                     rotation_num += 1
 
                 # Rotate current file
-                rotated_path = (
-                    self.run_log_dir / f"events.ndjson.{rotation_num}"
-                )
+                rotated_path = self.run_log_dir / f"events.ndjson.{rotation_num}"
                 self.events_path.rename(rotated_path)
 
                 # Create new events.ndjson
@@ -165,12 +150,10 @@ class EventEmitter:
             pass  # Silently continue if rotation fails
 
     # Compatibility shim and global context for legacy emitters
-    _global_context: Dict[str, Any] = {}
+    _global_context: dict[str, Any] = {}
 
     @classmethod
-    def set_event_context(
-        cls, run_id: str, stage: str, component: str = "runner"
-    ) -> None:
+    def set_event_context(cls, run_id: str, stage: str, component: str = "runner") -> None:
         """Set global event context for modules that import emit_event directly."""
         cls._global_context = {
             "run_id": run_id,
@@ -187,7 +170,7 @@ class EventEmitter:
         self,
         action: EventAction,
         level: EventLevel = EventLevel.INFO,
-        duration_ms: Optional[int] = None,
+        duration_ms: int | None = None,
         **kwargs,
     ) -> None:
         """Emit a structured event using the canonical schema."""
@@ -216,9 +199,7 @@ class EventEmitter:
         op = kwargs.get("op") or f"{self.component}.{action.value}"
 
         canonical_event = {
-            "ts": datetime.now(timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z"),
+            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "level": str(level).split(".")[-1].upper(),
             "stage": self.phase,
             "rid": self.run_id,
@@ -230,26 +211,18 @@ class EventEmitter:
             "chunk_id": kwargs.get("chunk_id"),
             "provider": kwargs.get("provider"),
             "model": kwargs.get("model"),
-            "dimension": kwargs.get("dimension")
-            or kwargs.get("embedding_dims"),
+            "dimension": kwargs.get("dimension") or kwargs.get("embedding_dims"),
             "reason": kwargs.get("reason"),
         }
 
         try:
-            self._file.write(
-                json.dumps(
-                    {k: v for k, v in canonical_event.items() if v is not None}
-                )
-                + "\n"
-            )
+            self._file.write(json.dumps({k: v for k, v in canonical_event.items() if v is not None}) + "\n")
             self._file.flush()
         except Exception:
             pass  # Silently fail to avoid breaking the main process
 
     # Phase-specific events
-    def embed_start(
-        self, provider: str, model: str, embedding_dims: int, **kwargs
-    ):
+    def embed_start(self, provider: str, model: str, embedding_dims: int, **kwargs):
         """Emit embed.start event."""
         self._emit(
             EventAction.START,
@@ -281,7 +254,7 @@ class EventEmitter:
             **kwargs,
         )
 
-    def error(self, message: str, error_type: Optional[str] = None, **kwargs):
+    def error(self, message: str, _error_type: str | None = None, **kwargs):
         """Emit error event."""
         self._emit(
             EventAction.ERROR,
@@ -293,9 +266,9 @@ class EventEmitter:
     def heartbeat(
         self,
         processed: int,
-        rate: float,
-        eta_seconds: Optional[float] = None,
-        active_workers: int = 1,
+        _rate: float,
+        _eta_seconds: float | None = None,
+        _active_workers: int = 1,
         **kwargs,
     ):
         """Emit heartbeat event."""
@@ -312,11 +285,7 @@ def emit_event(event_type: str, **kwargs) -> None:
     try:
         ctx = EventEmitter._global_context
         run_id = ctx.get("run_id") or kwargs.get("run_id") or "unknown"
-        stage = (
-            (event_type.split(".")[0] if "." in event_type else None)
-            or ctx.get("stage")
-            or "runner"
-        )
+        stage = (event_type.split(".")[0] if "." in event_type else None) or ctx.get("stage") or "runner"
         op = event_type.split(".")[1] if "." in event_type else event_type
 
         # Map level/status heuristically from kwargs
@@ -341,9 +310,7 @@ def emit_event(event_type: str, **kwargs) -> None:
         }
 
         event = {
-            "ts": datetime.now(timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z"),
+            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "level": level,
             "stage": stage,
             "rid": run_id,
@@ -355,8 +322,7 @@ def emit_event(event_type: str, **kwargs) -> None:
             "chunk_id": kwargs.get("chunk_id"),
             "provider": kwargs.get("provider"),
             "model": kwargs.get("model"),
-            "dimension": kwargs.get("dimension")
-            or kwargs.get("embedding_dims"),
+            "dimension": kwargs.get("dimension") or kwargs.get("embedding_dims"),
             "reason": kwargs.get("reason"),
         }
 
@@ -365,10 +331,7 @@ def emit_event(event_type: str, **kwargs) -> None:
         log_dir.mkdir(parents=True, exist_ok=True)
         events_path = log_dir / "events.ndjson"
         with open(events_path, "a", encoding="utf-8") as f:
-            f.write(
-                json.dumps({k: v for k, v in event.items() if v is not None})
-                + "\n"
-            )
+            f.write(json.dumps({k: v for k, v in event.items() if v is not None}) + "\n")
     except Exception:
         # Never break main flow on observability errors
         pass

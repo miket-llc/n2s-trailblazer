@@ -1,6 +1,4 @@
-from typing import List
-
-DEFAULT_PHASES: List[str] = [
+DEFAULT_PHASES: list[str] = [
     "ingest",
     "normalize",
     "enrich",
@@ -14,7 +12,7 @@ DEFAULT_PHASES: List[str] = [
 ]
 
 
-def validate_phases(phases: List[str]) -> List[str]:
+def validate_phases(phases: list[str]) -> list[str]:
     bad = [p for p in phases if p not in DEFAULT_PHASES]
     if bad:
         raise ValueError(f"Unknown phases: {bad}")

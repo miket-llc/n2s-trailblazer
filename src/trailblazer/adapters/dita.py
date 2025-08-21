@@ -7,12 +7,14 @@ Parses DITA topics (concept, task, reference) and ditamaps to extract:
 - Keywords and metadata for labels
 """
 
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 import hashlib
 import urllib.parse
-from lxml import etree  # type: ignore
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from lxml import etree  # type: ignore
+
 from ..core.logging import log
 
 
@@ -23,7 +25,7 @@ class MediaRef:
     filename: str
     media_type: str
     xml_path: str
-    alt: Optional[str] = None
+    alt: str | None = None
     order: int = 0
 
 
@@ -31,14 +33,14 @@ class MediaRef:
 class LinkRef:
     """Link reference extracted from DITA content."""
 
-    href: Optional[str]
-    keyref: Optional[str]
-    conref: Optional[str]
+    href: str | None
+    keyref: str | None
+    conref: str | None
     target_type: str  # "external", "dita", "confluence"
-    target_page_id: Optional[str]
-    target_url: Optional[str]
-    anchor: Optional[str]
-    text: Optional[str]
+    target_page_id: str | None
+    target_url: str | None
+    anchor: str | None
+    text: str | None
     element_type: str  # "xref", "link", "conref", "conkeyref"
 
 
@@ -50,25 +52,25 @@ class TopicDoc:
     title: str
     doctype: str  # topic, concept, task, reference
     body_xml: str
-    prolog_metadata: Dict[str, Any]
-    images: List[MediaRef]
-    xrefs: List[str]
-    keyrefs: List[str]
-    conrefs: List[str]
-    labels: List[str]
-    links: List[LinkRef]  # Enhanced link extraction
-    enhanced_metadata: Dict[str, Any]  # Structured metadata from prolog
+    prolog_metadata: dict[str, Any]
+    images: list[MediaRef]
+    xrefs: list[str]
+    keyrefs: list[str]
+    conrefs: list[str]
+    labels: list[str]
+    links: list[LinkRef]  # Enhanced link extraction
+    enhanced_metadata: dict[str, Any]  # Structured metadata from prolog
 
 
 @dataclass
 class MapRef:
     """Reference within a DITA map."""
 
-    href: Optional[str]
-    navtitle: Optional[str]
-    type: Optional[str]
-    scope: Optional[str]
-    processing_role: Optional[str]
+    href: str | None
+    navtitle: str | None
+    type: str | None
+    scope: str | None
+    processing_role: str | None
 
 
 @dataclass
@@ -77,11 +79,11 @@ class MapDoc:
 
     id: str
     title: str
-    keydefs: Dict[str, str]
-    hierarchy: List[MapRef]
-    labels: List[str]
-    links: List[LinkRef]  # Enhanced link extraction
-    enhanced_metadata: Dict[str, Any]  # Structured metadata from prolog
+    keydefs: dict[str, str]
+    hierarchy: list[MapRef]
+    labels: list[str]
+    links: list[LinkRef]  # Enhanced link extraction
+    enhanced_metadata: dict[str, Any]  # Structured metadata from prolog
 
 
 def _normalize_path(path: str) -> str:
@@ -114,12 +116,8 @@ def _normalize_url(url: str) -> str:
     }
 
     if parsed.query:
-        query_params = urllib.parse.parse_qs(
-            parsed.query, keep_blank_values=True
-        )
-        filtered_params = {
-            k: v for k, v in query_params.items() if k not in tracking_params
-        }
+        query_params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        filtered_params = {k: v for k, v in query_params.items() if k not in tracking_params}
         new_query = urllib.parse.urlencode(filtered_params, doseq=True)
     else:
         new_query = ""
@@ -166,9 +164,7 @@ def _classify_link_type(href: str, is_keyref: bool = False) -> str:
     return "external"
 
 
-def _resolve_dita_reference(
-    href: str, current_file_path: Path, root_dir: Path
-) -> Optional[str]:
+def _resolve_dita_reference(href: str, current_file_path: Path, root_dir: Path) -> str | None:
     """Resolve DITA internal reference to our standard ID format."""
     if not href or href.startswith(("http://", "https://")):
         return None
@@ -203,10 +199,7 @@ def _resolve_dita_reference(
         normalized_path = Path(path_str).with_suffix("").as_posix().lower()
 
         # Determine if it's a map or topic
-        if (
-            path_str.endswith(".ditamap")
-            or "map" in Path(path_str).stem.lower()
-        ):
+        if path_str.endswith(".ditamap") or "map" in Path(path_str).stem.lower():
             page_id = f"map:{normalized_path}"
         else:
             page_id = f"topic:{normalized_path}"
@@ -219,7 +212,7 @@ def _resolve_dita_reference(
         return None
 
 
-def _generate_topic_id(relpath: str, element_id: Optional[str] = None) -> str:
+def _generate_topic_id(relpath: str, element_id: str | None = None) -> str:
     """Generate stable topic ID from relative path and optional element ID."""
     # Remove extension and normalize
     base = Path(relpath).with_suffix("").as_posix().lower()
@@ -263,8 +256,8 @@ def _extract_text_content(element: etree._Element) -> str:
 def _extract_media_from_element(
     element: etree._Element,
     xml_path: str,
-    media_list: List[MediaRef],
-    order_counter: List[int],
+    media_list: list[MediaRef],
+    order_counter: list[int],
 ) -> None:
     """Recursively extract media references from XML element."""
     tag = element.tag
@@ -303,16 +296,14 @@ def _extract_media_from_element(
     # Recursively process child elements
     for i, child in enumerate(element, 1):
         child_path = f"{xml_path}/{child.tag}[{i}]"
-        _extract_media_from_element(
-            child, child_path, media_list, order_counter
-        )
+        _extract_media_from_element(child, child_path, media_list, order_counter)
 
 
 def _extract_enhanced_metadata_from_prolog(
-    prolog: Optional[etree._Element],
-) -> Dict[str, Any]:
+    prolog: etree._Element | None,
+) -> dict[str, Any]:
     """Extract enhanced structured metadata from DITA prolog."""
-    metadata: Dict[str, Any] = {
+    metadata: dict[str, Any] = {
         "audience": None,
         "product": None,
         "platform": None,
@@ -337,9 +328,7 @@ def _extract_enhanced_metadata_from_prolog(
                 keywords_list.append(text)
 
     # Extract audience, product, platform from various elements
-    for meta in prolog.xpath(
-        ".//*[@audience or @product or @platform or @otherprops]"
-    ):
+    for meta in prolog.xpath(".//*[@audience or @product or @platform or @otherprops]"):
         if meta.get("audience"):
             metadata["audience"] = meta.get("audience")
         if meta.get("product"):
@@ -391,9 +380,7 @@ def _extract_enhanced_metadata_from_prolog(
     return metadata
 
 
-def _extract_links_from_element(
-    element: etree._Element, current_file_path: Path, root_dir: Path
-) -> List[LinkRef]:
+def _extract_links_from_element(element: etree._Element, current_file_path: Path, root_dir: Path) -> list[LinkRef]:
     """Extract and classify links from XML element."""
     links = []
 
@@ -414,9 +401,7 @@ def _extract_links_from_element(
         target_url = href
 
         if target_type == "dita":
-            target_page_id = _resolve_dita_reference(
-                href, current_file_path, root_dir
-            )
+            target_page_id = _resolve_dita_reference(href, current_file_path, root_dir)
             target_url = None
         else:
             target_url = _normalize_url(href)
@@ -471,9 +456,7 @@ def _extract_links_from_element(
         target_url = href
 
         if target_type == "dita":
-            target_page_id = _resolve_dita_reference(
-                href, current_file_path, root_dir
-            )
+            target_page_id = _resolve_dita_reference(href, current_file_path, root_dir)
             target_url = None
         else:
             target_url = _normalize_url(href)
@@ -503,9 +486,7 @@ def _extract_links_from_element(
             conref = conref_parts[0]
             anchor = conref_parts[1]
 
-        target_page_id = _resolve_dita_reference(
-            conref, current_file_path, root_dir
-        )
+        target_page_id = _resolve_dita_reference(conref, current_file_path, root_dir)
 
         links.append(
             LinkRef(
@@ -559,9 +540,7 @@ def _extract_links_from_element(
             target_url = _normalize_url(href)
         else:
             target_type = "dita"
-            target_page_id = _resolve_dita_reference(
-                href, current_file_path, root_dir
-            )
+            target_page_id = _resolve_dita_reference(href, current_file_path, root_dir)
             target_url = None
 
         links.append(
@@ -581,7 +560,7 @@ def _extract_links_from_element(
     return links
 
 
-def _extract_labels_from_prolog(prolog: Optional[etree._Element]) -> List[str]:
+def _extract_labels_from_prolog(prolog: etree._Element | None) -> list[str]:
     """Extract labels from DITA prolog metadata."""
     labels = set()
 
@@ -603,9 +582,7 @@ def _extract_labels_from_prolog(prolog: Optional[etree._Element]) -> List[str]:
             labels.add(f"{name}:{content}")
 
     # Extract common attributes that act as labels
-    for meta in prolog.xpath(
-        ".//*[@audience or @product or @platform or @otherprops]"
-    ):
+    for meta in prolog.xpath(".//*[@audience or @product or @platform or @otherprops]"):
         for attr in ["audience", "product", "platform", "otherprops"]:
             value = meta.get(attr)
             if value:
@@ -616,7 +593,7 @@ def _extract_labels_from_prolog(prolog: Optional[etree._Element]) -> List[str]:
     return sorted(list(labels))
 
 
-def _parse_map_hierarchy(map_element: etree._Element) -> List[MapRef]:
+def _parse_map_hierarchy(map_element: etree._Element) -> list[MapRef]:
     """Parse map hierarchy into list of references."""
     refs = []
 
@@ -669,20 +646,14 @@ def parse_topic(file_path: Path) -> TopicDoc:
 
         # Extract ID (use @id if present, otherwise derive from filename)
         topic_id = root.get("id")
-        relpath = (
-            file_path.name
-        )  # Will be updated by caller with full relative path
+        relpath = file_path.name  # Will be updated by caller with full relative path
 
         # Generate stable ID
         doc_id = _generate_topic_id(relpath, topic_id)
 
         # Extract title
         title_elem = root.find(".//title")
-        title = (
-            _extract_text_content(title_elem)
-            if title_elem is not None
-            else file_path.stem
-        )
+        title = _extract_text_content(title_elem) if title_elem is not None else file_path.stem
 
         # Extract prolog metadata
         prolog = root.find("prolog")
@@ -708,17 +679,13 @@ def parse_topic(file_path: Path) -> TopicDoc:
             body = root.find("refbody")  # For reference topics
         body_xml = ""
         if body is not None:
-            body_xml = etree.tostring(
-                body, encoding="unicode", pretty_print=True
-            )
+            body_xml = etree.tostring(body, encoding="unicode", pretty_print=True)
 
         # Extract media references
-        media_list: List[MediaRef] = []
+        media_list: list[MediaRef] = []
         order_counter = [1]  # Use list to allow mutation in nested function
         if body is not None:
-            _extract_media_from_element(
-                body, "/topic/body", media_list, order_counter
-            )
+            _extract_media_from_element(body, "/topic/body", media_list, order_counter)
 
         # Extract cross-references (backward compatibility)
         xrefs = []
@@ -775,18 +742,12 @@ def parse_map(file_path: Path) -> MapDoc:
         root = tree.getroot()
 
         # Generate stable ID
-        relpath = (
-            file_path.name
-        )  # Will be updated by caller with full relative path
+        relpath = file_path.name  # Will be updated by caller with full relative path
         doc_id = _generate_map_id(relpath)
 
         # Extract title
         title_elem = root.find(".//title")
-        title = (
-            _extract_text_content(title_elem)
-            if title_elem is not None
-            else file_path.stem
-        )
+        title = _extract_text_content(title_elem) if title_elem is not None else file_path.stem
 
         # Extract key definitions
         keydefs = {}
@@ -842,14 +803,11 @@ def is_dita_file(file_path: Path) -> bool:
     if file_path.suffix.lower() == ".xml":
         try:
             # Read first few lines to check for DITA indicators
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 content = f.read(1024)  # Read first 1KB
 
             # Check for DITA DOCTYPE
-            if "<!DOCTYPE" in content and any(
-                dt in content
-                for dt in ["topic", "concept", "task", "reference", "map"]
-            ):
+            if "<!DOCTYPE" in content and any(dt in content for dt in ["topic", "concept", "task", "reference", "map"]):
                 return True
 
             # Check for DITA root elements (basic XML parsing)

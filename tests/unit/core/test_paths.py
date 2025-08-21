@@ -1,3 +1,8 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Tests for workspace path management."""
 
 import os
@@ -5,9 +10,14 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-
 import pytest
+
 from trailblazer.core import paths
+from trailblazer.core.artifacts import phase_dir, runs_dir
+from trailblazer.core.config import Settings
+from trailblazer.pipeline.steps.normalize.html_to_md import (
+    _default_ingest_path,
+)
 
 # Mark all tests as unit tests (no database needed)
 pytestmark = pytest.mark.unit
@@ -42,8 +52,6 @@ def test_paths_env_overrides():
         },
     ):
         # Need to reload the settings after env change
-        from trailblazer.core.config import Settings
-
         custom_settings = Settings()
 
         with patch("trailblazer.core.paths.SETTINGS", custom_settings):
@@ -84,8 +92,6 @@ def test_paths_are_absolute():
 
 def test_paths_integration_with_artifacts():
     """Test that artifacts module uses new paths correctly."""
-    from trailblazer.core.artifacts import runs_dir, phase_dir
-
     # Test that artifacts module uses the new paths
     assert runs_dir() == paths.runs()
 
@@ -98,9 +104,7 @@ def test_paths_integration_with_artifacts():
             test_phase = "ingest"
 
             phase_path = phase_dir(test_run_id, test_phase)
-            expected_path = (
-                tmpdir_path / "var" / "runs" / test_run_id / test_phase
-            )
+            expected_path = tmpdir_path / "var" / "runs" / test_run_id / test_phase
 
             assert phase_path == expected_path
             assert phase_path.exists()
@@ -108,10 +112,6 @@ def test_paths_integration_with_artifacts():
 
 def test_normalize_path_integration():
     """Test that normalize module uses new paths correctly."""
-    from trailblazer.pipeline.steps.normalize.html_to_md import (
-        _default_ingest_path,
-    )
-
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
 
@@ -134,4 +134,3 @@ def test_normalize_path_integration():
 # This was testing deprecated functionality that has been refactored
 def test_embed_loader_path_integration():
     """Test removed - function _default_normalized_path no longer exists."""
-    pass

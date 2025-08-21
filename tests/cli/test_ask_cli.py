@@ -1,10 +1,15 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Tests for the ask CLI command."""
 
 import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -68,9 +73,7 @@ def test_ask_smoke_test_with_mocked_retriever(mock_search_hits):
     """Smoke test for ask command with mocked retriever."""
     with tempfile.TemporaryDirectory() as temp_dir:
         with patch("trailblazer.cli.main._run_db_preflight_check"):
-            with patch(
-                "trailblazer.retrieval.dense.create_retriever"
-            ) as mock_create_retriever:
+            with patch("trailblazer.retrieval.dense.create_retriever") as mock_create_retriever:
                 mock_retriever = MagicMock()
                 mock_retriever.search.return_value = [
                     {
@@ -108,7 +111,7 @@ def test_ask_smoke_test_with_mocked_retriever(mock_search_hits):
                 # Check hits.jsonl content
                 with open(output_path / "hits.jsonl") as f:
                     hits_lines = f.readlines()
-                    assert len(hits_lines) == 2
+                    assert len(hits_lines) == EXPECTED_COUNT_2
                     hit1 = json.loads(hits_lines[0])
                     assert hit1["chunk_id"] == "test:0000"
                     assert hit1["score"] == 0.95
@@ -133,9 +136,7 @@ def test_ask_json_format(mock_search_hits):
     """Test ask command with JSON output format."""
     with tempfile.TemporaryDirectory() as temp_dir:
         with patch("trailblazer.cli.main._run_db_preflight_check"):
-            with patch(
-                "trailblazer.retrieval.dense.create_retriever"
-            ) as mock_create_retriever:
+            with patch("trailblazer.retrieval.dense.create_retriever") as mock_create_retriever:
                 mock_retriever = MagicMock()
                 mock_retriever.search.return_value = [
                     {
@@ -166,19 +167,14 @@ def test_ask_json_format(mock_search_hits):
 
                 assert result.exit_code == 0
                 # When format is json, summary should be in stderr
-                assert (
-                    "query" in result.stderr
-                    or "test question" in result.stderr
-                )
+                assert "query" in result.stderr or "test question" in result.stderr
 
 
 def test_ask_no_results(mock_search_hits):
     """Test ask command when no results are found."""
     with tempfile.TemporaryDirectory() as temp_dir:
         with patch("trailblazer.cli.main._run_db_preflight_check"):
-            with patch(
-                "trailblazer.retrieval.dense.create_retriever"
-            ) as mock_create_retriever:
+            with patch("trailblazer.retrieval.dense.create_retriever") as mock_create_retriever:
                 mock_retriever = MagicMock()
                 mock_retriever.search.return_value = []  # No results
                 mock_create_retriever.return_value = mock_retriever
@@ -203,9 +199,7 @@ def test_ask_ndjson_events(mock_search_hits):
     """Test that ask command emits proper NDJSON events."""
     with tempfile.TemporaryDirectory() as temp_dir:
         with patch("trailblazer.cli.main._run_db_preflight_check"):
-            with patch(
-                "trailblazer.retrieval.dense.create_retriever"
-            ) as mock_create_retriever:
+            with patch("trailblazer.retrieval.dense.create_retriever") as mock_create_retriever:
                 mock_retriever = MagicMock()
                 mock_retriever.search.return_value = [
                     {
@@ -252,9 +246,7 @@ def test_ask_ndjson_events(mock_search_hits):
                 assert "ask.complete" in event_types
 
                 # Check ask.start event has required fields
-                start_event = next(
-                    e for e in events if e.get("event") == "ask.start"
-                )
+                start_event = next(e for e in events if e.get("event") == "ask.start")
                 assert start_event["question"] == "test question"
                 assert start_event["provider"] == "dummy"
                 assert "run_id" in start_event
@@ -265,9 +257,7 @@ def test_ask_custom_parameters(mock_search_hits):
     """Test ask command with custom parameters."""
     with tempfile.TemporaryDirectory() as temp_dir:
         with patch("trailblazer.cli.main._run_db_preflight_check"):
-            with patch(
-                "trailblazer.retrieval.dense.create_retriever"
-            ) as mock_create_retriever:
+            with patch("trailblazer.retrieval.dense.create_retriever") as mock_create_retriever:
                 mock_retriever = MagicMock()
                 mock_retriever.search.return_value = [
                     {

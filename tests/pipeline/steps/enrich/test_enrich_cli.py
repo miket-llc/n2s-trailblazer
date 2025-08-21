@@ -1,11 +1,16 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Tests for enrichment CLI command."""
 
 import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
-import pytest
 
+import pytest
 from typer.testing import CliRunner
 
 from trailblazer.cli.main import app
@@ -47,9 +52,7 @@ class TestEnrichCLI:
 
             result = runner.invoke(app, ["enrich", "nonexistent-run"])
             assert result.exit_code == 1
-            assert (
-                "not found or normalize phase not completed" in result.output
-            )
+            assert "not found or normalize phase not completed" in result.output
 
     @patch("trailblazer.core.artifacts.phase_dir")
     def test_enrich_missing_normalized_file(self, mock_phase_dir):
@@ -81,9 +84,7 @@ class TestEnrichCLI:
 
             # Create normalized file
             normalized_file = normalize_dir / "normalized.ndjson"
-            normalized_file.write_text(
-                '{"id": "test", "text_md": "content"}\n'
-            )
+            normalized_file.write_text('{"id": "test", "text_md": "content"}\n')
 
             # Mock phase_dir
             def mock_phase_dir_func(run_id, phase):
@@ -134,9 +135,7 @@ class TestEnrichCLI:
 
             # Create normalized file
             normalized_file = normalize_dir / "normalized.ndjson"
-            normalized_file.write_text(
-                '{"id": "test", "text_md": "content"}\n'
-            )
+            normalized_file.write_text('{"id": "test", "text_md": "content"}\n')
 
             # Mock phase_dir
             def mock_phase_dir_func(run_id, phase):
@@ -184,9 +183,7 @@ class TestEnrichCLI:
 
             # Create normalized file
             normalized_file = normalize_dir / "normalized.ndjson"
-            normalized_file.write_text(
-                '{"id": "test", "text_md": "content"}\n'
-            )
+            normalized_file.write_text('{"id": "test", "text_md": "content"}\n')
 
             # Mock phase_dir
             def mock_phase_dir_func(run_id, phase):
@@ -236,9 +233,7 @@ class TestEnrichCLI:
 
     @patch("trailblazer.pipeline.steps.enrich.enrich_from_normalized")
     @patch("trailblazer.core.artifacts.phase_dir")
-    def test_enrich_generates_assurance_files(
-        self, mock_phase_dir, mock_enrich
-    ):
+    def test_enrich_generates_assurance_files(self, mock_phase_dir, mock_enrich):
         """Test that enrichment generates assurance files."""
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -251,9 +246,7 @@ class TestEnrichCLI:
 
             # Create normalized file
             normalized_file = normalize_dir / "normalized.ndjson"
-            normalized_file.write_text(
-                '{"id": "test", "text_md": "content"}\n'
-            )
+            normalized_file.write_text('{"id": "test", "text_md": "content"}\n')
 
             # Mock phase_dir
             def mock_phase_dir_func(run_id, phase):
@@ -315,9 +308,7 @@ class TestEnrichCLI:
 
             # Create normalized file
             normalized_file = normalize_dir / "normalized.ndjson"
-            normalized_file.write_text(
-                '{"id": "test", "text_md": "content"}\n'
-            )
+            normalized_file.write_text('{"id": "test", "text_md": "content"}\n')
 
             # Mock phase_dir
             def mock_phase_dir_func(run_id, phase):
@@ -351,9 +342,7 @@ class TestEnrichCLI:
 
             # Create normalized file
             normalized_file = normalize_dir / "normalized.ndjson"
-            normalized_file.write_text(
-                '{"id": "test", "text_md": "content"}\n'
-            )
+            normalized_file.write_text('{"id": "test", "text_md": "content"}\n')
 
             # Mock phase_dir
             def mock_phase_dir_func(run_id, phase):
@@ -392,11 +381,7 @@ class TestEnrichCLI:
             assert result.exit_code == 0
 
             # Parse NDJSON events from stdout
-            stdout_lines = (
-                result.stdout.strip().split("\n")
-                if result.stdout.strip()
-                else []
-            )
+            stdout_lines = result.stdout.strip().split("\n") if result.stdout.strip() else []
             events = []
             for line in stdout_lines:
                 if line.strip():
@@ -410,12 +395,8 @@ class TestEnrichCLI:
             assert len(events) > 0
 
             # Find specific events
-            begin_events = [
-                e for e in events if e.get("event") == "enrich.begin"
-            ]
-            complete_events = [
-                e for e in events if e.get("event") == "enrich.complete"
-            ]
+            begin_events = [e for e in events if e.get("event") == "enrich.begin"]
+            complete_events = [e for e in events if e.get("event") == "enrich.complete"]
 
             assert len(begin_events) >= 1
             assert len(complete_events) >= 1
@@ -432,9 +413,7 @@ class TestEnrichCLI:
         # For now, just verify the flag is recognized
         result = runner.invoke(app, ["enrich", "--help"])
         assert result.exit_code == 0
-        assert (
-            "--progress" in result.output and "--no-progress" in result.output
-        )
+        assert "--progress" in result.output and "--no-progress" in result.output
 
     def test_enrich_no_color_flag(self):
         """Test that --no-color flag is recognized."""
@@ -507,9 +486,7 @@ class TestEnrichmentAssuranceMarkdown:
             # Verify LLM-specific content is appropriate
             assert "**LLM enabled:** False" in content
             assert "No quality flags detected" in content
-            assert (
-                "suggested_edges.jsonl" not in content
-            )  # Should not mention edges file
+            assert "suggested_edges.jsonl" not in content  # Should not mention edges file
 
     def test_generate_enrichment_assurance_md_empty_quality_flags(self):
         """Test assurance markdown generation with no quality flags."""

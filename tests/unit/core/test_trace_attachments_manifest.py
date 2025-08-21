@@ -1,7 +1,14 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Integration tests for attachments manifest traceability."""
 
 import json
+
 import pytest
+
 from trailblazer.pipeline.steps.ingest import confluence as step
 
 # Mark all tests as unit tests (no database needed)
@@ -14,10 +21,10 @@ def test_attachments_manifest_matches_ndjson(tmp_path, monkeypatch):
     class FakeClient:
         site_base = "https://example.atlassian.net/wiki"
 
-        def get_spaces(self, keys=None, limit=100):
+        def get_spaces(self, _keys=None, _limit=100):
             yield {"id": "111", "key": "DEV"}
 
-        def get_pages(self, space_id=None, body_format=None, limit=100):
+        def get_pages(self, _space_id=None, _body_format=None, _limit=100):
             yield {
                 "id": "p1",
                 "title": "Page with Attachments",
@@ -28,40 +35,36 @@ def test_attachments_manifest_matches_ndjson(tmp_path, monkeypatch):
                 "body": {"storage": {"value": "<p>Test page</p>"}},
             }
 
-        def get_page_by_id(self, page_id, body_format=None):
+        def get_page_by_id(self, _page_id, _body_format=None):
             return {}
 
-        def get_attachments_for_page(self, page_id, limit=100):
-            if page_id == "p1":
+        def get_attachments_for_page(self, _page_id, _limit=100):
+            if _page_id == "p1":
                 yield {
                     "id": "att1",
                     "title": "document.pdf",
                     "mediaType": "application/pdf",
                     "fileSize": 1024,
-                    "_links": {
-                        "download": "/download/attachments/p1/document.pdf"
-                    },
+                    "_links": {"download": "/download/attachments/p1/document.pdf"},
                 }
                 yield {
                     "id": "att2",
                     "title": "image.png",
                     "mediaType": "image/png",
                     "fileSize": 2048,
-                    "_links": {
-                        "download": "/download/attachments/p1/image.png"
-                    },
+                    "_links": {"download": "/download/attachments/p1/image.png"},
                 }
 
-        def search_cql(self, cql, start=0, limit=50, expand=None):
+        def search_cql(self, _cql, _start=0, _limit=50, _expand=None):
             return {"results": []}
 
-        def get_page_labels(self, page_id):
+        def get_page_labels(self, _page_id):
             return []
 
-        def get_page_ancestors(self, page_id):
+        def get_page_ancestors(self, _page_id):
             return []
 
-        def get_space_details(self, space_key):
+        def get_space_details(self, _space_key):
             return {}
 
     monkeypatch.setattr(step, "ConfluenceClient", lambda: FakeClient())
@@ -83,7 +86,7 @@ def test_attachments_manifest_matches_ndjson(tmp_path, monkeypatch):
         page_data = json.loads(f.read().strip())
 
     ndjson_attachments = page_data["attachments"]
-    assert len(ndjson_attachments) == 2
+    assert len(ndjson_attachments) == EXPECTED_COUNT_2
 
     # Check attachments_manifest.jsonl
     manifest_file = out / "attachments_manifest.jsonl"
@@ -92,33 +95,22 @@ def test_attachments_manifest_matches_ndjson(tmp_path, monkeypatch):
     with open(manifest_file) as f:
         manifest_lines = [json.loads(line) for line in f if line.strip()]
 
-    assert len(manifest_lines) == 2
+    assert len(manifest_lines) == EXPECTED_COUNT_2
 
     # Verify manifest entries match NDJSON
     for manifest_entry in manifest_lines:
         assert manifest_entry["page_id"] == "p1"
 
         # Find matching NDJSON attachment
-        matching_attachment = next(
-            a
-            for a in ndjson_attachments
-            if a["filename"] == manifest_entry["filename"]
-        )
+        matching_attachment = next(a for a in ndjson_attachments if a["filename"] == manifest_entry["filename"])
 
         assert manifest_entry["filename"] == matching_attachment["filename"]
-        assert (
-            manifest_entry["media_type"] == matching_attachment["media_type"]
-        )
+        assert manifest_entry["media_type"] == matching_attachment["media_type"]
         assert manifest_entry["file_size"] == matching_attachment["file_size"]
-        assert (
-            manifest_entry["download_url"]
-            == matching_attachment["download_url"]
-        )
+        assert manifest_entry["download_url"] == matching_attachment["download_url"]
 
     # Verify specific attachments
-    pdf_entry = next(
-        m for m in manifest_lines if m["filename"] == "document.pdf"
-    )
+    pdf_entry = next(m for m in manifest_lines if m["filename"] == "document.pdf")
     assert pdf_entry["media_type"] == "application/pdf"
     assert pdf_entry["file_size"] == 1024
 

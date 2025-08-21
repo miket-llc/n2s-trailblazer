@@ -4,7 +4,8 @@ import json
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Union
+from typing import Any
+
 from ..core.logging import log
 
 
@@ -16,7 +17,7 @@ class AssuranceReportGenerator:
         run_id: str,
         source: str,
         outdir: Path,
-        event_log_path: Optional[Path] = None,
+        event_log_path: Path | None = None,
     ):
         """Initialize assurance report generator.
 
@@ -32,12 +33,10 @@ class AssuranceReportGenerator:
         self.event_log_path = event_log_path
 
         # Report data
-        self.report_data: Dict[str, Any] = {
+        self.report_data: dict[str, Any] = {
             "run_id": run_id,
             "source": source,
-            "generated_at": datetime.now(timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z"),
+            "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "totals": {},
             "spaces": {},
             "quality_issues": {
@@ -77,7 +76,7 @@ class AssuranceReportGenerator:
 
         records = []
         try:
-            with open(main_file, "r", encoding="utf-8") as f:
+            with open(main_file, encoding="utf-8") as f:
                 for line_num, line in enumerate(f, 1):
                     try:
                         records.append(json.loads(line.strip()))
@@ -89,17 +88,15 @@ class AssuranceReportGenerator:
                             error=str(e),
                         )
         except Exception as e:
-            log.error(
-                "assurance.read_error", file=str(main_file), error=str(e)
-            )
+            log.error("assurance.read_error", file=str(main_file), error=str(e))
             return
 
         # Analyze records
         self._analyze_records(records)
 
-    def _analyze_records(self, records: List[Dict]):
+    def _analyze_records(self, records: list[dict]):
         """Analyze individual records for quality issues."""
-        space_stats: Dict[str, Dict[str, Any]] = defaultdict(
+        space_stats: dict[str, dict[str, Any]] = defaultdict(
             lambda: {
                 "pages": 0,
                 "attachments": 0,
@@ -133,16 +130,10 @@ class AssuranceReportGenerator:
                 body_adf = record.get("body_adf")
                 if body_adf:
                     # Estimate text length from ADF
-                    body_content = (
-                        json.dumps(body_adf)
-                        if isinstance(body_adf, dict)
-                        else str(body_adf)
-                    )
+                    body_content = json.dumps(body_adf) if isinstance(body_adf, dict) else str(body_adf)
                 else:
                     space_stats[space_key]["zero_body"] += 1
-                    self.report_data["quality_issues"][
-                        "zero_body_pages"
-                    ].append(
+                    self.report_data["quality_issues"]["zero_body_pages"].append(
                         {
                             "page_id": page_id,
                             "title": title,
@@ -154,9 +145,7 @@ class AssuranceReportGenerator:
                 body_content = record.get("body_storage", "")
                 if not body_content:
                     space_stats[space_key]["zero_body"] += 1
-                    self.report_data["quality_issues"][
-                        "zero_body_pages"
-                    ].append(
+                    self.report_data["quality_issues"]["zero_body_pages"].append(
                         {
                             "page_id": page_id,
                             "title": title,
@@ -196,9 +185,7 @@ class AssuranceReportGenerator:
             # Attachment completeness check
             attachments = record.get("attachments", [])
             if attachment_count != len(attachments):
-                self.report_data["quality_issues"][
-                    "missing_attachments"
-                ].append(
+                self.report_data["quality_issues"]["missing_attachments"].append(
                     {
                         "page_id": page_id,
                         "title": title,
@@ -209,31 +196,23 @@ class AssuranceReportGenerator:
                 )
 
         # Sort and limit largest pages
-        self.report_data["performance"]["top_10_largest_pages"].sort(
-            key=lambda x: x["char_count"], reverse=True
-        )
-        self.report_data["performance"]["top_10_largest_pages"] = (
-            self.report_data["performance"]["top_10_largest_pages"][:10]
-        )
+        self.report_data["performance"]["top_10_largest_pages"].sort(key=lambda x: x["char_count"], reverse=True)
+        self.report_data["performance"]["top_10_largest_pages"] = self.report_data["performance"][
+            "top_10_largest_pages"
+        ][:10]
 
         # Store totals
         self.report_data["totals"] = {
             "pages": total_pages,
             "attachments": total_attachments,
             "total_chars": total_chars,
-            "avg_chars_per_page": (
-                total_chars / total_pages if total_pages > 0 else 0
-            ),
+            "avg_chars_per_page": (total_chars / total_pages if total_pages > 0 else 0),
             "spaces": len(space_stats),
         }
 
         # Store per-space stats
         for space_key, stats in space_stats.items():
-            avg_chars = (
-                stats["total_chars"] / stats["pages"]
-                if stats["pages"] > 0
-                else 0
-            )
+            avg_chars = stats["total_chars"] / stats["pages"] if stats["pages"] > 0 else 0
             self.report_data["spaces"][space_key] = {
                 "pages": stats["pages"],
                 "attachments": stats["attachments"],
@@ -250,7 +229,7 @@ class AssuranceReportGenerator:
             return
 
         try:
-            with open(summary_file, "r") as f:
+            with open(summary_file) as f:
                 summary = json.load(f)
 
             # Extract performance metrics
@@ -258,16 +237,12 @@ class AssuranceReportGenerator:
             pages = summary.get("total_pages", 0)
             rate = pages / elapsed if elapsed > 0 else 0
 
-            self.report_data["performance"]["rate_pages_per_second"] = round(
-                rate, 2
-            )
+            self.report_data["performance"]["rate_pages_per_second"] = round(rate, 2)
             self.report_data["performance"]["elapsed_seconds"] = elapsed
 
             # Check for warnings
             if "warnings" in summary:
-                self.report_data["quality_issues"]["warnings"] = summary[
-                    "warnings"
-                ]
+                self.report_data["quality_issues"]["warnings"] = summary["warnings"]
 
         except Exception as e:
             log.warning("assurance.summary_read_error", error=str(e))
@@ -282,7 +257,7 @@ class AssuranceReportGenerator:
         space_timings = {}
 
         try:
-            with open(self.event_log_path, "r", encoding="utf-8") as f:
+            with open(self.event_log_path, encoding="utf-8") as f:
                 for line in f:
                     try:
                         event = json.loads(line.strip())
@@ -294,16 +269,9 @@ class AssuranceReportGenerator:
                             space_key = event.get("space_key", "unknown")
                             error_counts[error_type] += 1
 
-                            if (
-                                space_key
-                                not in self.report_data["errors"]["by_space"]
-                            ):
-                                self.report_data["errors"]["by_space"][
-                                    space_key
-                                ] = []
-                            self.report_data["errors"]["by_space"][
-                                space_key
-                            ].append(
+                            if space_key not in self.report_data["errors"]["by_space"]:
+                                self.report_data["errors"]["by_space"][space_key] = []
+                            self.report_data["errors"]["by_space"][space_key].append(
                                 {
                                     "error_type": error_type,
                                     "message": event.get("message", ""),
@@ -389,9 +357,7 @@ class AssuranceReportGenerator:
                 cmd_parts.extend(["--space", spaces[0]])
             cmd_parts.extend(["--body-format", "atlas_doc_format"])
         elif self.source == "dita":
-            cmd_parts.extend(
-                ["--root", "data/raw/dita/ellucian-documentation"]
-            )
+            cmd_parts.extend(["--root", "data/raw/dita/ellucian-documentation"])
 
         self.report_data["repro_command"] = " ".join(cmd_parts)
 
@@ -474,16 +440,10 @@ class AssuranceReportGenerator:
                 ]
             )
             for page in zero_body[:10]:  # Limit to first 10
-                title = (
-                    page.get("title", "")[:50] + "..."
-                    if len(page.get("title", "")) > 50
-                    else page.get("title", "")
-                )
+                title = page.get("title", "")[:50] + "..." if len(page.get("title", "")) > 50 else page.get("title", "")
                 url = page.get("url", "")
                 url_display = f"[Link]({url})" if url else ""
-                lines.append(
-                    f"| `{page['page_id']}` | {title} | {page['space_key']} | {url_display} |"
-                )
+                lines.append(f"| `{page['page_id']}` | {title} | {page['space_key']} | {url_display} |")
 
             if len(zero_body) > 10:
                 lines.append(f"\n*... and {len(zero_body) - 10} more*")
@@ -501,14 +461,8 @@ class AssuranceReportGenerator:
                 ]
             )
             for page in non_adf[:5]:  # Limit to first 5
-                title = (
-                    page.get("title", "")[:40] + "..."
-                    if len(page.get("title", "")) > 40
-                    else page.get("title", "")
-                )
-                lines.append(
-                    f"| `{page['page_id']}` | {title} | {page['space_key']} | {page.get('body_repr', '')} |"
-                )
+                title = page.get("title", "")[:40] + "..." if len(page.get("title", "")) > 40 else page.get("title", "")
+                lines.append(f"| `{page['page_id']}` | {title} | {page['space_key']} | {page.get('body_repr', '')} |")
 
             if len(non_adf) > 5:
                 lines.append(f"\n*... and {len(non_adf) - 5} more*")
@@ -526,11 +480,7 @@ class AssuranceReportGenerator:
                 ]
             )
             for page in missing_att[:5]:
-                title = (
-                    page.get("title", "")[:40] + "..."
-                    if len(page.get("title", "")) > 40
-                    else page.get("title", "")
-                )
+                title = page.get("title", "")[:40] + "..." if len(page.get("title", "")) > 40 else page.get("title", "")
                 lines.append(
                     f"| `{page['page_id']}` | {title} | {page['space_key']} | {page['expected']} | {page['actual']} |"
                 )
@@ -540,9 +490,7 @@ class AssuranceReportGenerator:
             lines.append("")
 
         # Top 10 largest pages
-        largest = self.report_data["performance"].get(
-            "top_10_largest_pages", []
-        )
+        largest = self.report_data["performance"].get("top_10_largest_pages", [])
         if largest:
             lines.extend(
                 [
@@ -553,11 +501,7 @@ class AssuranceReportGenerator:
                 ]
             )
             for page in largest:
-                title = (
-                    page.get("title", "")[:40] + "..."
-                    if len(page.get("title", "")) > 40
-                    else page.get("title", "")
-                )
+                title = page.get("title", "")[:40] + "..." if len(page.get("title", "")) > 40 else page.get("title", "")
                 url = page.get("url", "")
                 url_display = f"[Link]({url})" if url else ""
                 lines.append(
@@ -587,9 +531,7 @@ class AssuranceReportGenerator:
                         "",
                     ]
                 )
-                for error_type, count in sorted(
-                    error_types.items(), key=lambda x: x[1], reverse=True
-                ):
+                for error_type, count in sorted(error_types.items(), key=lambda x: x[1], reverse=True):
                     lines.append(f"- **{error_type}:** {count}")
                 lines.append("")
 
@@ -606,9 +548,7 @@ class AssuranceReportGenerator:
             )
 
             # Sort by page count descending
-            sorted_spaces = sorted(
-                spaces.items(), key=lambda x: x[1]["pages"], reverse=True
-            )
+            sorted_spaces = sorted(spaces.items(), key=lambda x: x[1]["pages"], reverse=True)
             for space_key, stats in sorted_spaces:
                 lines.append(
                     f"| {space_key} | {stats['pages']:,} | {stats['attachments']:,} | "
@@ -635,8 +575,8 @@ class AssuranceReportGenerator:
 def generate_assurance_report(
     run_id: str,
     source: str,
-    outdir: Union[str, Path],
-    event_log_path: Optional[Union[str, Path]] = None,
+    outdir: str | Path,
+    event_log_path: str | Path | None = None,
 ) -> tuple[Path, Path]:
     """Generate assurance reports for an ingest run.
 

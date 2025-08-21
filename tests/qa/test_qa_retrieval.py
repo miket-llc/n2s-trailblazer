@@ -1,3 +1,8 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Tests for retrieval QA harness functionality."""
 
 import tempfile
@@ -6,15 +11,15 @@ from pathlib import Path
 import pytest
 
 from trailblazer.qa.retrieval import (
+    check_traceability,
     compute_doc_diversity,
     compute_duplication_rate,
+    compute_pack_stats,
     compute_tie_rate,
-    check_traceability,
+    create_overview_markdown,
     create_query_slug,
     evaluate_query_health,
     load_queries,
-    create_overview_markdown,
-    compute_pack_stats,
 )
 
 # Mark all tests as unit tests (no database needed)
@@ -92,9 +97,7 @@ class TestMetrics:
         assert compute_doc_diversity([]) == 0.0
 
         # Single doc should have 0 diversity
-        single_doc_hits = [
-            hit for hit in sample_hits if hit["doc_id"] == "doc1"
-        ]
+        single_doc_hits = [hit for hit in sample_hits if hit["doc_id"] == "doc1"]
         assert compute_doc_diversity(single_doc_hits) == 0.0
 
     def test_compute_tie_rate(self, sample_hits):
@@ -123,7 +126,7 @@ class TestMetrics:
         assert dup_rate == 0.0
 
         # Test with duplicates
-        duplicate_hits = sample_hits + [sample_hits[0]]  # Add duplicate
+        duplicate_hits = [*sample_hits, sample_hits[0]]  # Add duplicate
         dup_rate = compute_duplication_rate(duplicate_hits)
         assert abs(dup_rate - 0.2) < 0.001  # 1 duplicate out of 5 = 20%
 
@@ -152,21 +155,17 @@ class TestQueryProcessing:
         assert create_query_slug("test-query-2") == "test-query-2"
         assert create_query_slug("Test Query #3!") == "Test_Query_3"
         assert create_query_slug("query__with___spaces") == "query_with_spaces"
-        assert (
-            create_query_slug("___leading___trailing___") == "leading_trailing"
-        )
+        assert create_query_slug("___leading___trailing___") == "leading_trailing"
 
     def test_load_queries(self, sample_queries_yaml):
         """Test loading queries from YAML."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(sample_queries_yaml)
             f.flush()
 
             queries = load_queries(f.name)
 
-        assert len(queries) == 2
+        assert len(queries) == EXPECTED_COUNT_2
         assert queries[0]["id"] == "test_query_1"
         assert queries[0]["text"] == "What is the test methodology?"
         assert queries[1]["id"] == "test-query-2"
@@ -182,15 +181,13 @@ class TestQueryProcessing:
 - id: "query2"
   text: "Test query 2"
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(list_yaml)
             f.flush()
 
             queries = load_queries(f.name)
 
-        assert len(queries) == 2
+        assert len(queries) == EXPECTED_COUNT_2
         assert queries[0]["id"] == "query1"
 
         # Clean up
@@ -205,15 +202,11 @@ queries:
     # Missing text field
   - text: "Query without ID"
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(invalid_yaml)
             f.flush()
 
-            with pytest.raises(
-                ValueError, match="must have 'id' and 'text' fields"
-            ):
+            with pytest.raises(ValueError, match="must have 'id' and 'text' fields"):
                 load_queries(f.name)
 
         # Clean up
@@ -314,15 +307,9 @@ class TestPackStats:
         stats = compute_pack_stats(query_results, [1500, 4000])
 
         # Check averages
-        assert (
-            abs(stats["budgets"][1500]["average_tie_rate"] - 0.25) < 0.001
-        )  # (0.2 + 0.3) / 2
-        assert (
-            abs(stats["budgets"][1500]["average_doc_diversity"] - 1.25) < 0.001
-        )  # (1.5 + 1.0) / 2
-        assert (
-            abs(stats["budgets"][1500]["average_unique_docs"] - 2.5) < 0.001
-        )  # (3 + 2) / 2
+        assert abs(stats["budgets"][1500]["average_tie_rate"] - 0.25) < 0.001  # (0.2 + 0.3) / 2
+        assert abs(stats["budgets"][1500]["average_doc_diversity"] - 1.25) < 0.001  # (1.5 + 1.0) / 2
+        assert abs(stats["budgets"][1500]["average_unique_docs"] - 2.5) < 0.001  # (3 + 2) / 2
 
         assert stats["budgets"][1500]["queries"] == 2
         assert stats["budgets"][4000]["queries"] == 2
@@ -470,10 +457,7 @@ class TestReportGeneration:
         assert "**Pass Rate:** 0.0%" in markdown
 
         # Check failure analysis
-        assert (
-            "⚠️ **System is BLOCKED - address failures before production.**"
-            in markdown
-        )
+        assert "⚠️ **System is BLOCKED - address failures before production.**" in markdown
         # Note: Current implementation doesn't categorize failures into specific issue types
         # The test has been updated to match current behavior
 

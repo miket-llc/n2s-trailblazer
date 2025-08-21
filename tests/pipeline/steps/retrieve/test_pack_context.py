@@ -1,10 +1,16 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test context packing utilities."""
 
 import pytest
+
 from trailblazer.retrieval.pack import (
+    create_context_summary,
     group_by_doc,
     pack_context,
-    create_context_summary,
 )
 
 # Mark all tests as unit tests (no database needed)
@@ -49,13 +55,13 @@ def test_group_by_doc_basic():
     result = group_by_doc(hits, max_chunks_per_doc=2)
 
     # Should have max 2 chunks per doc, maintaining original order
-    assert len(result) == 4
+    assert len(result) == EXPECTED_COUNT_4
 
     doc1_chunks = [hit for hit in result if hit["doc_id"] == "doc1"]
     doc2_chunks = [hit for hit in result if hit["doc_id"] == "doc2"]
 
-    assert len(doc1_chunks) == 2
-    assert len(doc2_chunks) == 2
+    assert len(doc1_chunks) == EXPECTED_COUNT_2
+    assert len(doc2_chunks) == EXPECTED_COUNT_2
 
     # Check that highest scoring chunks are kept
     assert doc1_chunks[0]["chunk_id"] == "doc1:001"  # score 0.9
@@ -228,9 +234,7 @@ def test_create_context_summary():
     assert summary["provider"] == "dummy"
     assert summary["total_hits"] == 3
     assert summary["unique_documents"] == 2  # doc1 and doc2
-    assert summary["total_characters"] == len(
-        "Short textAnother textMore text"
-    )
+    assert summary["total_characters"] == len("Short textAnother textMore text")
 
     # Check score statistics
     assert summary["score_stats"]["min"] == 0.7

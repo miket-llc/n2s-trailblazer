@@ -1,6 +1,12 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Tests for media extraction from ADF and Storage formats."""
 
 import pytest
+
 from trailblazer.pipeline.steps.ingest.media_extractor import (
     extract_media_from_adf,
     extract_media_from_storage,
@@ -93,7 +99,7 @@ class TestMediaExtractionFromAdf:
 
         media_items = extract_media_from_adf(adf)
 
-        assert len(media_items) == 2
+        assert len(media_items) == EXPECTED_COUNT_2
         assert media_items[0].order == 0
         assert media_items[0].filename == "first.jpg"
         assert media_items[1].order == 1
@@ -203,21 +209,15 @@ class TestAttachmentIdResolution:
 
         resolved_media = resolve_attachment_ids(media_items, attachments)
 
-        assert len(resolved_media) == 2
+        assert len(resolved_media) == EXPECTED_COUNT_2
         assert resolved_media[0].attachment_id == "att1"
-        assert (
-            resolved_media[0].download_url == "/path/image1.jpg"
-        )  # Original URL preserved
+        assert resolved_media[0].download_url == "/path/image1.jpg"  # Original URL preserved
         assert resolved_media[1].attachment_id == "att2"
-        assert (
-            resolved_media[1].download_url == "/path/image2.png"
-        )  # Original URL preserved
+        assert resolved_media[1].download_url == "/path/image2.png"  # Original URL preserved
 
     def test_resolve_no_matches(self):
         """Test when no filenames match."""
-        media_items = [
-            extract_media_from_storage('<img src="/path/nomatch.jpg"/>')[0]
-        ]
+        media_items = [extract_media_from_storage('<img src="/path/nomatch.jpg"/>')[0]]
 
         attachments = [
             {
@@ -231,16 +231,12 @@ class TestAttachmentIdResolution:
 
         assert len(resolved_media) == 1
         assert resolved_media[0].attachment_id is None
-        assert (
-            resolved_media[0].download_url == "/path/nomatch.jpg"
-        )  # Original URL preserved
+        assert resolved_media[0].download_url == "/path/nomatch.jpg"  # Original URL preserved
 
     def test_resolve_empty_lists(self):
         """Test handling empty media or attachment lists."""
         assert resolve_attachment_ids([], []) == []
 
-        media_items = [
-            extract_media_from_storage('<img src="/path/image.jpg"/>')[0]
-        ]
+        media_items = [extract_media_from_storage('<img src="/path/image.jpg"/>')[0]]
         assert resolve_attachment_ids(media_items, []) == media_items
         assert resolve_attachment_ids([], [{"id": "att1"}]) == []

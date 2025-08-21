@@ -4,7 +4,6 @@ Boundary detection and splitting strategies for chunking.
 
 import re
 from enum import Enum
-from typing import Dict, List, Tuple
 
 try:
     import tiktoken  # type: ignore
@@ -46,11 +45,11 @@ def count_tokens(text: str, model: str = "text-embedding-3-small") -> int:
         return len(encoding.encode(text))
 
 
-def split_by_headings(text: str) -> List[Tuple[str, str]]:
+def split_by_headings(text: str) -> list[tuple[str, str]]:
     """Split text by headings, returning (content, strategy) tuples."""
     lines = text.split("\n")
     chunks = []
-    current_chunk: List[str] = []
+    current_chunk: list[str] = []
 
     for line in lines:
         if re.match(r"^#+\s", line) and current_chunk:
@@ -67,14 +66,14 @@ def split_by_headings(text: str) -> List[Tuple[str, str]]:
     return [(chunk, strategy) for chunk, strategy in chunks if chunk.strip()]
 
 
-def split_by_paragraphs(text: str) -> List[Tuple[str, str]]:
+def split_by_paragraphs(text: str) -> list[tuple[str, str]]:
     """Split text by paragraph boundaries."""
     # Split on double newlines (paragraph breaks)
     paragraphs = re.split(r"\n\s*\n", text)
     return [(p.strip(), "paragraph") for p in paragraphs if p.strip()]
 
 
-def split_by_sentences(text: str) -> List[Tuple[str, str]]:
+def split_by_sentences(text: str) -> list[tuple[str, str]]:
     """Split text by sentence boundaries using simple heuristics."""
     # Simple sentence splitting on period, question mark, exclamation
     sentences = re.split(r"(?<=[.!?])\s+", text)
@@ -83,7 +82,7 @@ def split_by_sentences(text: str) -> List[Tuple[str, str]]:
 
 def split_code_fence_by_lines(
     text: str, hard_max_tokens: int, overlap_tokens: int, model: str
-) -> List[Tuple[str, str]]:
+) -> list[tuple[str, str]]:
     """Split code fences by line blocks, never cutting mid-line."""
     # Extract language and code content
     match = re.match(r"^```(\w*)\n(.*?)\n```$", text, re.DOTALL)
@@ -95,27 +94,21 @@ def split_code_fence_by_lines(
     code_lines = code_content.split("\n")
 
     chunks = []
-    current_lines: List[str] = []
+    current_lines: list[str] = []
 
     for line in code_lines:
         # Test if adding this line would exceed the cap
-        test_chunk = (
-            f"```{language}\n" + "\n".join(current_lines + [line]) + "\n```"
-        )
+        test_chunk = f"```{language}\n" + "\n".join([*current_lines, line]) + "\n```"
         if count_tokens(test_chunk, model) > hard_max_tokens and current_lines:
             # Emit current chunk
-            chunk_text = (
-                f"```{language}\n" + "\n".join(current_lines) + "\n```"
-            )
+            chunk_text = f"```{language}\n" + "\n".join(current_lines) + "\n```"
             chunks.append((chunk_text, "code-fence-lines"))
 
             # Start new chunk with overlap
             if overlap_tokens > 0 and len(current_lines) > 1:
                 # Estimate lines needed for overlap
-                overlap_lines = min(
-                    len(current_lines), max(1, overlap_tokens // 20)
-                )  # ~20 tokens per line estimate
-                current_lines = current_lines[-overlap_lines:] + [line]
+                overlap_lines = min(len(current_lines), max(1, overlap_tokens // 20))  # ~20 tokens per line estimate
+                current_lines = [*current_lines[-overlap_lines:], line]
             else:
                 current_lines = [line]
         else:
@@ -129,9 +122,7 @@ def split_code_fence_by_lines(
     return chunks
 
 
-def split_table_by_rows(
-    text: str, hard_max_tokens: int, overlap_tokens: int, model: str
-) -> List[Tuple[str, str]]:
+def split_table_by_rows(text: str, hard_max_tokens: int, overlap_tokens: int, model: str) -> list[tuple[str, str]]:
     """Split tables by row groups, never cutting mid-cell."""
     lines = text.split("\n")
     table_lines = [line for line in lines if "|" in line]
@@ -141,18 +132,14 @@ def split_table_by_rows(
 
     chunks = []
     current_rows = []
-    header_rows = (
-        table_lines[:2] if len(table_lines) >= 2 else table_lines[:1]
-    )  # Header + separator
+    header_rows = table_lines[:2] if len(table_lines) >= 2 else table_lines[:1]  # Header + separator
 
     # Always include header rows
     current_rows = header_rows[:]
 
     for row in table_lines[len(header_rows) :]:
-        test_chunk = "\n".join(current_rows + [row])
-        if count_tokens(test_chunk, model) > hard_max_tokens and len(
-            current_rows
-        ) > len(header_rows):
+        test_chunk = "\n".join([*current_rows, row])
+        if count_tokens(test_chunk, model) > hard_max_tokens and len(current_rows) > len(header_rows):
             # Emit current chunk
             chunks.append(("\n".join(current_rows), "table-rows"))
 
@@ -165,7 +152,7 @@ def split_table_by_rows(
                 overlap_rows = current_rows[-overlap_row_count:]
                 current_rows = header_rows + overlap_rows + [row]
             else:
-                current_rows = header_rows + [row]
+                current_rows = [*header_rows, row]
         else:
             current_rows.append(row)
 
@@ -176,19 +163,17 @@ def split_table_by_rows(
     return chunks if chunks else [(text, "table-rows")]
 
 
-def split_by_token_window(
-    text: str, hard_max_tokens: int, overlap_tokens: int, model: str
-) -> List[Tuple[str, str]]:
+def split_by_token_window(text: str, hard_max_tokens: int, overlap_tokens: int, model: str) -> list[tuple[str, str]]:
     """Final fallback: greedy token slicing with overlap."""
     if count_tokens(text, model) <= hard_max_tokens:
         return [(text, "token-window")]
 
     chunks = []
     words = text.split()
-    current_words: List[str] = []
+    current_words: list[str] = []
 
     for word in words:
-        test_text = " ".join(current_words + [word])
+        test_text = " ".join([*current_words, word])
         if count_tokens(test_text, model) > hard_max_tokens and current_words:
             # Emit current chunk
             chunk_text = " ".join(current_words)
@@ -196,10 +181,8 @@ def split_by_token_window(
 
             # Start new chunk with overlap
             if overlap_tokens > 0 and len(current_words) > 1:
-                overlap_word_count = min(
-                    len(current_words), max(1, overlap_tokens // 2)
-                )  # ~2 tokens per word estimate
-                current_words = current_words[-overlap_word_count:] + [word]
+                overlap_word_count = min(len(current_words), max(1, overlap_tokens // 2))  # ~2 tokens per word estimate
+                current_words = [*current_words[-overlap_word_count:], word]
             else:
                 current_words = [word]
         else:
@@ -212,7 +195,7 @@ def split_by_token_window(
     return chunks
 
 
-def detect_content_type(text: str) -> Tuple[ChunkType, Dict]:
+def detect_content_type(text: str) -> tuple[ChunkType, dict]:
     """Detect content type and extract metadata."""
     text_stripped = text.strip()
 
@@ -236,17 +219,13 @@ def detect_content_type(text: str) -> Tuple[ChunkType, Dict]:
         non_empty_lines = [line.strip() for line in lines if line.strip()]
         if len(non_empty_lines) > 20:  # Lots of data rows
             # Look for consistent field patterns (like AWS config dumps)
-            field_counts: Dict[str, int] = {}
+            field_counts: dict[str, int] = {}
             for line in non_empty_lines[:50]:  # Sample first 50 lines
-                if len(line.split()) == 1 and not line.startswith(
-                    "#"
-                ):  # Single field per line
+                if len(line.split()) == 1 and not line.startswith("#"):  # Single field per line
                     field_counts[line] = field_counts.get(line, 0) + 1
 
             # If we see repeated field names, this is likely structured data
-            repeated_fields = [
-                field for field, count in field_counts.items() if count > 2
-            ]
+            repeated_fields = [field for field, count in field_counts.items() if count > 2]
             if len(repeated_fields) > 3:  # Multiple repeated field patterns
                 return ChunkType.TABLE, {
                     "estimated_rows": len(non_empty_lines),
@@ -268,10 +247,7 @@ def detect_content_type(text: str) -> Tuple[ChunkType, Dict]:
         r"<!-- .* -->",  # HTML comments
     ]
 
-    macro_count = sum(
-        len(re.findall(pattern, text_stripped, re.IGNORECASE))
-        for pattern in macro_patterns
-    )
+    macro_count = sum(len(re.findall(pattern, text_stripped, re.IGNORECASE)) for pattern in macro_patterns)
     if macro_count > 3:  # Threshold for macro-heavy content
         return ChunkType.MACRO, {"macro_count": macro_count}
 

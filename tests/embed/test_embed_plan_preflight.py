@@ -1,9 +1,15 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test plan-preflight functionality."""
 
 import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
+
 import pytest
 from typer.testing import CliRunner
 
@@ -21,9 +27,7 @@ def runner():
 @pytest.fixture
 def temp_plan_file():
     """Create a temporary plan file with test data."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".txt", delete=False
-    ) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("# Test plan file\n")
         f.write("var/runs/2025-08-18_1234_ready\n")
         f.write("var/runs/2025-08-18_5678_blocked\n")
@@ -46,9 +50,7 @@ def temp_output_dir():
 
 def test_plan_preflight_missing_plan_file(runner):
     """Test plan-preflight with missing plan file."""
-    result = runner.invoke(
-        app, ["embed", "plan-preflight", "--plan-file", "nonexistent_plan.txt"]
-    )
+    result = runner.invoke(app, ["embed", "plan-preflight", "--plan-file", "nonexistent_plan.txt"])
 
     assert result.exit_code == 1
     assert "Plan file not found" in result.stderr
@@ -76,9 +78,7 @@ def test_plan_preflight_empty_plan_file(runner, temp_output_dir):
 
 
 @patch("trailblazer.pipeline.steps.embed.preflight.run_preflight_check")
-def test_plan_preflight_success_mixed_results(
-    mock_run_preflight, runner, temp_plan_file, temp_output_dir
-):
+def test_plan_preflight_success_mixed_results(mock_run_preflight, runner, temp_plan_file, temp_output_dir):
     """Test plan-preflight with mixed ready/blocked results."""
 
     # Mock the run_preflight_check function to return predefined results
@@ -176,17 +176,13 @@ def test_plan_preflight_success_mixed_results(
     ]
 
     for expected_file in expected_files:
-        assert (output_dir / expected_file).exists(), (
-            f"Missing {expected_file}"
-        )
+        assert (output_dir / expected_file).exists(), f"Missing {expected_file}"
 
     # Check JSON report structure with new schema
     json_report = json.loads((output_dir / "plan_preflight.json").read_text())
 
     # Required fields
-    assert (
-        isinstance(json_report["timestamp"], str) and json_report["timestamp"]
-    )
+    assert isinstance(json_report["timestamp"], str) and json_report["timestamp"]
     assert json_report["provider"] == "openai"
     assert json_report["model"] == "text-embedding-3-small"
     assert json_report["dimension"] == 1536
@@ -195,10 +191,7 @@ def test_plan_preflight_success_mixed_results(
     assert isinstance(json_report["total_runs_planned"], int)
     assert isinstance(json_report["ready_runs"], int)
     assert isinstance(json_report["blocked_runs"], int)
-    assert (
-        json_report["total_runs_planned"]
-        >= json_report["ready_runs"] + json_report["blocked_runs"]
-    )
+    assert json_report["total_runs_planned"] >= json_report["ready_runs"] + json_report["blocked_runs"]
     assert json_report["ready_runs"] >= 1  # Should have at least one ready run
     assert json_report["blocked_runs"] >= 0
 
@@ -264,9 +257,7 @@ def test_plan_preflight_reason_classification():
             reason = "QUALITY_GATE"
         elif "tiktoken" in stderr_text or "TOKENIZER_MISSING" in stderr_text:
             reason = "TOKENIZER_MISSING"
-        elif (
-            "provider" in stderr_text.lower() or "model" in stderr_text.lower()
-        ):
+        elif "provider" in stderr_text.lower() or "model" in stderr_text.lower():
             reason = "CONFIG_INVALID"
 
         assert reason == expected_reason
@@ -284,9 +275,7 @@ def test_plan_preflight_help(runner):
 
 
 @patch("trailblazer.core.paths.runs")
-def test_plan_preflight_no_cost_estimates(
-    mock_runs, runner, temp_plan_file, temp_output_dir
-):
+def test_plan_preflight_no_cost_estimates(mock_runs, runner, temp_plan_file, temp_output_dir):
     """Test plan-preflight without cost/time estimation flags."""
 
     # Mock the runs directory
@@ -322,22 +311,14 @@ def test_plan_preflight_no_cost_estimates(
     # Create chunks.ndjson for token calculation
     chunks_dir = ready_run_dir / "chunk"
     chunks_dir.mkdir()
-    chunks_data = [
-        {"token_count": 100} for _ in range(50)
-    ]  # 5,000 total tokens
-    (chunks_dir / "chunks.ndjson").write_text(
-        "\n".join(json.dumps(chunk) for chunk in chunks_data)
-    )
+    chunks_data = [{"token_count": 100} for _ in range(50)]  # 5,000 total tokens
+    (chunks_dir / "chunks.ndjson").write_text("\n".join(json.dumps(chunk) for chunk in chunks_data))
 
     # Create enriched.jsonl
     enriched_dir = ready_run_dir / "enrich"
     enriched_dir.mkdir()
-    enriched_data = [
-        {"doc_id": f"doc_{i}", "content": f"content {i}"} for i in range(5)
-    ]
-    (enriched_dir / "enriched.jsonl").write_text(
-        "\n".join(json.dumps(doc) for doc in enriched_data)
-    )
+    enriched_data = [{"doc_id": f"doc_{i}", "content": f"content {i}"} for i in range(5)]
+    (enriched_dir / "enriched.jsonl").write_text("\n".join(json.dumps(doc) for doc in enriched_data))
 
     result = runner.invoke(
         app,
@@ -354,7 +335,7 @@ def test_plan_preflight_no_cost_estimates(
     assert result.exit_code == 0
 
     # Check that cost/time fields are not present in the new schema
-    output_dir = list(Path(temp_output_dir).glob("*/"))[0]
+    output_dir = next(iter(Path(temp_output_dir).glob("*/")))
     json_report = json.loads((output_dir / "plan_preflight.json").read_text())
 
     # New schema doesn't have these fields

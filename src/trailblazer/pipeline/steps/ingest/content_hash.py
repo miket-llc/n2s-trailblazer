@@ -2,12 +2,10 @@
 
 import hashlib
 import json
-from typing import Optional, Dict, Any
+from typing import Any
 
 
-def compute_content_sha256(
-    body_adf: Optional[Dict[str, Any]], body_storage: Optional[str]
-) -> Optional[str]:
+def compute_content_sha256(body_adf: dict[str, Any] | None, body_storage: str | None) -> str | None:
     """
     Compute SHA256 hash of page content for deduplication.
 

@@ -1,9 +1,16 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test confluence spaces CLI command."""
 
 import json
 from unittest.mock import Mock, patch
+
 import pytest
 from typer.testing import CliRunner
+
 from trailblazer.cli.main import app
 
 # Mark all tests as integration tests (need database)
@@ -33,18 +40,14 @@ def fake_spaces_data():
     ]
 
 
-def test_spaces_cli_writes_artifact_and_prints_table(
-    tmp_path, fake_spaces_data
-):
+def test_spaces_cli_writes_artifact_and_prints_table(tmp_path, fake_spaces_data):
     """Test that spaces CLI writes JSON artifact and prints table."""
     runner = CliRunner()
 
     with (
         patch("trailblazer.core.artifacts.new_run_id") as mock_run_id,
         patch("trailblazer.core.artifacts.phase_dir") as mock_phase_dir,
-        patch(
-            "trailblazer.adapters.confluence_api.ConfluenceClient"
-        ) as mock_client_class,
+        patch("trailblazer.adapters.confluence_api.ConfluenceClient") as mock_client_class,
     ):
         # Setup mocks
         mock_run_id.return_value = "test-run-123"
@@ -69,7 +72,7 @@ def test_spaces_cli_writes_artifact_and_prints_table(
             saved_spaces = json.load(f)
 
         # Should be sorted by key, id
-        assert len(saved_spaces) == 2
+        assert len(saved_spaces) == EXPECTED_COUNT_2
         assert saved_spaces[0]["key"] == "DEV"
         assert saved_spaces[1]["key"] == "PROD"
 
@@ -103,9 +106,7 @@ def test_spaces_cli_handles_empty_response(tmp_path):
     with (
         patch("trailblazer.core.artifacts.new_run_id") as mock_run_id,
         patch("trailblazer.core.artifacts.phase_dir") as mock_phase_dir,
-        patch(
-            "trailblazer.adapters.confluence_api.ConfluenceClient"
-        ) as mock_client_class,
+        patch("trailblazer.adapters.confluence_api.ConfluenceClient") as mock_client_class,
     ):
         # Setup mocks
         mock_run_id.return_value = "test-run-empty"

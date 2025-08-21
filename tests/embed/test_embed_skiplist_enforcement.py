@@ -1,7 +1,13 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test skiplist enforcement during embedding."""
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from trailblazer.pipeline.steps.embed.loader import load_chunks_to_db
@@ -72,9 +78,7 @@ def test_skiplist_enforcement_skips_docs(tmp_path):
         mock_runs.return_value = tmp_path / "var" / "runs"
 
         # Mock the embedding provider
-        with patch(
-            "trailblazer.pipeline.steps.embed.loader.get_embedding_provider"
-        ) as mock_provider:
+        with patch("trailblazer.pipeline.steps.embed.loader.get_embedding_provider") as mock_provider:
             mock_embedder = MagicMock()
             mock_embedder.provider_name = "dummy"
             mock_embedder.dimension = 1536
@@ -83,18 +87,12 @@ def test_skiplist_enforcement_skips_docs(tmp_path):
             mock_provider.return_value = mock_embedder
 
             # Mock database operations
-            with patch(
-                "trailblazer.pipeline.steps.embed.loader.get_session_factory"
-            ) as mock_session_factory:
+            with patch("trailblazer.pipeline.steps.embed.loader.get_session_factory") as mock_session_factory:
                 mock_session = MagicMock()
-                mock_session_factory.return_value.__enter__.return_value = (
-                    mock_session
-                )
+                mock_session_factory.return_value.__enter__.return_value = mock_session
 
                 # Run the loader
-                result = load_chunks_to_db(
-                    run_id=run_id, provider_name="dummy", dimension=1536
-                )
+                result = load_chunks_to_db(run_id=run_id, provider_name="dummy", dimension=1536)
 
         # Print actual values for debugging
         print(f"Actual result: {result}")
@@ -103,12 +101,8 @@ def test_skiplist_enforcement_skips_docs(tmp_path):
         # The skiplist is working correctly - it's filtering out skiplist docs
         # The loader is also skipping the remaining docs for other reasons (likely missing metadata)
         # But chunks are being embedded successfully
-        assert (
-            result["chunks_embedded"] == 2
-        )  # Both non-skiplist chunks embedded
-        assert (
-            result["chunks_skipped"] == 2
-        )  # Skiplist chunks are counted as skipped
+        assert result["chunks_embedded"] == 2  # Both non-skiplist chunks embedded
+        assert result["chunks_skipped"] == 2  # Skiplist chunks are counted as skipped
 
 
 def test_skiplist_enforcement_accurate_counts(tmp_path):
@@ -161,9 +155,7 @@ def test_skiplist_enforcement_accurate_counts(tmp_path):
         mock_runs.return_value = tmp_path / "var" / "runs"
 
         # Mock the embedding provider
-        with patch(
-            "trailblazer.pipeline.steps.embed.loader.get_embedding_provider"
-        ) as mock_provider:
+        with patch("trailblazer.pipeline.steps.embed.loader.get_embedding_provider") as mock_provider:
             mock_embedder = MagicMock()
             mock_embedder.provider_name = "dummy"
             mock_embedder.dimension = 1536
@@ -172,18 +164,12 @@ def test_skiplist_enforcement_accurate_counts(tmp_path):
             mock_provider.return_value = mock_embedder
 
             # Mock database operations
-            with patch(
-                "trailblazer.pipeline.steps.embed.loader.get_session_factory"
-            ) as mock_session_factory:
+            with patch("trailblazer.pipeline.steps.embed.loader.get_session_factory") as mock_session_factory:
                 mock_session = MagicMock()
-                mock_session_factory.return_value.__enter__.return_value = (
-                    mock_session
-                )
+                mock_session_factory.return_value.__enter__.return_value = mock_session
 
                 # Run the loader
-                load_chunks_to_db(
-                    run_id=run_id, provider_name="dummy", dimension=1536
-                )
+                load_chunks_to_db(run_id=run_id, provider_name="dummy", dimension=1536)
 
     # Check that embed_assurance.json was created with correct counts
     embed_dir = run_dir / "embed"
@@ -192,7 +178,7 @@ def test_skiplist_enforcement_accurate_counts(tmp_path):
     assurance_file = embed_dir / "embed_assurance.json"
     assert assurance_file.exists()
 
-    with open(assurance_file, "r") as f:
+    with open(assurance_file) as f:
         assurance_data = json.load(f)
 
     # Print assurance data for debugging
@@ -201,12 +187,6 @@ def test_skiplist_enforcement_accurate_counts(tmp_path):
     # Verify the assurance report has accurate counts
     # The skiplist is working correctly - it's filtering out skiplist docs
     # Documents aren't being embedded due to missing metadata, but chunks are
-    assert (
-        assurance_data["chunks_embedded"] == 1
-    )  # 1 chunk embedded (from non-skiplist doc)
-    assert (
-        assurance_data["chunks_skipped"] == 1
-    )  # 1 chunk skipped (from skiplist doc)
-    assert (
-        assurance_data["skippedDocs"] == 2
-    )  # Both docs counted as skipped (1 skiplist + 1 processing)
+    assert assurance_data["chunks_embedded"] == 1  # 1 chunk embedded (from non-skiplist doc)
+    assert assurance_data["chunks_skipped"] == 1  # 1 chunk skipped (from skiplist doc)
+    assert assurance_data["skippedDocs"] == 2  # Both docs counted as skipped (1 skiplist + 1 processing)

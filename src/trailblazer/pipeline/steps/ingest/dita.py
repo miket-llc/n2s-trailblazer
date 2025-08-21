@@ -4,34 +4,36 @@ Scans a directory tree for DITA files, parses topics and maps,
 and writes graph-ready artifacts to outdir.
 """
 
-from pathlib import Path
-from datetime import datetime, timezone
-import json
-import hashlib
-import os
 import fnmatch
+import hashlib
+import json
+import os
 import re
-from typing import Dict, List, Optional, Any, Iterator
+from collections.abc import Iterator
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
 from ....adapters.dita import (
-    parse_topic,
-    parse_map,
-    is_dita_file,
-    compute_file_sha256,
-    TopicDoc,
     MapDoc,
+    TopicDoc,
+    compute_file_sha256,
+    is_dita_file,
+    parse_map,
+    parse_topic,
 )
 from ....core.logging import log
 
 
-def _iso(dt: Optional[datetime]) -> Optional[str]:
+def _iso(dt: datetime | None) -> str | None:
     """Convert datetime to ISO string."""
     return dt.isoformat().replace("+00:00", "Z") if dt else None
 
 
 def _should_include_file(
     file_path: Path,
-    include_patterns: Optional[List[str]] = None,
-    exclude_patterns: Optional[List[str]] = None,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
 ) -> bool:
     """Check if file should be included based on glob patterns."""
     filename = file_path.name
@@ -40,9 +42,7 @@ def _should_include_file(
     # Check exclude patterns first
     if exclude_patterns:
         for pattern in exclude_patterns:
-            if fnmatch.fnmatch(filename, pattern) or fnmatch.fnmatch(
-                rel_path, pattern
-            ):
+            if fnmatch.fnmatch(filename, pattern) or fnmatch.fnmatch(rel_path, pattern):
                 return False
 
     # If no include patterns specified, use defaults
@@ -56,9 +56,7 @@ def _should_include_file(
             simple_pattern = pattern[3:]
             if fnmatch.fnmatch(filename, simple_pattern):
                 return True
-        elif fnmatch.fnmatch(filename, pattern) or fnmatch.fnmatch(
-            rel_path, pattern
-        ):
+        elif fnmatch.fnmatch(filename, pattern) or fnmatch.fnmatch(rel_path, pattern):
             return True
 
     return False
@@ -66,8 +64,8 @@ def _should_include_file(
 
 def _find_dita_files(
     root_dir: Path,
-    include_patterns: Optional[List[str]] = None,
-    exclude_patterns: Optional[List[str]] = None,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
 ) -> Iterator[Path]:
     """Find DITA files in directory tree."""
     if not root_dir.exists():
@@ -87,9 +85,7 @@ def _find_dita_files(
 
         # Check include/exclude patterns
         rel_path = file_path.relative_to(root_dir)
-        if not _should_include_file(
-            rel_path, include_patterns, exclude_patterns
-        ):
+        if not _should_include_file(rel_path, include_patterns, exclude_patterns):
             continue
 
         # Check if it's actually a DITA file
@@ -106,12 +102,12 @@ def _create_dita_record(
     root_dir: Path,
     file_stats: os.stat_result,
     file_sha256: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create canonical DITA record for NDJSON output."""
     rel_path = str(file_path.relative_to(root_dir))
 
     # Common fields
-    record: Dict[str, Any] = {
+    record: dict[str, Any] = {
         "source_system": "dita",
         "id": doc.id,
         "title": doc.title,
@@ -119,12 +115,8 @@ def _create_dita_record(
         "source_file_sha256": file_sha256,
         "body_repr": "dita",
         "labels": doc.labels,
-        "created_at": _iso(
-            datetime.fromtimestamp(file_stats.st_ctime, tz=timezone.utc)
-        ),
-        "updated_at": _iso(
-            datetime.fromtimestamp(file_stats.st_mtime, tz=timezone.utc)
-        ),
+        "created_at": _iso(datetime.fromtimestamp(file_stats.st_ctime, tz=timezone.utc)),
+        "updated_at": _iso(datetime.fromtimestamp(file_stats.st_mtime, tz=timezone.utc)),
     }
 
     # Type-specific fields
@@ -133,9 +125,7 @@ def _create_dita_record(
             {
                 "doctype": doc.doctype,
                 "body_dita_xml": (
-                    doc.body_xml[:10000]
-                    if len(doc.body_xml) > 10000
-                    else doc.body_xml
+                    doc.body_xml[:10000] if len(doc.body_xml) > 10000 else doc.body_xml
                 ),  # Truncate if huge
                 "ancestors": [],  # Will be populated from maps
                 "attachments": [ref.filename for ref in doc.images],
@@ -161,16 +151,12 @@ def _create_dita_record(
     content_for_hash = f"{doc.title}{json.dumps(doc.labels, sort_keys=True)}"
     if isinstance(doc, TopicDoc):
         content_for_hash += doc.body_xml
-    record["content_sha256"] = hashlib.sha256(
-        content_for_hash.encode()
-    ).hexdigest()
+    record["content_sha256"] = hashlib.sha256(content_for_hash.encode()).hexdigest()
 
     return record
 
 
-def _write_media_sidecars(
-    outdir: Path, topics: List[TopicDoc], topic_records: List[Dict[str, Any]]
-) -> int:
+def _write_media_sidecars(outdir: Path, topics: list[TopicDoc], topic_records: list[dict[str, Any]]) -> int:
     """Write media-related sidecar files."""
     media_jsonl_path = outdir / "ingest_media.jsonl"
     attachments_manifest_path = outdir / "attachments_manifest.jsonl"
@@ -217,9 +203,9 @@ def _write_media_sidecars(
 
 def _build_hierarchy_and_write_edges(
     outdir: Path,
-    maps: List[MapDoc],
-    topics: List[TopicDoc],
-    topic_records: List[Dict[str, Any]],
+    maps: list[MapDoc],
+    topics: list[TopicDoc],
+    topic_records: list[dict[str, Any]],
     root_dir: Path,
 ) -> int:
     """Build hierarchy from maps and write edges/breadcrumbs."""
@@ -278,9 +264,7 @@ def _build_hierarchy_and_write_edges(
                     # Update topic record with ancestors
                     for record in topic_records:
                         if record["id"] == topic.id:
-                            record["ancestors"] = breadcrumbs[
-                                :-1
-                            ]  # Exclude self
+                            record["ancestors"] = breadcrumbs[:-1]  # Exclude self
                             record["ancestor_count"] = len(record["ancestors"])
                             ancestors_total += 1
                             break
@@ -288,19 +272,14 @@ def _build_hierarchy_and_write_edges(
     return ancestors_total
 
 
-def _compute_directory_context(
-    source_path: str, root_dir: Path
-) -> Dict[str, Any]:
+def _compute_directory_context(source_path: str, root_dir: Path) -> dict[str, Any]:
     """Compute collection and path_tags from source_path under ellucian-documentation."""
-    context: Dict[str, Any] = {"collection": None, "path_tags": []}
+    context: dict[str, Any] = {"collection": None, "path_tags": []}
 
     try:
         # Convert to Path and make relative to root
         path = Path(source_path)
-        if path.is_absolute():
-            rel_path = path.relative_to(root_dir)
-        else:
-            rel_path = path
+        rel_path = path.relative_to(root_dir) if path.is_absolute() else path
 
         # Find ellucian-documentation in the path
         parts = rel_path.parts
@@ -353,8 +332,8 @@ def _aggregate_labels_and_metadata(
     doc: TopicDoc | MapDoc,
     source_path: str,
     root_dir: Path,
-    map_context: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    map_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Aggregate labels and metadata from XML prolog, map context, and directory hints."""
 
     # Start with enhanced metadata
@@ -407,9 +386,7 @@ def _aggregate_labels_and_metadata(
     }
 
 
-def _write_links_sidecar(
-    outdir: Path, all_docs: List[TopicDoc | MapDoc], root_dir: Path
-) -> Dict[str, int]:
+def _write_links_sidecar(outdir: Path, all_docs: list[TopicDoc | MapDoc], root_dir: Path) -> dict[str, int]:
     """Write links.jsonl with classified and normalized links."""
     links_path = outdir / "links.jsonl"
 
@@ -449,11 +426,7 @@ def _write_links_sidecar(
                     "target_url": link.target_url,
                     "anchor": link.anchor,
                     "text": link.text,
-                    "rel": (
-                        "CONREFS"
-                        if link.element_type in ("conref", "conkeyref")
-                        else "links_to"
-                    ),
+                    "rel": ("CONREFS" if link.element_type in ("conref", "conkeyref") else "links_to"),
                 }
 
                 f.write(json.dumps(link_record) + "\n")
@@ -463,15 +436,15 @@ def _write_links_sidecar(
 
 def _write_metadata_sidecar(
     outdir: Path,
-    all_docs: List[TopicDoc | MapDoc],
-    aggregated_metadata: List[Dict[str, Any]],
+    all_docs: list[TopicDoc | MapDoc],
+    aggregated_metadata: list[dict[str, Any]],
     root_dir: Path,
 ) -> int:
     """Write meta.jsonl with compact metadata records."""
     meta_path = outdir / "meta.jsonl"
 
     with open(meta_path, "w") as f:
-        for doc, meta_data in zip(all_docs, aggregated_metadata):
+        for doc, meta_data in zip(all_docs, aggregated_metadata, strict=False):
             record = {
                 "page_id": doc.id,
                 "collection": meta_data["collection"],
@@ -484,9 +457,7 @@ def _write_metadata_sidecar(
     return len(all_docs)
 
 
-def _write_labels_and_edges(
-    outdir: Path, all_docs: List[TopicDoc | MapDoc]
-) -> int:
+def _write_labels_and_edges(outdir: Path, all_docs: list[TopicDoc | MapDoc]) -> int:
     """Write label entries and label edges."""
     labels_path = outdir / "labels.jsonl"
     edges_path = outdir / "edges.jsonl"
@@ -520,12 +491,12 @@ def _write_labels_and_edges(
 def ingest_dita(
     outdir: str,
     root: str,
-    include: Optional[List[str]] = None,
-    exclude: Optional[List[str]] = None,
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
     progress: bool = False,
     progress_every: int = 1,
-    run_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    run_id: str | None = None,
+) -> dict[str, Any]:
     """Ingest DITA topics and maps from filesystem."""
     outdir_path = Path(outdir)
     outdir_path.mkdir(parents=True, exist_ok=True)
@@ -550,10 +521,10 @@ def ingest_dita(
         log.warning("dita.scan.no_files", root=root)
 
     # Parse files
-    topics: List[TopicDoc] = []
-    maps: List[MapDoc] = []
-    topic_records: List[Dict[str, Any]] = []
-    map_records: List[Dict[str, Any]] = []
+    topics: list[TopicDoc] = []
+    maps: list[MapDoc] = []
+    topic_records: list[dict[str, Any]] = []
+    map_records: list[dict[str, Any]] = []
 
     processed_count = 0
 
@@ -564,35 +535,22 @@ def ingest_dita(
             file_stats = file_path.stat()
             file_sha256 = compute_file_sha256(file_path)
 
-            if (
-                file_path.suffix.lower() == ".ditamap"
-                or "map" in file_path.stem.lower()
-            ):
+            if file_path.suffix.lower() == ".ditamap" or "map" in file_path.stem.lower():
                 # Parse as map
                 map_doc = parse_map(file_path)
                 # Update ID with correct relative path
-                map_doc.id = (
-                    f"map:{Path(rel_path).with_suffix('').as_posix().lower()}"
-                )
+                map_doc.id = f"map:{Path(rel_path).with_suffix('').as_posix().lower()}"
 
                 # Update link resolution with correct root_dir context
                 for link in map_doc.links:
-                    if (
-                        link.target_type == "dita"
-                        and link.href
-                        and not link.target_page_id
-                    ):
+                    if link.target_type == "dita" and link.href and not link.target_page_id:
                         from ....adapters.dita import _resolve_dita_reference
 
-                        link.target_page_id = _resolve_dita_reference(
-                            link.href, file_path, root_dir
-                        )
+                        link.target_page_id = _resolve_dita_reference(link.href, file_path, root_dir)
 
                 maps.append(map_doc)
 
-                record = _create_dita_record(
-                    map_doc, file_path, root_dir, file_stats, file_sha256
-                )
+                record = _create_dita_record(map_doc, file_path, root_dir, file_stats, file_sha256)
                 map_records.append(record)
 
             else:
@@ -608,22 +566,14 @@ def ingest_dita(
 
                 # Update link resolution with correct root_dir context
                 for link in topic_doc.links:
-                    if (
-                        link.target_type == "dita"
-                        and link.href
-                        and not link.target_page_id
-                    ):
+                    if link.target_type == "dita" and link.href and not link.target_page_id:
                         from ....adapters.dita import _resolve_dita_reference
 
-                        link.target_page_id = _resolve_dita_reference(
-                            link.href, file_path, root_dir
-                        )
+                        link.target_page_id = _resolve_dita_reference(link.href, file_path, root_dir)
 
                 topics.append(topic_doc)
 
-                record = _create_dita_record(
-                    topic_doc, file_path, root_dir, file_stats, file_sha256
-                )
+                record = _create_dita_record(topic_doc, file_path, root_dir, file_stats, file_sha256)
                 topic_records.append(record)
 
             processed_count += 1
@@ -650,7 +600,7 @@ def ingest_dita(
     aggregated_metadata = []
 
     # Build map context for topics (map titles from breadcrumbs)
-    map_context_by_topic: Dict[str, Any] = {}
+    map_context_by_topic: dict[str, Any] = {}
     for map_doc in maps:
         for ref in map_doc.hierarchy:
             if ref.href:
@@ -663,9 +613,7 @@ def ingest_dita(
                     if topic_path == href_path:
                         if topic.id not in map_context_by_topic:
                             map_context_by_topic[topic.id] = {"map_titles": []}
-                        map_context_by_topic[topic.id]["map_titles"].append(
-                            map_doc.title
-                        )
+                        map_context_by_topic[topic.id]["map_titles"].append(map_doc.title)
 
     # Aggregate metadata for each document
     for doc in all_docs:
@@ -676,26 +624,18 @@ def ingest_dita(
             source_path = doc.id[4:] + ".ditamap"
 
         map_context = map_context_by_topic.get(doc.id, None)
-        meta_data = _aggregate_labels_and_metadata(
-            doc, source_path or "", root_dir, map_context
-        )
+        meta_data = _aggregate_labels_and_metadata(doc, source_path or "", root_dir, map_context)
         aggregated_metadata.append(meta_data)
 
     # Write sidecar files
-    media_refs_total = _write_media_sidecars(
-        outdir_path, topics, topic_records
-    )
-    ancestors_total = _build_hierarchy_and_write_edges(
-        outdir_path, maps, topics, topic_records, root_dir
-    )
+    media_refs_total = _write_media_sidecars(outdir_path, topics, topic_records)
+    ancestors_total = _build_hierarchy_and_write_edges(outdir_path, maps, topics, topic_records, root_dir)
 
     # Write enhanced links sidecar
     links_stats = _write_links_sidecar(outdir_path, all_docs, root_dir)
 
     # Write metadata sidecar
-    meta_records = _write_metadata_sidecar(
-        outdir_path, all_docs, aggregated_metadata, root_dir
-    )
+    meta_records = _write_metadata_sidecar(outdir_path, all_docs, aggregated_metadata, root_dir)
 
     # Update labels to use aggregated labels
     labels_total = 0
@@ -706,7 +646,7 @@ def ingest_dita(
         open(labels_path, "w") as labels_f,
         open(edges_path, "a") as edges_f,
     ):  # Append to edges file
-        for doc, meta_data in zip(all_docs, aggregated_metadata):
+        for doc, meta_data in zip(all_docs, aggregated_metadata, strict=False):
             page_id = doc.id
             for label in meta_data["labels"]:
                 # Write label entry
@@ -764,9 +704,7 @@ def ingest_dita(
         run_id=run_id,
         meta_records=meta_records,
         labels_total=labels_total,
-        top_labels=[
-            {"label": label, "count": count} for label, count in top_labels
-        ],
+        top_labels=[{"label": label, "count": count} for label, count in top_labels],
         links_total=links_stats["total"],
         links_by_type=links_stats,
     )

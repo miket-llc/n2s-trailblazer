@@ -4,14 +4,13 @@ import json
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Any, Tuple
+from typing import Any
+
 from sqlalchemy import text
 
 
 class QualityGateError(Exception):
     """Raised when quality gates fail."""
-
-    pass
 
 
 class PhaseAssurance:
@@ -23,13 +22,11 @@ class PhaseAssurance:
         self.report_dir = Path(f"var/reports/{run_id}")
         self.report_dir.mkdir(parents=True, exist_ok=True)
 
-        self.issues: List[Dict[str, Any]] = []
-        self.metrics: Dict[str, Any] = {}
+        self.issues: list[dict[str, Any]] = []
+        self.metrics: dict[str, Any] = {}
         self.quality_passed = True
 
-    def add_issue(
-        self, issue_type: str, message: str, severity: str = "error", **context
-    ):
+    def add_issue(self, issue_type: str, message: str, severity: str = "error", **context):
         """Add quality issue."""
         self.issues.append(
             {
@@ -37,9 +34,7 @@ class PhaseAssurance:
                 "message": message,
                 "severity": severity,
                 "context": context,
-                "timestamp": datetime.now(timezone.utc)
-                .isoformat()
-                .replace("+00:00", "Z"),
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             }
         )
         if severity == "error":
@@ -49,7 +44,7 @@ class PhaseAssurance:
         """Override in subclasses to implement quality gates."""
         return self.quality_passed
 
-    def write_reports(self) -> Tuple[Path, Path]:
+    def write_reports(self) -> tuple[Path, Path]:
         """Write JSON and Markdown assurance reports."""
         json_path = self.report_dir / f"{self.phase}_assurance.json"
         md_path = self.report_dir / f"{self.phase}_assurance.md"
@@ -58,19 +53,13 @@ class PhaseAssurance:
         report_data = {
             "run_id": self.run_id,
             "phase": self.phase,
-            "generated_at": datetime.now(timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z"),
+            "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "quality_passed": self.quality_passed,
             "metrics": self.metrics,
             "issues": self.issues,
             "issue_summary": Counter(issue["type"] for issue in self.issues),
-            "error_count": len(
-                [i for i in self.issues if i["severity"] == "error"]
-            ),
-            "warning_count": len(
-                [i for i in self.issues if i["severity"] == "warning"]
-            ),
+            "error_count": len([i for i in self.issues if i["severity"] == "error"]),
+            "warning_count": len([i for i in self.issues if i["severity"] == "warning"]),
         }
 
         with open(json_path, "w", encoding="utf-8") as f:
@@ -83,7 +72,7 @@ class PhaseAssurance:
 
         return json_path, md_path
 
-    def _generate_markdown_report(self, data: Dict[str, Any]) -> str:
+    def _generate_markdown_report(self, data: dict[str, Any]) -> str:
         """Generate human-readable markdown report."""
         lines = [
             f"# {self.phase.title()} Assurance Report",
@@ -141,9 +130,7 @@ class PhaseAssurance:
                     ]
                 )
                 for issue in type_issues[:10]:  # Limit to top 10
-                    severity_icon = (
-                        "🔴" if issue["severity"] == "error" else "🟡"
-                    )
+                    severity_icon = "🔴" if issue["severity"] == "error" else "🟡"
                     lines.append(f"- {severity_icon} {issue['message']}")
                     if issue["context"]:
                         for k, v in issue["context"].items():
@@ -174,36 +161,26 @@ class EnrichAssurance(PhaseAssurance):
     def __init__(self, run_id: str):
         super().__init__(run_id, "enrich")
 
-    def check_enrichment_quality(
-        self, input_file: Path, output_file: Path, fingerprints_file: Path
-    ):
+    def check_enrichment_quality(self, input_file: Path, output_file: Path, fingerprints_file: Path):
         """Check enrichment quality and coverage."""
         if not input_file.exists():
-            self.add_issue(
-                "missing_input", f"Input file not found: {input_file}"
-            )
+            self.add_issue("missing_input", f"Input file not found: {input_file}")
             return
 
         if not output_file.exists():
-            self.add_issue(
-                "missing_output", f"Output file not found: {output_file}"
-            )
+            self.add_issue("missing_output", f"Output file not found: {output_file}")
             return
 
         # Count inputs and outputs
-        input_count = sum(1 for _ in open(input_file, "r"))
-        output_count = sum(1 for _ in open(output_file, "r"))
+        input_count = sum(1 for _ in open(input_file))
+        output_count = sum(1 for _ in open(output_file))
 
         self.metrics.update(
             {
                 "input_documents": input_count,
                 "enriched_documents": output_count,
                 "coverage_percent": round(
-                    (
-                        (output_count / input_count * 100)
-                        if input_count > 0
-                        else 0
-                    ),
+                    ((output_count / input_count * 100) if input_count > 0 else 0),
                     1,
                 ),
             }
@@ -218,7 +195,7 @@ class EnrichAssurance(PhaseAssurance):
 
         # Check fingerprints
         if fingerprints_file.exists():
-            fingerprint_count = sum(1 for _ in open(fingerprints_file, "r"))
+            fingerprint_count = sum(1 for _ in open(fingerprints_file))
             self.metrics["fingerprints_generated"] = fingerprint_count
 
             if fingerprint_count != output_count:
@@ -254,15 +231,11 @@ class ChunkAssurance(PhaseAssurance):
     def check_chunking_quality(self, input_file: Path, output_file: Path):
         """Check chunking quality and completeness."""
         if not input_file.exists():
-            self.add_issue(
-                "missing_input", f"Input file not found: {input_file}"
-            )
+            self.add_issue("missing_input", f"Input file not found: {input_file}")
             return
 
         if not output_file.exists():
-            self.add_issue(
-                "missing_output", f"Output file not found: {output_file}"
-            )
+            self.add_issue("missing_output", f"Output file not found: {output_file}")
             return
 
         # Analyze chunks
@@ -270,7 +243,7 @@ class ChunkAssurance(PhaseAssurance):
         orphan_chunks = []
         token_counts = []
 
-        with open(output_file, "r", encoding="utf-8") as f:
+        with open(output_file, encoding="utf-8") as f:
             for line in f:
                 chunk = json.loads(line.strip())
                 doc_id = chunk.get("document_id")
@@ -288,12 +261,8 @@ class ChunkAssurance(PhaseAssurance):
                     token_counts.append(tokens)
 
         total_chunks = len(doc_chunks) + len(orphan_chunks)
-        avg_chunks_per_doc = (
-            sum(doc_chunks.values()) / len(doc_chunks) if doc_chunks else 0
-        )
-        avg_tokens = (
-            sum(token_counts) / len(token_counts) if token_counts else 0
-        )
+        avg_chunks_per_doc = sum(doc_chunks.values()) / len(doc_chunks) if doc_chunks else 0
+        avg_tokens = sum(token_counts) / len(token_counts) if token_counts else 0
 
         self.metrics.update(
             {
@@ -348,17 +317,11 @@ class EmbedAssurance(PhaseAssurance):
 
             with engine.connect() as conn:
                 # Check coverage
-                result = conn.execute(
-                    text("SELECT COUNT(*) FROM chunk_embeddings")
-                )
+                result = conn.execute(text("SELECT COUNT(*) FROM chunk_embeddings"))
                 total_embeddings = result.scalar()
 
                 # Check vector dimensions consistency
-                result = conn.execute(
-                    text(
-                        "SELECT DISTINCT vector_dims(embedding) FROM chunk_embeddings LIMIT 10"
-                    )
-                )
+                result = conn.execute(text("SELECT DISTINCT vector_dims(embedding) FROM chunk_embeddings LIMIT 10"))
                 dims = [row[0] for row in result]
 
                 # Check for HNSW index
@@ -376,9 +339,7 @@ class EmbedAssurance(PhaseAssurance):
                 self.metrics.update(
                     {
                         "total_embeddings": total_embeddings,
-                        "vector_dimensions": (
-                            dims[0] if len(set(dims)) == 1 else "inconsistent"
-                        ),
+                        "vector_dimensions": (dims[0] if len(set(dims)) == 1 else "inconsistent"),
                         "dimension_variations": len(set(dims)),
                         "hnsw_indexes": len(hnsw_indexes),
                         "hnsw_index_names": hnsw_indexes,
@@ -387,9 +348,7 @@ class EmbedAssurance(PhaseAssurance):
 
                 # Check for issues
                 if total_embeddings == 0:
-                    self.add_issue(
-                        "no_embeddings", "No embeddings found in database"
-                    )
+                    self.add_issue("no_embeddings", "No embeddings found in database")
 
                 if len(set(dims)) > 1:
                     self.add_issue(
@@ -404,9 +363,7 @@ class EmbedAssurance(PhaseAssurance):
                     )
 
         except Exception as e:
-            self.add_issue(
-                "database_check_failed", f"Failed to check database: {e}"
-            )
+            self.add_issue("database_check_failed", f"Failed to check database: {e}")
 
     def check_quality_gates(self) -> bool:
         """Check embedding quality gates."""
@@ -416,16 +373,12 @@ class EmbedAssurance(PhaseAssurance):
 
         # Gate: Must have HNSW index
         if self.metrics.get("hnsw_indexes", 0) == 0:
-            self.add_issue(
-                "quality_gate_failed", "Missing HNSW index for performance"
-            )
+            self.add_issue("quality_gate_failed", "Missing HNSW index for performance")
 
         return super().check_quality_gates()
 
 
-def run_phase_assurance(
-    run_id: str, phase: str, **kwargs
-) -> Tuple[bool, Path, Path]:
+def run_phase_assurance(run_id: str, phase: str, **kwargs) -> tuple[bool, Path, Path]:
     """Run assurance checks for a specific phase.
 
     Args:
@@ -445,19 +398,11 @@ def run_phase_assurance(
         output_file = kwargs.get("output_file")
         fingerprints_file = kwargs.get("fingerprints_file")
 
-        if (
-            input_file is None
-            or output_file is None
-            or fingerprints_file is None
-        ):
-            raise ValueError(
-                "enrich phase requires input_file, output_file, and fingerprints_file"
-            )
+        if input_file is None or output_file is None or fingerprints_file is None:
+            raise ValueError("enrich phase requires input_file, output_file, and fingerprints_file")
 
         assurance = EnrichAssurance(run_id)
-        assurance.check_enrichment_quality(
-            input_file, output_file, fingerprints_file
-        )
+        assurance.check_enrichment_quality(input_file, output_file, fingerprints_file)
     elif phase == "chunk":
         input_file = kwargs.get("input_file")
         output_file = kwargs.get("output_file")
@@ -488,8 +433,6 @@ def run_phase_assurance(
     json_path, md_path = assurance.write_reports()
 
     if not quality_passed:
-        raise QualityGateError(
-            f"Quality gates failed for {phase} phase. See report: {md_path}"
-        )
+        raise QualityGateError(f"Quality gates failed for {phase} phase. See report: {md_path}")
 
     return quality_passed, json_path, md_path

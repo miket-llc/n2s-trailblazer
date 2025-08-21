@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from rich.progress import (
     Progress,
@@ -14,11 +14,8 @@ from rich.progress import (
 )
 from sqlalchemy.orm import Session
 
-
 from ....core.logging import log
 from ....core.progress import get_progress
-from ....obs.events import EventEmitter
-from .provider import EmbeddingProvider
 from ....db.engine import (  # type: ignore[import-untyped]
     get_session_factory,
     serialize_embedding,
@@ -26,9 +23,10 @@ from ....db.engine import (  # type: ignore[import-untyped]
     upsert_chunk_embedding,
     upsert_document,
 )
+from ....obs.events import EventEmitter
 
 # Embed step reads pre-chunked data from chunks.ndjson files
-from .provider import get_embedding_provider
+from .provider import EmbeddingProvider, get_embedding_provider
 
 # Embed step reads pre-chunked data from chunks.ndjson files only
 # On-the-fly chunking is forbidden - use 'trailblazer chunk run' first
@@ -67,13 +65,12 @@ def _validate_materialized_chunks(run_id: str) -> None:
     chunks_file = runs() / run_id / "chunk" / "chunks.ndjson"
     if not chunks_file.exists():
         raise FileNotFoundError(
-            f"embed requires materialized chunks; run 'trailblazer chunk run {run_id}' first; "
-            f"missing: {chunks_file}"
+            f"embed requires materialized chunks; run 'trailblazer chunk run {run_id}' first; missing: {chunks_file}"
         )
 
     # Check that chunks file is not empty
     try:
-        with open(chunks_file, "r") as f:
+        with open(chunks_file) as f:
             first_line = f.readline().strip()
             if not first_line:
                 raise ValueError(
@@ -86,7 +83,7 @@ def _validate_materialized_chunks(run_id: str) -> None:
         raise RuntimeError(
             f"embed requires materialized chunks; run 'trailblazer chunk run {run_id}' first; "
             f"error reading chunks file: {chunks_file}: {e}"
-        )
+        ) from e
 
 
 def _default_chunks_path(run_id: str) -> Path:
@@ -108,7 +105,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _parse_timestamp(timestamp_str: Optional[str]) -> Optional[datetime]:
+def _parse_timestamp(timestamp_str: str | None) -> datetime | None:
     """Parse timestamp string to datetime object."""
     if not timestamp_str:
         return None
@@ -118,22 +115,22 @@ def _parse_timestamp(timestamp_str: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def _compute_content_hash(record: Dict[str, Any]) -> str:
+def _compute_content_hash(record: dict[str, Any]) -> str:
     """Compute SHA256 hash of document content for idempotency."""
     content_fields = ["text_md", "title", "space_key", "url"]
     content = "|".join(str(record.get(field, "")) for field in content_fields)
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def _load_fingerprints(fingerprints_path: Path) -> Dict[str, str]:
+def _load_fingerprints(fingerprints_path: Path) -> dict[str, str]:
     """Load fingerprints from JSONL file."""
-    fingerprints: Dict[str, str] = {}
+    fingerprints: dict[str, str] = {}
 
     if not fingerprints_path.exists():
         return fingerprints
 
     try:
-        with open(fingerprints_path, "r", encoding="utf-8") as f:
+        with open(fingerprints_path, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     data = json.loads(line.strip())
@@ -151,9 +148,7 @@ def _load_fingerprints(fingerprints_path: Path) -> Dict[str, str]:
     return fingerprints
 
 
-def _determine_changed_docs(
-    run_id: str, changed_only: bool
-) -> Optional[Set[str]]:
+def _determine_changed_docs(run_id: str, changed_only: bool) -> set[str] | None:
     """
     Determine which documents have changed based on enrichment fingerprints.
 
@@ -174,9 +169,7 @@ def _determine_changed_docs(
     prev_fingerprints_path = enrich_dir / "fingerprints.prev.jsonl"
 
     if not fingerprints_path.exists():
-        raise FileNotFoundError(
-            f"Fingerprints file not found: {fingerprints_path}"
-        )
+        raise FileNotFoundError(f"Fingerprints file not found: {fingerprints_path}")
 
     # Load current fingerprints
     current_fingerprints = _load_fingerprints(fingerprints_path)
@@ -205,8 +198,9 @@ def _save_fingerprints_as_previous(run_id: str) -> None:
     Args:
         run_id: The run ID to process
     """
-    from ....core.artifacts import phase_dir
     import shutil
+
+    from ....core.artifacts import phase_dir
 
     enrich_dir = phase_dir(run_id, "enrich")
     fingerprints_path = enrich_dir / "fingerprints.jsonl"
@@ -226,18 +220,18 @@ def _save_fingerprints_as_previous(run_id: str) -> None:
 
 
 def load_chunks_to_db(
-    run_id: Optional[str] = None,
-    chunks_file: Optional[str] = None,
+    run_id: str | None = None,
+    chunks_file: str | None = None,
     provider_name: str = "dummy",
-    model: Optional[str] = None,
-    dimension: Optional[int] = None,
+    model: str | None = None,
+    dimension: int | None = None,
     batch_size: int = 128,
-    max_docs: Optional[int] = None,
-    max_chunks: Optional[int] = None,
+    max_docs: int | None = None,
+    max_chunks: int | None = None,
     changed_only: bool = False,
     reembed_all: bool = False,
     dry_run_cost: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Load pre-chunked data into the database with embeddings (idempotent).
 
@@ -281,7 +275,7 @@ def load_chunks_to_db(
     # Load document metadata for upserts
     doc_metadata = {}
     if enriched_path and enriched_path.exists():
-        with open(enriched_path, "r", encoding="utf-8") as f:
+        with open(enriched_path, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     record = json.loads(line.strip())
@@ -297,7 +291,7 @@ def load_chunks_to_db(
         skiplist_path = runs() / run_id / "preflight" / "doc_skiplist.json"
         if skiplist_path.exists():
             try:
-                with open(skiplist_path, "r", encoding="utf-8") as f:
+                with open(skiplist_path, encoding="utf-8") as f:
                     skiplist_data = json.load(f)
                     skipped_doc_ids = set(skiplist_data.get("skip", []))
                     log.info(
@@ -306,9 +300,7 @@ def load_chunks_to_db(
                         skipped_count=len(skipped_doc_ids),
                     )
             except Exception as e:
-                log.warning(
-                    "embed.skiplist_load_failed", run_id=run_id, error=str(e)
-                )
+                log.warning("embed.skiplist_load_failed", run_id=run_id, error=str(e))
 
     # Determine which documents to process based on fingerprints
     if reembed_all:
@@ -322,9 +314,7 @@ def load_chunks_to_db(
         if provider_name == "openai":
             from .provider import OpenAIEmbedder
 
-            embedder: EmbeddingProvider = OpenAIEmbedder(
-                model=model or "text-embedding-3-small", dim=dimension or 1536
-            )
+            embedder: EmbeddingProvider = OpenAIEmbedder(model=model or "text-embedding-3-small", dim=dimension or 1536)
         # For sentencetransformers, we can override model
         elif provider_name == "sentencetransformers":
             from .provider import SentenceTransformerEmbedder
@@ -342,9 +332,7 @@ def load_chunks_to_db(
         embedder = get_embedding_provider(provider_name)
 
     # Hard guard: assert dimension=1536 at runtime (per requirements)
-    actual_dimension = getattr(embedder, "dimension", None) or getattr(
-        embedder, "dim", None
-    )
+    actual_dimension = getattr(embedder, "dimension", None) or getattr(embedder, "dim", None)
     if actual_dimension is None:
         # Try to get dimension from a test embedding
         try:
@@ -389,18 +377,14 @@ def load_chunks_to_db(
     chunks_total = 0
     chunks_skipped = 0
     chunks_embedded = 0
-    errors: List[Dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
 
     start_time = datetime.now(timezone.utc)
 
     # Use standardized progress and event logging
     if progress_renderer.enabled:
-        progress_renderer.console.print(
-            "🔄 [bold cyan]Loading embeddings from materialized chunks[/bold cyan]"
-        )
-        progress_renderer.console.print(
-            f"📁 Input: [cyan]{chunks_path.name}[/cyan]"
-        )
+        progress_renderer.console.print("🔄 [bold cyan]Loading embeddings from materialized chunks[/bold cyan]")
+        progress_renderer.console.print(f"📁 Input: [cyan]{chunks_path.name}[/cyan]")
         progress_renderer.console.print(
             f"🧠 Provider: [green]{embedder.provider_name}[/green] (dim={getattr(embedder, 'dimension', None) or getattr(embedder, 'dim', 'unknown')})"
         )
@@ -412,25 +396,20 @@ def load_chunks_to_db(
         try:
             from ....obs.events import EventEmitter as _EE
 
-            _EE.set_event_context(
-                run_id=run_id or "unknown", stage="embed", component="loader"
-            )
+            _EE.set_event_context(run_id=run_id or "unknown", stage="embed", component="loader")
         except Exception:
             pass
         event_emitter.embed_start(
             provider=embedder.provider_name,
             model=getattr(embedder, "model", "unknown"),
-            embedding_dims=getattr(embedder, "dimension", 0)
-            or getattr(embedder, "dim", 1536),
+            embedding_dims=getattr(embedder, "dimension", 0) or getattr(embedder, "dim", 1536),
             chunks_file=str(chunks_path),
             batch_size=batch_size,
             max_docs=max_docs,
             max_chunks=max_chunks,
             changed_only=changed_only,
             metadata={
-                "changed_docs_count": (
-                    len(changed_docs) if changed_docs is not None else None
-                ),
+                "changed_docs_count": (len(changed_docs) if changed_docs is not None else None),
             },
         )
 
@@ -451,20 +430,12 @@ def load_chunks_to_db(
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
-                TextColumn(
-                    "docs={task.fields[docs]} chunks={task.fields[chunks]}"
-                ),
+                TextColumn("docs={task.fields[docs]} chunks={task.fields[chunks]}"),
                 TimeElapsedColumn(),
-                console=(
-                    progress_renderer.console
-                    if progress_renderer.enabled
-                    else None
-                ),
+                console=(progress_renderer.console if progress_renderer.enabled else None),
             ) as progress:
                 task = (
-                    progress.add_task(
-                        "Processing...", docs=0, chunks=0, total=None
-                    )
+                    progress.add_task("Processing...", docs=0, chunks=0, total=None)
                     if progress_renderer.enabled
                     else None
                 )
@@ -517,10 +488,7 @@ def load_chunks_to_db(
                         docs_total += 1
 
                         # Check if document should be processed based on fingerprints
-                        if (
-                            changed_docs is not None
-                            and doc_id not in changed_docs
-                        ):
+                        if changed_docs is not None and doc_id not in changed_docs:
                             docs_unchanged += 1
                             event_emitter.warning(
                                 f"Skipping document {doc_id} - unchanged fingerprint",
@@ -543,11 +511,7 @@ def load_chunks_to_db(
                             # Check if document exists with same content
                             from ....db.engine import Document
 
-                            existing_doc = (
-                                session.query(Document)
-                                .filter_by(content_sha256=content_hash)
-                                .first()
-                            )
+                            existing_doc = session.query(Document).filter_by(content_sha256=content_hash).first()
 
                             if not existing_doc:
                                 # Upsert document (new or changed content)
@@ -560,20 +524,14 @@ def load_chunks_to_db(
                                     "title": record.get("title"),
                                     "space_key": record.get("space_key"),
                                     "url": record.get("url"),
-                                    "created_at": _parse_timestamp(
-                                        record.get("created_at")
-                                    ),
-                                    "updated_at": _parse_timestamp(
-                                        record.get("updated_at")
-                                    ),
+                                    "created_at": _parse_timestamp(record.get("created_at")),
+                                    "updated_at": _parse_timestamp(record.get("updated_at")),
                                     "content_sha256": content_hash,
                                     "meta": {
                                         "version": record.get("version"),
                                         "space_id": record.get("space_id"),
                                         "links": record.get("links", []),
-                                        "attachments": record.get(
-                                            "attachments", []
-                                        ),
+                                        "attachments": record.get("attachments", []),
                                         "labels": record.get("labels", []),
                                     },
                                 }
@@ -606,29 +564,18 @@ def load_chunks_to_db(
 
                             # Extract traceability info from chunk
                             traceability = chunk_record.get("traceability", {})
-                            title = (
-                                traceability.get("title")
-                                or f"Document {doc_id}"
-                            )
+                            title = traceability.get("title") or f"Document {doc_id}"
                             url = traceability.get("url")
-                            source_system = traceability.get(
-                                "source_system", "unknown"
-                            )
+                            source_system = traceability.get("source_system", "unknown")
                             space_key = traceability.get("space_key")
 
                             # Create deterministic content hash from text_md
-                            content_hash = hashlib.sha256(
-                                text_md.encode("utf-8")
-                            ).hexdigest()
+                            content_hash = hashlib.sha256(text_md.encode("utf-8")).hexdigest()
 
                             # Check if document already exists
                             from ....db.engine import Document
 
-                            existing_doc = (
-                                session.query(Document)
-                                .filter_by(doc_id=doc_id)
-                                .first()
-                            )
+                            existing_doc = session.query(Document).filter_by(doc_id=doc_id).first()
 
                             if not existing_doc:
                                 # Bootstrap minimal document record
@@ -643,12 +590,8 @@ def load_chunks_to_db(
                                     "content_sha256": content_hash,
                                     "meta": {
                                         "bootstrapped": True,  # Mark as bootstrapped
-                                        "labels": traceability.get(
-                                            "labels", []
-                                        ),
-                                        "space": traceability.get(
-                                            "space", space_key
-                                        ),
+                                        "labels": traceability.get("labels", []),
+                                        "space": traceability.get("space", space_key),
                                     },
                                 }
 
@@ -693,9 +636,7 @@ def load_chunks_to_db(
                     # Estimate tokens for cost calculation (dry-run mode)
                     if dry_run_cost:
                         text_md = chunk_record.get("text_md", "")
-                        chunk_tokens = (
-                            len(text_md) // 4
-                        )  # Rough token estimation
+                        chunk_tokens = len(text_md) // 4  # Rough token estimation
                         estimated_tokens += chunk_tokens
 
                     # Check if chunk already exists
@@ -730,12 +671,8 @@ def load_chunks_to_db(
                         "doc_id": doc_id,
                         "ord": chunk_record.get("ord", 0),
                         "text_md": text_md,
-                        "char_count": chunk_record.get(
-                            "char_count", len(text_md)
-                        ),
-                        "token_count": chunk_record.get(
-                            "token_count", len(text_md) // 4
-                        ),
+                        "char_count": chunk_record.get("char_count", len(text_md)),
+                        "token_count": chunk_record.get("token_count", len(text_md) // 4),
                         "chunk_type": chunk_record.get("chunk_type", "text"),
                         "meta": chunk_record.get("meta", {}),
                     }
@@ -756,8 +693,7 @@ def load_chunks_to_db(
                         {
                             "chunk_id": chunk_id,
                             "provider": embedder.provider_name,
-                            "dim": getattr(embedder, "dimension", 0)
-                            or getattr(embedder, "dim", 1536),
+                            "dim": getattr(embedder, "dimension", 0) or getattr(embedder, "dim", 1536),
                             "created_at": datetime.now(timezone.utc),
                         }
                     )
@@ -776,13 +712,7 @@ def load_chunks_to_db(
                         batch_chunk_data.clear()
 
                     # Update progress every chunk or every 30 seconds
-                    if (
-                        chunks_total % 100 == 0
-                        or (
-                            datetime.now(timezone.utc) - last_progress_time
-                        ).seconds
-                        >= 30
-                    ):
+                    if chunks_total % 100 == 0 or (datetime.now(timezone.utc) - last_progress_time).seconds >= 30:
                         if task is not None:
                             progress.update(
                                 task,
@@ -793,9 +723,7 @@ def load_chunks_to_db(
                         last_progress_time = datetime.now(timezone.utc)
 
                         # Emit heartbeat
-                        elapsed = (
-                            datetime.now(timezone.utc) - start_time
-                        ).total_seconds()
+                        elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
                         rate = chunks_total / elapsed if elapsed > 0 else 0
                         event_emitter.heartbeat(
                             processed=chunks_total,
@@ -847,8 +775,7 @@ def load_chunks_to_db(
         "chunks_file": str(chunks_path),
         "provider": embedder.provider_name,
         "model": model_attr,
-        "dimension": getattr(embedder, "dimension", 0)
-        or getattr(embedder, "dim", 1536),
+        "dimension": getattr(embedder, "dimension", 0) or getattr(embedder, "dim", 1536),
         "reembed_all": reembed_all,
         "docs_total": docs_total,
         "docs_skipped": docs_skipped,
@@ -889,9 +816,7 @@ def load_chunks_to_db(
                 },
             )
         except Exception as e:
-            event_emitter.error(
-                "Failed to save fingerprints", metadata={"error": str(e)}
-            )
+            event_emitter.error("Failed to save fingerprints", metadata={"error": str(e)})
             log.warning("embed.fingerprints_save_failed", error=str(e))
 
     # Generate assurance report with skiplist information
@@ -910,8 +835,7 @@ def load_chunks_to_db(
                 run_id=run_id,
                 provider=embedder.provider_name,
                 model=getattr(embedder, "model", "unknown"),
-                dimension=getattr(embedder, "dimension", 0)
-                or getattr(embedder, "dim", 1536),
+                dimension=getattr(embedder, "dimension", 0) or getattr(embedder, "dim", 1536),
                 chunks_embedded=chunks_embedded,
             )
             event_emitter.embed_tick(
@@ -922,9 +846,7 @@ def load_chunks_to_db(
                 },
             )
         except Exception as e:
-            event_emitter.error(
-                "Failed to write manifest", metadata={"error": str(e)}
-            )
+            event_emitter.error("Failed to write manifest", metadata={"error": str(e)})
             log.warning("embed.manifest_write_failed", error=str(e))
 
     # Mark embedding complete in backlog
@@ -946,9 +868,7 @@ def load_chunks_to_db(
     # Print summary using standardized progress renderer
     if progress_renderer.enabled:
         progress_renderer.console.print("")
-        progress_renderer.console.print(
-            "📊 [bold green]Embedding Complete[/bold green]"
-        )
+        progress_renderer.console.print("📊 [bold green]Embedding Complete[/bold green]")
         if changed_only:
             progress_renderer.console.print(
                 f"📄 Documents: [cyan]{docs_changed}[/cyan] changed, [yellow]{docs_unchanged}[/yellow] unchanged"
@@ -962,13 +882,9 @@ def load_chunks_to_db(
         progress_renderer.console.print(
             f"🧠 Provider: [green]{embedder.provider_name}[/green] (dim={getattr(embedder, 'dimension', None) or getattr(embedder, 'dim', 'unknown')})"
         )
-        progress_renderer.console.print(
-            f"⏱️  Duration: [blue]{duration:.2f}s[/blue]"
-        )
+        progress_renderer.console.print(f"⏱️  Duration: [blue]{duration:.2f}s[/blue]")
         if errors:
-            progress_renderer.console.print(
-                f"⚠️  Errors: [red]{len(errors)}[/red]"
-            )
+            progress_renderer.console.print(f"⚠️  Errors: [red]{len(errors)}[/red]")
 
     # Write per-stage progress file atomically
     try:
@@ -1000,37 +916,27 @@ def load_chunks_to_db(
 def _process_embedding_batch(
     session: Session,
     embedder: EmbeddingProvider,
-    texts: List[str],
-    chunk_data_list: List[Dict[str, Any]],
+    texts: list[str],
+    chunk_data_list: list[dict[str, Any]],
     event_emitter: EventEmitter,
 ) -> None:
     """Process a batch of texts for embedding."""
     try:
         embeddings = embedder.embed_batch(texts)
     except Exception as e:
-        log.error(
-            "embed.load.embedding_error", error=str(e), batch_size=len(texts)
-        )
+        log.error("embed.load.embedding_error", error=str(e), batch_size=len(texts))
         # Fall back to individual processing
         embeddings = []
         for text in texts:
             try:
                 embeddings.append(embedder.embed(text))
             except Exception as embed_error:
-                log.warning(
-                    "embed.load.single_embedding_error", error=str(embed_error)
-                )
+                log.warning("embed.load.single_embedding_error", error=str(embed_error))
                 # Use zero vector as fallback
-                embeddings.append(
-                    [0.0]
-                    * (
-                        getattr(embedder, "dimension", 0)
-                        or getattr(embedder, "dim", 1536)
-                    )
-                )
+                embeddings.append([0.0] * (getattr(embedder, "dimension", 0) or getattr(embedder, "dim", 1536)))
 
     # Upsert embeddings
-    for embedding, chunk_data in zip(embeddings, chunk_data_list):
+    for embedding, chunk_data in zip(embeddings, chunk_data_list, strict=False):
         chunk_data["embedding"] = serialize_embedding(embedding)
         upsert_chunk_embedding(session, chunk_data)
         # Note: This function is called from the main loader with emit_event wrapper
@@ -1038,7 +944,7 @@ def _process_embedding_batch(
         pass
 
 
-def _generate_assurance_report(run_id: str, metrics: Dict[str, Any]) -> None:
+def _generate_assurance_report(run_id: str, metrics: dict[str, Any]) -> None:
     """Generate assurance report JSON and Markdown files."""
     from ....core.paths import runs
 
@@ -1063,9 +969,7 @@ def _generate_assurance_report(run_id: str, metrics: Dict[str, Any]) -> None:
         f.write(
             f"- Documents: {metrics.get('embeddedDocs', metrics['docs_embedded'])} embedded, {metrics.get('skippedDocs', metrics['docs_skipped'])} skipped\n"
         )
-        f.write(
-            f"- Chunks: {metrics['chunks_embedded']} embedded, {metrics['chunks_skipped']} skipped\n"
-        )
+        f.write(f"- Chunks: {metrics['chunks_embedded']} embedded, {metrics['chunks_skipped']} skipped\n")
         if metrics.get("errors"):
             f.write(f"- Errors: {len(metrics['errors'])}\n")
 

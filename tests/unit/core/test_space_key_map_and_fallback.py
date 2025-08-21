@@ -1,7 +1,13 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test space_key resolution with API lookup and URL fallback."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 from httpx import Response
 
 from trailblazer.pipeline.steps.ingest.confluence import _resolve_space_key
@@ -103,13 +109,9 @@ def test_space_key_url_fallback_various_formats():
         space_key_cache = {}
         space_key_unknown_count = {}
 
-        result = _resolve_space_key(
-            client, space_key_cache, "12345", url, space_key_unknown_count
-        )
+        result = _resolve_space_key(client, space_key_cache, "12345", url, space_key_unknown_count)
 
-        assert result == expected_key, (
-            f"URL {url} should extract key {expected_key}"
-        )
+        assert result == expected_key, f"URL {url} should extract key {expected_key}"
         assert space_key_cache["12345"] == expected_key
 
 
@@ -148,7 +150,7 @@ def test_space_key_unknown_counter_increments():
     space_key_unknown_count = {}
 
     # Call multiple times with same space_id
-    for i in range(3):
+    for _i in range(3):
         result = _resolve_space_key(
             client,
             space_key_cache,

@@ -1,3 +1,8 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """
 Integration tests for embed manifest functionality.
 
@@ -49,33 +54,21 @@ def test_embed_then_reembed_unchanged(mock_tokenizer, mock_git, mock_runs):
 
         # Create stable mock data
         with open(enrich_dir / "enriched.jsonl", "w") as f:
-            f.write(
-                '{"id": "doc1", "chunk_hints": {"maxTokens": 800, "minTokens": 120, "preferHeadings": true}}\n'
-            )
+            f.write('{"id": "doc1", "chunk_hints": {"maxTokens": 800, "minTokens": 120, "preferHeadings": true}}\n')
 
         with open(enrich_dir / "fingerprints.jsonl", "w") as f:
-            f.write(
-                '{"id": "doc1", "fingerprint_sha256": "stable_fingerprint"}\n'
-            )
+            f.write('{"id": "doc1", "fingerprint_sha256": "stable_fingerprint"}\n')
 
         with open(chunk_dir / "chunks.ndjson", "w") as f:
-            f.write(
-                '{"chunk_id": "doc1_chunk1", "token_count": 100, "content_hash": "stable_hash1"}\n'
-            )
-            f.write(
-                '{"chunk_id": "doc1_chunk2", "token_count": 150, "content_hash": "stable_hash2"}\n'
-            )
+            f.write('{"chunk_id": "doc1_chunk1", "token_count": 100, "content_hash": "stable_hash1"}\n')
+            f.write('{"chunk_id": "doc1_chunk2", "token_count": 150, "content_hash": "stable_hash2"}\n')
 
         # First embedding
-        manifest1_path = write_embed_manifest(
-            "test_run", "openai", "text-embedding-3-small", 1536, 50
-        )
+        manifest1_path = write_embed_manifest("test_run", "openai", "text-embedding-3-small", 1536, 50)
         manifest1 = load_manifest(manifest1_path)
 
         # Second embedding (simulating re-run with identical inputs)
-        manifest2_path = write_embed_manifest(
-            "test_run", "openai", "text-embedding-3-small", 1536, 50
-        )
+        manifest2_path = write_embed_manifest("test_run", "openai", "text-embedding-3-small", 1536, 50)
         manifest2 = load_manifest(manifest2_path)
 
         # Manifests should be identical except for timestamp
@@ -123,37 +116,25 @@ def test_detect_content_change(mock_tokenizer, mock_git, mock_runs):
 
         # Create initial mock data
         with open(enrich_dir / "enriched.jsonl", "w") as f:
-            f.write(
-                '{"id": "doc1", "chunk_hints": {"maxTokens": 800, "minTokens": 120, "preferHeadings": true}}\n'
-            )
+            f.write('{"id": "doc1", "chunk_hints": {"maxTokens": 800, "minTokens": 120, "preferHeadings": true}}\n')
 
         with open(enrich_dir / "fingerprints.jsonl", "w") as f:
             f.write('{"id": "doc1", "fingerprint_sha256": "fingerprint1"}\n')
 
         with open(chunk_dir / "chunks.ndjson", "w") as f:
-            f.write(
-                '{"chunk_id": "doc1_chunk1", "token_count": 100, "content_hash": "hash1"}\n'
-            )
+            f.write('{"chunk_id": "doc1_chunk1", "token_count": 100, "content_hash": "hash1"}\n')
 
         # Create initial manifest
-        manifest1_path = write_embed_manifest(
-            "test_run", "openai", "text-embedding-3-small", 1536, 25
-        )
+        manifest1_path = write_embed_manifest("test_run", "openai", "text-embedding-3-small", 1536, 25)
         manifest1 = load_manifest(manifest1_path)
 
         # Simulate content change by updating chunks
         with open(chunk_dir / "chunks.ndjson", "w") as f:
-            f.write(
-                '{"chunk_id": "doc1_chunk1", "token_count": 100, "content_hash": "hash1_changed"}\n'
-            )
-            f.write(
-                '{"chunk_id": "doc1_chunk2", "token_count": 150, "content_hash": "hash2_new"}\n'
-            )
+            f.write('{"chunk_id": "doc1_chunk1", "token_count": 100, "content_hash": "hash1_changed"}\n')
+            f.write('{"chunk_id": "doc1_chunk2", "token_count": 150, "content_hash": "hash2_new"}\n')
 
         # Create new manifest with changed content
-        manifest2_path = write_embed_manifest(
-            "test_run", "openai", "text-embedding-3-small", 1536, 30
-        )
+        manifest2_path = write_embed_manifest("test_run", "openai", "text-embedding-3-small", 1536, 30)
         manifest2 = load_manifest(manifest2_path)
 
         # Compare manifests should show content change
@@ -184,30 +165,20 @@ def test_detect_model_change(mock_tokenizer, mock_git, mock_runs):
 
         # Create stable mock data
         with open(enrich_dir / "enriched.jsonl", "w") as f:
-            f.write(
-                '{"id": "doc1", "chunk_hints": {"maxTokens": 800, "minTokens": 120, "preferHeadings": true}}\n'
-            )
+            f.write('{"id": "doc1", "chunk_hints": {"maxTokens": 800, "minTokens": 120, "preferHeadings": true}}\n')
 
         with open(enrich_dir / "fingerprints.jsonl", "w") as f:
-            f.write(
-                '{"id": "doc1", "fingerprint_sha256": "stable_fingerprint"}\n'
-            )
+            f.write('{"id": "doc1", "fingerprint_sha256": "stable_fingerprint"}\n')
 
         with open(chunk_dir / "chunks.ndjson", "w") as f:
-            f.write(
-                '{"chunk_id": "doc1_chunk1", "token_count": 100, "content_hash": "stable_hash"}\n'
-            )
+            f.write('{"chunk_id": "doc1_chunk1", "token_count": 100, "content_hash": "stable_hash"}\n')
 
         # Create initial manifest with small model
-        manifest1_path = write_embed_manifest(
-            "test_run", "openai", "text-embedding-3-small", 1536, 25
-        )
+        manifest1_path = write_embed_manifest("test_run", "openai", "text-embedding-3-small", 1536, 25)
         manifest1 = load_manifest(manifest1_path)
 
         # Compute current state with different model
-        current_state = compute_current_state(
-            "test_run", "openai", "text-embedding-3-large", 1536
-        )
+        current_state = compute_current_state("test_run", "openai", "text-embedding-3-large", 1536)
 
         # Compare should show model change
         has_changes, reasons = compare_manifests(current_state, manifest1)

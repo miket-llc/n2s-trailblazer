@@ -1,9 +1,15 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 """Test dispatcher header parsing with new schema and legacy fallback."""
 
 import json
 import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Mark all tests as unit tests (no database needed)
 pytestmark = pytest.mark.unit
@@ -49,7 +55,7 @@ class TestDispatcherSchemaFallback:
             # Use Python JSON parsing to test the same logic
 
             # Load the JSON data
-            with open(plan_dir / "plan_preflight.json", "r") as f:
+            with open(plan_dir / "plan_preflight.json") as f:
                 plan_data_loaded = json.load(f)
 
             # Try new schema first
@@ -106,7 +112,7 @@ class TestDispatcherSchemaFallback:
             est_tokens = None
 
             # Load the JSON data
-            with open(plan_dir / "plan_preflight.json", "r") as f:
+            with open(plan_dir / "plan_preflight.json") as f:
                 plan_data_loaded = json.load(f)
 
             # Try new schema first, then fallback
@@ -155,7 +161,7 @@ class TestDispatcherSchemaFallback:
             est_tokens = None
 
             # Load the JSON data
-            with open(plan_dir / "plan_preflight.json", "r") as f:
+            with open(plan_dir / "plan_preflight.json") as f:
                 plan_data_loaded = json.load(f)
 
             # Try new schema first, then fallback

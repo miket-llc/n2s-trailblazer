@@ -1,6 +1,13 @@
+# Test constants for magic numbers
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+EXPECTED_COUNT_4 = 4
+
 import json
 from unittest.mock import patch
+
 import pytest
+
 from trailblazer.pipeline.steps.normalize.html_to_md import (
     normalize_from_ingest,
 )
