@@ -24,6 +24,9 @@ from trailblazer.pipeline.steps.embed.manifest import (
     write_embed_manifest,
 )
 
+# Mark all tests as integration tests (need database)
+pytestmark = pytest.mark.integration
+
 
 @patch("trailblazer.core.paths.runs")
 @patch("trailblazer.pipeline.steps.embed.manifest.get_git_commit")

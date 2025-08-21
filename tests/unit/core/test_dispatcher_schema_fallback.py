@@ -2,7 +2,11 @@
 
 import json
 import tempfile
+import pytest
 from pathlib import Path
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 class TestDispatcherSchemaFallback:

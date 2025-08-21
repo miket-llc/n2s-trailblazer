@@ -1,8 +1,12 @@
 import json
 from unittest.mock import patch
+import pytest
 from trailblazer.pipeline.steps.normalize.html_to_md import (
     normalize_from_ingest,
 )
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_normalize_prefers_adf_over_storage(tmp_path):

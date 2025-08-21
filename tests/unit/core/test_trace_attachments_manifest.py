@@ -1,7 +1,11 @@
 """Integration tests for attachments manifest traceability."""
 
 import json
+import pytest
 from trailblazer.pipeline.steps.ingest import confluence as step
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_attachments_manifest_matches_ndjson(tmp_path, monkeypatch):

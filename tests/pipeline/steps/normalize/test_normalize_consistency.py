@@ -1,7 +1,11 @@
+import pytest
 from trailblazer.pipeline.steps.normalize.html_to_md import (
     _to_markdown_from_storage,
     _to_markdown_from_adf,
 )
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_markdown_whitespace_consistency():

@@ -1,4 +1,8 @@
+import pytest
 from trailblazer.adapters.confluence_api import ConfluenceClient
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_next_link_parsing(monkeypatch):

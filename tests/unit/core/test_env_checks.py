@@ -2,6 +2,7 @@
 
 import os
 import sys
+import pytest
 from unittest.mock import patch
 
 from trailblazer.env_checks import (
@@ -9,6 +10,9 @@ from trailblazer.env_checks import (
     _is_in_virtualenv,
     get_venv_info,
 )
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 class TestVirtualenvDetection:

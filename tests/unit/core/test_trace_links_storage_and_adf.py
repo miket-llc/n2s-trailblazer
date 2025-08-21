@@ -1,7 +1,11 @@
 """Integration tests for link extraction in storage and ADF formats."""
 
 import json
+import pytest
 from trailblazer.pipeline.steps.ingest import confluence as step
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_trace_links_storage_format(tmp_path, monkeypatch):

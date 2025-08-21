@@ -1,8 +1,12 @@
 """Test that importing ingest CLI doesn't trigger DB engine initialization."""
 
 import logging
+import pytest
 from io import StringIO
 from unittest.mock import patch
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_ingest_cli_help_no_db_logs():

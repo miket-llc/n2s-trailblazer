@@ -6,7 +6,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 
+import pytest
 from trailblazer.core import paths
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_paths_default_values():

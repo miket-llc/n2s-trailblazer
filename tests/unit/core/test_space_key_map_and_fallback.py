@@ -1,9 +1,13 @@
 """Test space_key resolution with API lookup and URL fallback."""
 
+import pytest
 from unittest.mock import MagicMock
 from httpx import Response
 
 from trailblazer.pipeline.steps.ingest.confluence import _resolve_space_key
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_space_key_from_cache():

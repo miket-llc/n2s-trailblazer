@@ -1,9 +1,13 @@
 """Test diff-deletions CLI functionality."""
 
 import json
+import pytest
 from unittest.mock import patch
 from typer.testing import CliRunner
 from trailblazer.cli.main import app
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_diff_deletions_finds_correct_deletions(tmp_path):

@@ -3,11 +3,14 @@
 
 import json
 import sys
-from pathlib import Path
 import pytest
+from pathlib import Path
 
 sys.path.insert(0, "src")
 from trailblazer.obs.integrity import run_data_integrity_check
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def create_test_run():

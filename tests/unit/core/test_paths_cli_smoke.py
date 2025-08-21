@@ -3,8 +3,12 @@
 import json
 import subprocess
 import tempfile
+import pytest
 from pathlib import Path
 from unittest.mock import patch
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_paths_show_command():

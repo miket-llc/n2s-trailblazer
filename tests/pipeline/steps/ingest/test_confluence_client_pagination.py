@@ -2,6 +2,9 @@ import pytest
 from unittest.mock import Mock
 from trailblazer.adapters.confluence_api import ConfluenceClient
 
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def mock_http_client():

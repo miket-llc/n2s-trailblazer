@@ -1,10 +1,14 @@
 """Integration tests for traceability preservation in normalize."""
 
 import json
+import pytest
 from unittest.mock import patch
 from trailblazer.pipeline.steps.normalize.html_to_md import (
     normalize_from_ingest,
 )
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_normalize_preserves_traceability_fields(tmp_path):

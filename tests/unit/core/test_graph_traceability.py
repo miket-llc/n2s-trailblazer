@@ -1,7 +1,11 @@
 """Integration tests for comprehensive graph traceability features."""
 
 import json
+import pytest
 from trailblazer.pipeline.steps.ingest import confluence as step
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_comprehensive_traceability_adf(tmp_path, monkeypatch):

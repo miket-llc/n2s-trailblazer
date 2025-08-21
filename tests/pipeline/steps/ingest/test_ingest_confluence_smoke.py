@@ -1,4 +1,8 @@
 import json
+import pytest
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_ingest_writes_ndjson(tmp_path, monkeypatch):

@@ -2,10 +2,13 @@
 
 import csv
 import json
+import pytest
 from pathlib import Path
 from unittest.mock import patch
-import pytest
 from trailblazer.pipeline.steps.ingest.confluence import ingest_confluence
+
+# Mark all tests as integration tests (need database)
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture

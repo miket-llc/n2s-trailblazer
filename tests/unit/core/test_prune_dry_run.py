@@ -2,6 +2,7 @@
 
 import json
 import os
+import pytest
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -9,6 +10,9 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from trailblazer.cli.main import app
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def create_fake_run_dir(runs_dir: Path, run_name: str, age_days: int):
