@@ -1,8 +1,12 @@
 """Test CLI flag standardization: --dimension (not --dimensions)."""
 
+import pytest
 from typer.testing import CliRunner
 
 from trailblazer.cli.main import app
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 class TestFlagDimension:

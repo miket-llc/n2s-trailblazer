@@ -5,6 +5,9 @@ from typer.testing import CliRunner
 
 from trailblazer.cli.main import app
 
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def runner():

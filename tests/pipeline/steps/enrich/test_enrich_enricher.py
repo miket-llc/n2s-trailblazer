@@ -12,6 +12,9 @@ from trailblazer.pipeline.steps.enrich.enricher import (
     enrich_from_normalized,
 )
 
+# Mark all tests as integration tests (need database)
+pytestmark = pytest.mark.integration
+
 
 class TestDocumentEnricher:
     """Test the DocumentEnricher class."""

@@ -1,7 +1,11 @@
 """Policy test: Prevent new shell scripts for preflight/plan-preflight/embed logic."""
 
 import subprocess
+import pytest
 from pathlib import Path
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_no_new_preflight_scripts():

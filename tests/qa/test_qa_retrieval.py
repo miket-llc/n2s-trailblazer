@@ -17,6 +17,9 @@ from trailblazer.qa.retrieval import (
     compute_pack_stats,
 )
 
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def sample_hits():

@@ -1,6 +1,10 @@
 """Test embed dispatch schema fallback functionality."""
 
 import json
+import pytest
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_dispatcher_schema_fallback_new_keys(tmp_path):

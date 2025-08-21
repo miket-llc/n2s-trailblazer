@@ -1,10 +1,16 @@
 """Test CLI compatibility layer for old command patterns."""
 
+import pytest
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
+
 
 def test_cli_runner_embed_preflight_mapping(cli_runner):
     """Test that old embed preflight maps to new plan-preflight."""
     # This should automatically map "embed preflight" to "embed plan-preflight"
-    # The actual command will fail since we don't have a real run, but the mapping should work
+    # The actual command will fail since we don't have a real run, but the mapping
+    # should work
     from trailblazer.cli.main import app
 
     result = cli_runner.invoke(app, ["embed", "preflight", "test_run"])

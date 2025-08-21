@@ -8,6 +8,9 @@ import pytest
 
 from trailblazer.pipeline.steps.embed.loader import load_chunks_to_db
 
+# Mark all tests as integration tests (need database)
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def mock_session_factory():

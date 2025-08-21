@@ -3,12 +3,16 @@
 
 import json
 import sys
+import pytest
 
 sys.path.insert(0, "src")
 from trailblazer.pipeline.steps.chunk.engine import (
     chunk_document,
     inject_media_placeholders,
 )  # noqa: E402
+
+# Mark all tests as integration tests (need database)
+pytestmark = pytest.mark.integration
 
 
 def chunk_normalized_record(record):

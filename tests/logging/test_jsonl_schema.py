@@ -5,6 +5,10 @@ import os
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+import pytest
+
+# Mark all tests as integration tests (need database)
+pytestmark = pytest.mark.integration
 
 
 class TestJSONLSchema:

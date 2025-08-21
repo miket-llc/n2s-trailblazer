@@ -12,6 +12,9 @@ from trailblazer.pipeline.steps.embed.preflight import (
 )
 from trailblazer.pipeline.steps.embed.loader import load_chunks_to_db
 
+# Mark all tests as integration tests (need database)
+pytestmark = pytest.mark.integration
+
 
 def create_test_run(temp_dir: Path, run_id: str):
     """Create a minimal test run with all required artifacts."""

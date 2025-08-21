@@ -33,6 +33,9 @@ from trailblazer.pipeline.steps.embed.manifest import (
     get_tokenizer_info,
 )
 
+# Mark all tests as unit tests (business logic, no database)
+pytestmark = pytest.mark.unit
+
 
 def test_get_git_commit():
     """Test git commit retrieval."""

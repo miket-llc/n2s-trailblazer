@@ -10,6 +10,9 @@ from trailblazer.db.engine import Document, Chunk, ChunkEmbedding
 from trailblazer.retrieval.dense import DenseRetriever, cosine_sim, top_k
 import numpy as np
 
+# Mark all tests as pgvector tests (need vector database)
+pytestmark = pytest.mark.pgvector
+
 
 @pytest.fixture
 def temp_db():

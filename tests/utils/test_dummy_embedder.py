@@ -4,6 +4,9 @@ from trailblazer.pipeline.steps.embed.provider import (
     get_embedding_provider,
 )
 
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
+
 
 def test_dummy_embedder_deterministic():
     """Test that DummyEmbedder produces deterministic results."""

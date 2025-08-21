@@ -9,6 +9,9 @@ from typer.testing import CliRunner
 
 from trailblazer.cli.main import app
 
+# Mark all tests as integration tests (need database)
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def runner():

@@ -16,6 +16,9 @@ from trailblazer.pipeline.steps.ingest.dita import (
 )
 from trailblazer.adapters.dita import TopicDoc, MapDoc, MediaRef
 
+# Mark all tests as integration tests (need database)
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def temp_dita_structure():

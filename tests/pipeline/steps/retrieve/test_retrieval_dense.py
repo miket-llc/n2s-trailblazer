@@ -10,6 +10,9 @@ from trailblazer.pipeline.steps.retrieve.retriever import (
     pack_context,
 )
 
+# Mark all tests as pgvector tests (need vector database)
+pytestmark = pytest.mark.pgvector
+
 
 @pytest.fixture
 def sample_hits():

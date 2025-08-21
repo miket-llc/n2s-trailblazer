@@ -12,6 +12,9 @@ from typer.testing import CliRunner
 from trailblazer.cli.main import app
 from trailblazer.pipeline.steps.retrieve.retriever import SearchHit
 
+# Mark all tests in this file as integration tests (need database)
+pytestmark = pytest.mark.integration
+
 
 runner = CliRunner()
 

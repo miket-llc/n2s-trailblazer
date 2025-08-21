@@ -1,10 +1,14 @@
 """Test context packing utilities."""
 
+import pytest
 from trailblazer.retrieval.pack import (
     group_by_doc,
     pack_context,
     create_context_summary,
 )
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_group_by_doc_basic():

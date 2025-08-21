@@ -4,11 +4,14 @@ import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
-
+import pytest
 
 from trailblazer.core.event_log import EventLogger, init_event_logger
 from trailblazer.core.assurance import generate_assurance_report
 from trailblazer.core.progress import ProgressRenderer
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 class TestEventLogger:

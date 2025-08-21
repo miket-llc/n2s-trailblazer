@@ -2,8 +2,12 @@
 
 import json
 from unittest.mock import patch, MagicMock
+import pytest
 
 from trailblazer.pipeline.steps.embed.loader import load_chunks_to_db
+
+# Mark all tests as integration tests (need database)
+pytestmark = pytest.mark.integration
 
 
 def test_idempotent_re_embed_same_run(tmp_path):

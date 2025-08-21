@@ -4,10 +4,14 @@ import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
+import pytest
 
 from typer.testing import CliRunner
 
 from trailblazer.cli.main import app
+
+# Mark all tests as integration tests (need database)
+pytestmark = pytest.mark.integration
 
 runner = CliRunner()
 

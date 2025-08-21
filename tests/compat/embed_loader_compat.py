@@ -1,8 +1,12 @@
 """Compatibility layer for embed loader tests to handle API changes."""
 
-from unittest.mock import MagicMock, patch
-from pathlib import Path
 import json
+import pytest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 class EmbedLoaderCompat:

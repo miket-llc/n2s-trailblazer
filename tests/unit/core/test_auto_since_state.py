@@ -1,8 +1,12 @@
 """Test auto-since state file functionality."""
 
 import json
+import pytest
 from unittest.mock import patch
 from trailblazer.pipeline.steps.ingest.confluence import ingest_confluence
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 def test_auto_since_reads_and_updates_state(tmp_path):

@@ -1,8 +1,8 @@
 """Test DITA adapter XML parsing functionality."""
 
 import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
 from lxml import etree  # type: ignore
 
 from trailblazer.adapters.dita import (
@@ -21,6 +21,9 @@ from trailblazer.adapters.dita import (
     _classify_link_type,
     _resolve_dita_reference,
 )
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 @pytest.fixture

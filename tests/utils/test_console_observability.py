@@ -14,6 +14,9 @@ from trailblazer.core.progress import (
 )
 from trailblazer.core.logging import setup_logging, _should_use_json_format
 
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
+
 
 class TestProgressRenderer:
     """Test progress renderer functionality."""
