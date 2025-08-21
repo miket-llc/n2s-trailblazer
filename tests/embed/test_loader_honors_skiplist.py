@@ -172,10 +172,11 @@ def test_loader_honors_skiplist_skips_correct_docs(
             )
 
             # Verify embedder was called with correct texts (should not include doc2)
-            embed_calls = mock_embedder.embed_texts.call_args_list
+            # Check what was embedded (current API uses embed() for single texts)
+            embed_calls = mock_embedder.embed.call_args_list
             embedded_texts = []
             for call in embed_calls:
-                embedded_texts.extend(call[0][0])  # First arg is list of texts
+                embedded_texts.append(call[0][0])  # First arg is single text
 
             # Should have 3 texts (2 from doc1, 1 from doc3, none from doc2)
             assert len(embedded_texts) == 3, (
@@ -259,10 +260,10 @@ def test_loader_honors_skiplist_multiple_docs(
             )
 
             # Verify only doc2 content was embedded
-            embed_calls = mock_embedder.embed_texts.call_args_list
+            embed_calls = mock_embedder.embed.call_args_list
             embedded_texts = []
             for call in embed_calls:
-                embedded_texts.extend(call[0][0])
+                embedded_texts.append(call[0][0])
 
             assert len(embedded_texts) == 1, (
                 f"Expected 1 text embedded, got {len(embedded_texts)}"
