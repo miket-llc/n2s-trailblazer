@@ -59,9 +59,7 @@ def test_dimension_guard_rejects_wrong_dimension(mock_session_factory):
     mock_embedder = MagicMock()
     mock_embedder.provider_name = "openai"  # Use valid provider name
     mock_embedder.dim = 768  # Wrong dimension (should be 1536)
-    mock_embedder.dimension = (
-        768  # Also set dimension property for loader compatibility
-    )
+    mock_embedder.dimension = 768  # Also set dimension property for loader compatibility
     mock_embedder.model = "test-model"
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -109,13 +107,9 @@ def test_dimension_guard_accepts_correct_dimension(mock_session_factory):
     mock_embedder = MagicMock()
     mock_embedder.provider_name = "openai"
     mock_embedder.dim = 1536  # Correct dimension
-    mock_embedder.dimension = (
-        1536  # Also set dimension property for loader compatibility
-    )
+    mock_embedder.dimension = 1536  # Also set dimension property for loader compatibility
     mock_embedder.model = "text-embedding-3-small"
-    mock_embedder.embed.return_value = [
-        0.1
-    ] * 1536  # Current API uses embed() for single texts
+    mock_embedder.embed.return_value = [0.1] * 1536  # Current API uses embed() for single texts
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -144,17 +138,11 @@ def test_dimension_guard_accepts_correct_dimension(mock_session_factory):
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_event_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_event_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Should not raise exception
-            result = load_chunks_to_db(
-                run_id=run_id, provider_name="openai", dimension=1536
-            )
+            result = load_chunks_to_db(run_id=run_id, provider_name="openai", dimension=1536)
 
             # Should successfully process
             assert "chunks_embedded" in result
@@ -172,9 +160,7 @@ def test_dimension_guard_fallback_to_test_embedding(mock_session_factory):
     del mock_embedder.dimension
 
     # But test embedding returns correct dimension
-    mock_embedder.embed.return_value = [
-        0.1
-    ] * 1536  # Current API uses embed() for single texts
+    mock_embedder.embed.return_value = [0.1] * 1536  # Current API uses embed() for single texts
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -202,12 +188,8 @@ def test_dimension_guard_fallback_to_test_embedding(mock_session_factory):
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_event_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_event_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Should not raise exception (dimension detected via test embedding)
             result = load_chunks_to_db(run_id=run_id, provider_name="openai")
@@ -303,12 +285,8 @@ def test_dimension_guard_test_embedding_fails_gracefully(mock_session_factory):
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_event_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_event_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Should not raise exception (dimension detection failed, but continues)
             # This is acceptable since we can't determine the dimension
@@ -329,9 +307,7 @@ def test_dimension_guard_uses_dimension_attribute_over_dim(
     mock_embedder.provider_name = "openai"  # Use valid provider name
     mock_embedder.dim = 768  # Wrong
     mock_embedder.dimension = 1536  # Correct (should be preferred)
-    mock_embedder.embed.return_value = [
-        0.1
-    ] * 1536  # Current API uses embed() for single texts
+    mock_embedder.embed.return_value = [0.1] * 1536  # Current API uses embed() for single texts
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -359,12 +335,8 @@ def test_dimension_guard_uses_dimension_attribute_over_dim(
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
             mock_event_emitter.return_value = mock_event_emitter_instance
-            mock_event_emitter.return_value.__enter__ = MagicMock(
-                return_value=mock_event_emitter_instance
-            )
-            mock_event_emitter.return_value.__exit__ = MagicMock(
-                return_value=None
-            )
+            mock_event_emitter.return_value.__enter__ = MagicMock(return_value=mock_event_emitter_instance)
+            mock_event_emitter.return_value.__exit__ = MagicMock(return_value=None)
 
             # Should not raise exception (dimension=1536 is correct)
             result = load_chunks_to_db(run_id=run_id, provider_name="openai")
@@ -379,9 +351,7 @@ def test_dimension_guard_explicit_dimension_override():
     mock_embedder = MagicMock()
     mock_embedder.provider_name = "openai"
     mock_embedder.dim = 512  # Wrong dimension
-    mock_embedder.dimension = (
-        512  # Also set dimension property for consistency
-    )
+    mock_embedder.dimension = 512  # Also set dimension property for consistency
     mock_embedder.model = "custom-model"
 
     with tempfile.TemporaryDirectory() as temp_dir:
