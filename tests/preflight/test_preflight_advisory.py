@@ -78,7 +78,6 @@ def test_preflight_advisory_mode_passes_with_low_quality(
         result = run_preflight_check(
             run_id=mock_run_with_low_quality,
             quality_advisory=True,
-            quality_hard_gate=False,
             min_quality=0.60,
         )
 
@@ -112,7 +111,6 @@ def test_preflight_hard_gate_mode_blocks_with_low_quality(
         result = run_preflight_check(
             run_id=mock_run_with_low_quality,
             quality_advisory=False,
-            quality_hard_gate=True,
             min_quality=0.60,
             max_below_threshold_pct=0.20,  # 40% exceeds this threshold
         )

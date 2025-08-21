@@ -47,7 +47,7 @@ def test_idempotent_re_embed_same_run(tmp_path):
             mock_embedder = MagicMock()
             mock_embedder.provider_name = "openai"
             mock_embedder.dimension = 1536
-            mock_embedder.embed_batch.return_value = [[0.0] * 1536] * 2
+            mock_embedder.embed.return_value = [0.0] * 1536
 
             mock_provider.return_value = mock_embedder
 
@@ -120,7 +120,7 @@ def test_embed_assurance_json_consistency(tmp_path):
             mock_embedder = MagicMock()
             mock_embedder.provider_name = "openai"
             mock_embedder.dimension = 1536
-            mock_embedder.embed_batch.return_value = [[0.0] * 1536]
+            mock_embedder.embed.return_value = [0.0] * 1536
 
             mock_provider.return_value = mock_embedder
 

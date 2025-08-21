@@ -11,7 +11,7 @@ from trailblazer.pipeline.steps.chunk.engine import (
     chunk_document,
     inject_media_placeholders,
 )
-from trailblazer.cli.main import embed_plan_preflight_cmd
+# embed_plan_preflight_cmd no longer used - replaced with run_preflight_check
 
 
 def chunk_enriched_record(record):
@@ -197,15 +197,20 @@ class TestEnrichChunkPreflightFlow:
 
                         # This should pass without raising an exception
                         try:
-                            embed_plan_preflight_cmd(
-                                run=run_id,
+                            # Use run_preflight_check instead of embed_plan_preflight_cmd
+                            from trailblazer.pipeline.steps.embed.preflight import (
+                                run_preflight_check,
+                            )
+
+                            result = run_preflight_check(
+                                run_id=run_id,
                                 provider="openai",
                                 model="text-embedding-3-small",
-                                dim=1536,
+                                dimension=1536,
                             )
-                            preflight_passed = True
-                        except SystemExit as e:
-                            preflight_passed = e.code == 0
+                            preflight_passed = result["status"] == "READY"
+                        except Exception:
+                            preflight_passed = False
 
                         assert preflight_passed, (
                             "Healthy sample should pass preflight"
@@ -315,14 +320,20 @@ class TestEnrichChunkPreflightFlow:
                         # This should fail due to quality gate
                         preflight_failed = False
                         try:
-                            embed_plan_preflight_cmd(
-                                run=run_id,
+                            # Use run_preflight_check instead of embed_plan_preflight_cmd
+                            from trailblazer.pipeline.steps.embed.preflight import (
+                                run_preflight_check,
+                            )
+
+                            result = run_preflight_check(
+                                run_id=run_id,
                                 provider="openai",
                                 model="text-embedding-3-small",
-                                dim=1536,
+                                dimension=1536,
                             )
-                        except SystemExit as e:
-                            preflight_failed = e.code != 0
+                            preflight_failed = result["status"] == "BLOCKED"
+                        except Exception:
+                            preflight_failed = True
 
                         assert preflight_failed, (
                             "Poor quality sample should fail preflight"

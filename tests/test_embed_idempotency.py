@@ -56,9 +56,7 @@ class TestEmbedIdempotency:
                 mock_provider = MagicMock()
                 mock_provider.provider_name = "dummy"
                 mock_provider.dimension = 1536
-                mock_provider.embed_batch.return_value = [
-                    [0.1] * 1536
-                ]  # 1 embedding
+                mock_provider.embed.return_value = [0.1] * 1536
                 mock_get_provider.return_value = mock_provider
 
                 # Mock the paths.runs() function to return our temp directory
@@ -175,9 +173,7 @@ class TestEmbedIdempotency:
                 mock_provider = MagicMock()
                 mock_provider.provider_name = "dummy"
                 mock_provider.dimension = 1536
-                mock_provider.embed_batch.return_value = [
-                    [0.1] * 1536
-                ]  # 1 embedding
+                mock_provider.embed.return_value = [0.1] * 1536
                 mock_get_provider.return_value = mock_provider
 
                 # Mock the paths.runs() function to return our temp directory
@@ -281,9 +277,7 @@ class TestEmbedIdempotency:
                 mock_provider = MagicMock()
                 mock_provider.provider_name = "dummy"
                 mock_provider.dimension = 768  # Wrong dimension!
-                mock_provider.embed_batch.return_value = [
-                    [0.1] * 768
-                ]  # Wrong dimension
+                mock_provider.embed.return_value = [0.1] * 768
                 mock_get_provider.return_value = mock_provider
 
                 # Mock the paths.runs() function to return our temp directory
