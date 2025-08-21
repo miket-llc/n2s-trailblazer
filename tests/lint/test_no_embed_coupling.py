@@ -18,7 +18,7 @@ def test_no_embed_coupling():
         "trailblazer.pipeline.steps.embed",
         "..pipeline.steps.embed",
         "...pipeline.steps.embed",
-        "src.trailblazer.pipeline.steps.embed",
+        "trailblazer.pipeline.steps.embed",
     ]
 
     violations = []

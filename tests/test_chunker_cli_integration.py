@@ -45,7 +45,7 @@ class TestChunkerCLIIntegration:
 
         return run_dir
 
-    @patch("src.trailblazer.core.artifacts.phase_dir")
+    @patch("trailblazer.core.artifacts.phase_dir")
     def test_chunk_cli_default_parameters(self, mock_phase_dir):
         """Test chunk CLI with default parameters."""
         run_id = "test_run_001"
@@ -67,7 +67,7 @@ class TestChunkerCLIIntegration:
         assert "Min tokens: 120" in result.stderr
         assert "Overlap tokens: 60" in result.stderr
 
-    @patch("src.trailblazer.core.artifacts.phase_dir")
+    @patch("trailblazer.core.artifacts.phase_dir")
     def test_chunk_cli_custom_parameters(self, mock_phase_dir):
         """Test chunk CLI with custom parameters."""
         run_id = "test_run_002"
@@ -99,7 +99,7 @@ class TestChunkerCLIIntegration:
         assert "Min tokens: 150" in result.stderr
         assert "Overlap tokens: 80" in result.stderr
 
-    @patch("src.trailblazer.core.artifacts.phase_dir")
+    @patch("trailblazer.core.artifacts.phase_dir")
     def test_chunk_cli_parameter_validation(self, mock_phase_dir):
         """Test that CLI validates parameters correctly."""
         run_id = "test_run_003"
@@ -117,7 +117,7 @@ class TestChunkerCLIIntegration:
         # Should fail with validation error
         assert result.exit_code != 0
 
-    @patch("src.trailblazer.core.artifacts.phase_dir")
+    @patch("trailblazer.core.artifacts.phase_dir")
     def test_chunk_cli_missing_run(self, mock_phase_dir):
         """Test chunk CLI with non-existent run."""
         run_id = "nonexistent_run"
@@ -135,7 +135,7 @@ class TestChunkerCLIIntegration:
         assert result.exit_code == 1
         assert "not found" in result.stderr
 
-    @patch("src.trailblazer.core.artifacts.phase_dir")
+    @patch("trailblazer.core.artifacts.phase_dir")
     def test_chunk_cli_missing_input_files(self, mock_phase_dir):
         """Test chunk CLI when input files are missing."""
         run_id = "test_run_004"
@@ -154,7 +154,7 @@ class TestChunkerCLIIntegration:
         assert result.exit_code == 1
         assert "No input files found" in result.stderr
 
-    @patch("src.trailblazer.core.artifacts.phase_dir")
+    @patch("trailblazer.core.artifacts.phase_dir")
     def test_chunk_cli_progress_output(self, mock_phase_dir):
         """Test chunk CLI progress output."""
         run_id = "test_run_005"
@@ -171,7 +171,7 @@ class TestChunkerCLIIntegration:
         assert "🔄 Chunking documents" in result.stderr
         assert "✅ Chunking complete" in result.stderr
 
-    @patch("src.trailblazer.core.artifacts.phase_dir")
+    @patch("trailblazer.core.artifacts.phase_dir")
     def test_chunk_cli_no_progress(self, mock_phase_dir):
         """Test chunk CLI with progress disabled."""
         run_id = "test_run_006"
@@ -188,7 +188,7 @@ class TestChunkerCLIIntegration:
         # Should still have basic output but less verbose
         assert "🔄 Chunking documents" in result.stderr
 
-    @patch("src.trailblazer.core.artifacts.phase_dir")
+    @patch("trailblazer.core.artifacts.phase_dir")
     def test_chunk_cli_output_format(self, mock_phase_dir):
         """Test that chunk CLI produces expected output format."""
         run_id = "test_run_007"
@@ -245,7 +245,7 @@ class TestChunkerCLIIntegration:
         assert "--overlap-tokens" in result.stdout
         assert "layered splitting" in result.stdout
 
-    @patch("src.trailblazer.core.artifacts.phase_dir")
+    @patch("trailblazer.core.artifacts.phase_dir")
     def test_chunk_cli_enriched_vs_normalized_preference(self, mock_phase_dir):
         """Test that CLI correctly shows input type preference."""
         run_id = "test_run_008"
@@ -279,7 +279,7 @@ class TestChunkerCLIIntegration:
         # Should prefer enriched
         assert "Input type: enriched" in result.stderr
 
-    @patch("src.trailblazer.core.artifacts.phase_dir")
+    @patch("trailblazer.core.artifacts.phase_dir")
     def test_chunk_cli_normalized_fallback(self, mock_phase_dir):
         """Test that CLI falls back to normalized when enriched is missing."""
         run_id = "test_run_009"
@@ -305,7 +305,7 @@ class TestChunkerCLIIntegration:
         # Should use normalized
         assert "Input type: normalized" in result.stderr
 
-    @patch("src.trailblazer.core.artifacts.phase_dir")
+    @patch("trailblazer.core.artifacts.phase_dir")
     def test_chunk_cli_error_handling(self, mock_phase_dir):
         """Test chunk CLI error handling and reporting."""
         run_id = "test_run_010"
