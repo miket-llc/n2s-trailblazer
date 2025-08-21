@@ -14,7 +14,7 @@ lint:
 	npx markdownlint "**/*.md" --ignore "var/**" --ignore "archive/**" --config .markdownlint.json
 
 test:
-	pytest -q
+	TB_TESTING=1 TRAILBLAZER_DB_URL="postgresql+psycopg2://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer" pytest -q
 
 md:
 	npx markdownlint "**/*.md" --ignore "var/**" --ignore "archive/**" --fix --config .markdownlint.json
