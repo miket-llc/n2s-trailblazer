@@ -12,7 +12,7 @@
   },
   "quality": {},
   "advisory": {
-    "quality": true
+    "quality": false
   },
   "artifacts": {
     "enriched": false,
@@ -20,7 +20,7 @@
     "tokenizer": true,
     "config": true
   },
-  "timestamp": "2025-08-20T11:41:08.937153+00:00",
+  "timestamp": "2025-08-21T15:34:30.205524+00:00",
   "run_id": "test_run",
   "provider": "openai",
   "model": "text-embedding-3-small",
