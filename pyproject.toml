@@ -62,10 +62,19 @@ extend-exclude = '''
 '''
 
 [tool.ruff]
+# Same as Black.
+line-length = 120
+indent-width = 4
+
+# Assume Python 3.10
+target-version = "py310"
+
+[tool.ruff.lint]
 # Enable pycodestyle (`E`), Pyflakes (`F`), and isort (`I`) codes by default.
 select = ["E", "F", "I", "B", "UP", "C90"]
 ignore = [
   "E501",    # Line too long - let Black handle this
+  "E402",    # Module level import not at top of file (common in tests)
   "B008",    # Do not perform function calls in argument defaults
   "B006",    # Do not use mutable data structures for argument defaults
   "C901",    # Function is too complex
@@ -102,13 +111,6 @@ exclude = [
   "node_modules",
   "venv",
 ]
-
-# Same as Black.
-line-length = 120
-indent-width = 4
-
-# Assume Python 3.10
-target-version = "py310"
 
 [tool.ruff.format]
 # Like Black, use double quotes for strings.
