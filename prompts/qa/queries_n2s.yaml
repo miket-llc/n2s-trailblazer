@@ -1,78 +1,251 @@
-# Navigate to SaaS (N2S) Domain Queries for Retrieval QA
-# These queries test retrieval quality using canonical N2S methodology questions
+# Navigate-to-SaaS (top 10 high-value, refined)
+- id: n2s_lifecycle_overview
+  text: "Summarize the Navigate to SaaS lifecycle: Discover, Build, Optimize, and stages within Build."
+  expect:
+    - "Discover"
+    - "Build"
+    - "Optimize"
 
-queries:
-  - id: "n2s_stages"
-    text: "What are the stages of the Navigate to SaaS methodology?"
-    notes: "Core methodology question - should retrieve foundational N2S content"
-    expectations: "Should find methodology overview, stage definitions, and process flow"
+- id: n2s_sprint0_scope
+  text: "Define Sprint 0 objectives and outputs in Build, particularly how capability-driven iterations are seeded."
+  expect:
+    - "Sprint 0"
+    - "capability-driven"
 
-  - id: "sprint0_vs_prepare"
-    text: "What is the difference between Sprint 0 and the Prepare stage?"
-    notes: "Disambiguation question - tests ability to distinguish similar concepts"
-    expectations: "Should clearly differentiate these two phases with specific activities"
+- id: n2s_plan_governance
+  text: "What governance checkpoints are required in Plan, and what evidence must be submitted?"
+  expect:
+    - "Plan stage"
+    - "governance checkpoints"
 
-  - id: "banner_integrations"
-    text: "How do Banner integrations work in the Navigate to SaaS process?"
-    notes: "Technical integration question - tests domain-specific knowledge"
-    expectations: "Should cover Banner ERP integration patterns, data migration, API considerations"
+- id: n2s_configure_runbook
+  text: "Outline the Configure stage runbook, including environment prerequisites and config sources."
+  expect:
+    - "Configure"
+    - "runbook"
 
-  - id: "sa_responsibilities"
-    text: "What are the Solution Architect responsibilities during implementation?"
-    notes: "Role-specific question - tests retrieval of responsibility matrices"
-    expectations: "Should outline SA duties, deliverables, and collaboration patterns"
+- id: n2s_test_strategy
+  text: "Describe the testing and QA strategy across N2S stages, including automation and exit criteria."
+  expect:
+    - "testing strategy"
+    - "automation"
 
-  - id: "curriculum_management"
-    text: "What are the Curriculum Management runbooks and procedures?"
-    notes: "Operational question - tests retrieval of procedural documentation"
-    expectations: "Should find step-by-step procedures, troubleshooting guides, best practices"
+- id: n2s_deploy_cutover
+  text: "In the Deploy/Cutover phase, what are the roles, rollback triggers, tasks, and communications defined?"
+  expect:
+    - "Deploy"
+    - "cutover"
+    - "rollback"
 
-  - id: "data_migration_strategy"
-    text: "What is the recommended data migration strategy for SaaS transitions?"
-    notes: "Strategic question - tests high-level guidance retrieval"
-    expectations: "Should cover migration planning, data validation, rollback procedures"
+- id: n2s_cap_vs_runbook
+  text: "Contrast Capability Guides, Runbooks, and ACM documents: their purpose, iteration, and lifecycle use."
+  expect:
+    - "Capability Guides"
+    - "Runbooks"
+    - "ACM documents"
 
-  - id: "go_live_checklist"
-    text: "What items should be included in the go-live checklist?"
-    notes: "Operational readiness question - tests checklist and procedure retrieval"
-    expectations: "Should find comprehensive go-live activities, validation steps, rollback plans"
+- id: n2s_continuous_testing
+  text: "Where does Behavior-Driven Development (BDD) fit in continuous testing, and how are CI triggers defined?"
+  expect:
+    - "BDD"
+    - "continuous testing"
 
-  - id: "risk_mitigation"
-    text: "How should implementation risks be identified and mitigated?"
-    notes: "Risk management question - tests process and framework retrieval"
-    expectations: "Should cover risk assessment frameworks, mitigation strategies, escalation paths"
+- id: n2s_data_migration
+  text: "Explain the N2S data migration wave plan, including reconciliation checkpoints and signoff criteria."
+  expect:
+    - "data migration"
+    - "wave plan"
 
-  - id: "stakeholder_communication"
-    text: "What are the stakeholder communication protocols during transitions?"
-    notes: "Change management question - tests communication framework retrieval"
-    expectations: "Should outline communication plans, stakeholder matrices, update cadences"
+- id: n2s_integration_patterns
+  text: "What N2S integration strategies exist (e.g., EDC vs API), and how should versioning and testability be handled?"
+  expect:
+    - "EDC"
+    - "API"
+    - "integration"
 
-  - id: "performance_monitoring"
-    text: "How should system performance be monitored post-implementation?"
-    notes: "Operations question - tests monitoring and observability guidance"
-    expectations: "Should cover KPIs, monitoring tools, alerting strategies, performance baselines"
+# Ellucian Product QA Questions
 
-  - id: "user_training_approach"
-    text: "What is the recommended approach for user training and adoption?"
-    notes: "Change management question - tests training methodology retrieval"
-    expectations: "Should find training frameworks, adoption strategies, success metrics"
+## Banner Security & FGAC Configuration
+- id: banner_fgac_setup_steps
+  text: "List step-by-step how to configure Fine-Grained Access Control in Banner using FGAC and VBS modules."
+  expect:
+    - "GTVFGAC"
+    - "GTVFDMN"
+    - "GOAFGAC"
 
-  - id: "integration_testing"
-    text: "What are the integration testing requirements and procedures?"
-    notes: "Quality assurance question - tests technical procedure retrieval"
-    expectations: "Should cover test planning, execution procedures, acceptance criteria"
+- id: banner_fgac_business_profile
+  text: "What is a Business Profile in FGAC, and how is it assigned to control roles?"
+  expect:
+    - "Business Profile"
+    - "FGAC"
 
-  - id: "security_compliance"
-    text: "What security and compliance requirements must be addressed?"
-    notes: "Security question - tests compliance framework retrieval"
-    expectations: "Should find security controls, compliance checklists, audit procedures"
+- id: banner_fgac_predicate_setup
+  text: "How can Banner Class predicates be defined to restrict form access under FGAC?"
+  expect:
+    - "predicates"
+    - "form access"
 
-  - id: "support_transition"
-    text: "How should support responsibilities transition from implementation to operations?"
-    notes: "Operational handoff question - tests transition procedure retrieval"
-    expectations: "Should cover knowledge transfer, documentation handoff, support model changes"
+- id: banner_fgac_inb_forms
+  text: "Which INB forms (e.g., GTVFGAC, GTVFDMN, GOAFGAC) are used during FGAC setup?"
+  expect:
+    - "GTVFGAC"
+    - "GTVFDMN"
 
-  - id: "success_metrics"
-    text: "What metrics should be used to measure implementation success?"
-    notes: "Success criteria question - tests KPI and measurement retrieval"
-    expectations: "Should find success frameworks, measurement approaches, reporting requirements"
+- id: banner_fgac_selfservice
+  text: "How do you restrict delete operations on SOAHOLD via FGAC to specific roles?"
+  expect:
+    - "SOAHOLD"
+    - "delete operations"
+
+- id: banner_fgac_testing
+  text: "What best practices are used to test FGAC configuration before go-live?"
+  expect:
+    - "FGAC"
+    - "testing"
+
+- id: banner_validation_pages
+  text: "Name three key validation pages used in Banner General, such as GTVEXPN or GOAFGAC."
+  expect:
+    - "GTVEXPN"
+    - "GOAFGAC"
+    - "GTVFSTA"
+
+- id: banner_letter_generation
+  text: "Which pages and processes are involved in Letter Generation (GLRVRBL, GLRLETR)?"
+
+- id: banner_supp_data_engine
+  text: "Describe how the Supplemental Data Engine (SDE) can have validation using the GTVSDLV page."
+
+- id: banner_quickflow_setup
+  text: "What’s involved in building a QuickFlow in Banner and where is value-based security configured?"
+
+## Banner Architecture & Deployment (OCI)
+- id: oci_banner_ha_design
+  text: "Describe recommended high-availability architecture for Banner on OCI (availability domains, bastions, Data Guard)."
+  expect:
+    - "availability domains"
+    - "bastion host"
+    - "Data Guard"
+
+- id: oci_network_security
+  text: "Which network security list rules should be in place for Banner on OCI?"
+
+- id: oci_load_balancer
+  text: "How is the OCI load balancer configured for Banner UI endpoints?"
+
+- id: oci_patch_strategy
+  text: "What’s the recommended patch and upgrade process for Banner on OCI?"
+
+- id: oci_disaster_recovery
+  text: "Explain DR failover planning for Banner on OCI."
+
+## Ellucian Experience / SSO
+- id: experience_dashboard_personalization
+  text: "How are Experience dashboards personalized and branded for institutional roles?"
+  expect:
+    - "branded interface"
+    - "role-based cards"
+
+- id: experience_ssoregain
+  text: "Single sign-on in Experience saves up to what percent of total login time?"
+  expect:
+    - "75%"
+
+- id: experience_lowcode_cards
+  text: "How does Experience support low-code/no-code for deploying new cards?"
+
+- id: experience_card_roles
+  text: "How are roles used to restrict visibility of Experience cards to users?"
+
+- id: experience_sdk_extensibility
+  text: "What is the Experience SDK and how does it extend platform functionality?"
+
+## Ellucian Colleague Configuration
+- id: colleague_param_core
+  text: "How are core institutional parameters configured in Ellucian Colleague?"
+
+- id: colleague_finaid_workflow
+  text: "What steps are required to configure Financial Aid packaging in Colleague?"
+
+- id: colleague_hr_payroll
+  text: "Describe how HR and Payroll are set up in Colleague to meet compliance requirements."
+
+- id: colleague_lms_integration
+  text: "How do you integrate Colleague with Canvas or Blackboard systems?"
+
+- id: colleague_reporting_degree
+  text: "How do you configure degree audits and academic evaluations in Colleague?"
+
+- id: colleague_ui_search
+  text: "What search features in Colleague UI support people vs form mode?"
+
+- id: colleague_ui_customize
+  text: "Explain UI field customization options like preferences and field sequencing in Colleague."
+
+- id: colleague_file_upload
+  text: "How do you upload and download files via FLUL/FLDL forms in Colleague?"
+
+- id: colleague_favorites_ui
+  text: "How do users manage favorites lists in Colleague UI?"
+
+- id: colleague_padding_ids
+  text: "What script snippet would pad Colleague Person ID to 7 characters?"
+
+## Insights / Reporting
+- id: insights_dashboard_configure
+  text: "Summarize steps to configure a reporting dashboard in Ellucian Insights."
+
+- id: insights_predict_retention
+  text: "How does predictive analytics in Insights help student retention?"
+
+- id: insights_financial_sources
+  text: "Which data sources feed financial Insights dashboards?"
+
+- id: insights_data_lifecycle
+  text: "Explain how SIS data flows into Insights over time."
+
+- id: insights_governance
+  text: "What governance is needed around analytics and dashboards in Insights?"
+
+## Ethos & Integrations
+- id: ethos_integration_patterns
+  text: "What authentication integration patterns does Ethos support (e.g., CRM Recruit via SSO)?"
+  expect:
+    - "ADFS"
+    - "Ethos Identity"
+
+- id: ethos_sso_crm_recruit
+  text: "How is CRM Recruit integrated via ADFS or Ethos Identity for SSO?"
+
+- id: colleagueinterop_backend
+  text: "How are Colleague Web API vendor integration parameters configured (URL, auth, headers)?"
+
+- id: ethos_developer_sdk
+  text: "What SDKs or developer tools are available for Ethos integrations?"
+
+- id: colleague_custom_vendor
+  text: "How do you configure a Custom Vendor for Colleague (URL, auth, timezone)?"
+  expect:
+    - "Enable Product Integration"
+    - "Base URL"
+    - "Time Zone Configuration"
+
+## SIS & Student Lifecycle (SaaS angle)
+- id: sis_migration_wave
+  text: "Outline a wave-based SIS data migration plan with checkpoints and reconciliations."
+
+- id: sis_tracing_ethos
+  text: "How does Ethos support traceability in the SIS to Insights pipeline?"
+
+- id: sis_access_roles
+  text: "What SIS roles govern access to student records across Banner and Colleague?"
+
+## Governance / Organizational Readiness
+- id: org_readiness_map
+  text: "What stakeholder maps and training plans are needed for organizational readiness?"
+
+- id: governance_calendar
+  text: "What is included in a governance calendar (checkpoints, RACI, decision authority)?"
+
+- id: heear_carm_alignment
+  text: "How do HEEAR and CARM frameworks align with N2S stages and artifacts?"
