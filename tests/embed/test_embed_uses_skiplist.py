@@ -75,7 +75,7 @@ def test_embed_honors_skiplist(
     mock_session = MagicMock()
     mock_session_factory.return_value = mock_session
 
-    with patch("trailblazer.pipeline.steps.embed.loader.runs") as mock_runs:
+    with patch("trailblazer.core.paths.runs") as mock_runs:
         mock_runs.return_value = Path(mock_run_with_skiplist).parent
 
         # Mock the database upsert functions

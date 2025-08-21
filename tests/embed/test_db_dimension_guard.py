@@ -381,7 +381,7 @@ def test_dimension_guard_explicit_dimension_override():
                 return_value=temp_path / "var" / "runs",
             ),
             patch(
-                "trailblazer.pipeline.steps.embed.loader.OpenAIEmbedder",
+                "trailblazer.pipeline.steps.embed.provider.OpenAIEmbedder",
                 return_value=mock_embedder,
             ),
         ):

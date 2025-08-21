@@ -25,7 +25,7 @@ from trailblazer.pipeline.steps.embed.manifest import (
 )
 
 
-@patch("trailblazer.pipeline.steps.embed.manifest.runs")
+@patch("trailblazer.core.paths.runs")
 @patch("trailblazer.pipeline.steps.embed.manifest.get_git_commit")
 @patch("trailblazer.pipeline.steps.embed.manifest.get_tokenizer_info")
 def test_embed_then_reembed_unchanged(mock_tokenizer, mock_git, mock_runs):
@@ -99,7 +99,7 @@ def test_embed_then_reembed_unchanged(mock_tokenizer, mock_git, mock_runs):
         assert len(reasons) == 0
 
 
-@patch("trailblazer.pipeline.steps.embed.manifest.runs")
+@patch("trailblazer.core.paths.runs")
 @patch("trailblazer.pipeline.steps.embed.manifest.get_git_commit")
 @patch("trailblazer.pipeline.steps.embed.manifest.get_tokenizer_info")
 def test_detect_content_change(mock_tokenizer, mock_git, mock_runs):
@@ -160,7 +160,7 @@ def test_detect_content_change(mock_tokenizer, mock_git, mock_runs):
         assert manifest1["chunkSetHash"] != manifest2["chunkSetHash"]
 
 
-@patch("trailblazer.pipeline.steps.embed.manifest.runs")
+@patch("trailblazer.core.paths.runs")
 @patch("trailblazer.pipeline.steps.embed.manifest.get_git_commit")
 @patch("trailblazer.pipeline.steps.embed.manifest.get_tokenizer_info")
 def test_detect_model_change(mock_tokenizer, mock_git, mock_runs):
@@ -214,7 +214,7 @@ def test_detect_model_change(mock_tokenizer, mock_git, mock_runs):
         assert manifest1["model"] == "text-embedding-3-small"
 
 
-@patch("trailblazer.pipeline.steps.embed.manifest.runs")
+@patch("trailblazer.core.paths.runs")
 def test_find_last_manifest(mock_runs):
     """Test finding the last manifest for a run."""
     with tempfile.TemporaryDirectory() as tmpdir:

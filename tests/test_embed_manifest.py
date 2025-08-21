@@ -493,7 +493,7 @@ def test_format_diff_as_markdown():
     assert "abc123456789..." in markdown  # Truncated hash
 
 
-@patch("trailblazer.pipeline.steps.embed.manifest.runs")
+@patch("trailblazer.core.paths.runs")
 @patch("trailblazer.pipeline.steps.embed.manifest.get_git_commit")
 @patch("trailblazer.pipeline.steps.embed.manifest.get_tokenizer_info")
 def test_create_embed_manifest(mock_tokenizer, mock_git, mock_runs):
