@@ -1,10 +1,14 @@
 """Tests for media extraction from ADF and Storage formats."""
 
+import pytest
 from trailblazer.pipeline.steps.ingest.media_extractor import (
     extract_media_from_adf,
     extract_media_from_storage,
     resolve_attachment_ids,
 )
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 class TestMediaExtractionFromAdf:

@@ -2,6 +2,9 @@
 
 import pytest
 
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
+
 
 class TestArtifactDeterminism:
     """Test that all artifacts are deterministic and properly structured."""

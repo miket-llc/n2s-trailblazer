@@ -1,5 +1,6 @@
 """Tests for link resolution and classification helpers."""
 
+import pytest
 from trailblazer.pipeline.steps.ingest.link_resolver import (
     normalize_url,
     classify_link_type,
@@ -7,6 +8,9 @@ from trailblazer.pipeline.steps.ingest.link_resolver import (
     extract_links_from_storage_with_classification,
     extract_links_from_adf_with_classification,
 )
+
+# Mark all tests as unit tests (no database needed)
+pytestmark = pytest.mark.unit
 
 
 class TestNormalizeUrl:
