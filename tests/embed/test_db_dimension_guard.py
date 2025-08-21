@@ -1,6 +1,7 @@
 """Test that embed loader validates dimension=1536 before upsert."""
 
 import tempfile
+import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
@@ -47,8 +48,11 @@ def test_dimension_guard_rejects_wrong_dimension(mock_session_factory):
 
     # Mock embedder with wrong dimension
     mock_embedder = MagicMock()
-    mock_embedder.provider_name = "test_provider"
+    mock_embedder.provider_name = "openai"  # Use valid provider name
     mock_embedder.dim = 768  # Wrong dimension (should be 1536)
+    mock_embedder.dimension = (
+        768  # Also set dimension property for loader compatibility
+    )
     mock_embedder.model = "test-model"
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -68,7 +72,7 @@ def test_dimension_guard_rejects_wrong_dimension(mock_session_factory):
                 return_value=mock_factory,
             ),
             patch(
-                "trailblazer.pipeline.steps.embed.loader.get_embedding_provider",
+                "trailblazer.pipeline.steps.embed.provider.OpenAIEmbedder",
                 return_value=mock_embedder,
             ),
         ):
@@ -76,7 +80,7 @@ def test_dimension_guard_rejects_wrong_dimension(mock_session_factory):
             with pytest.raises(ValueError) as exc_info:
                 load_chunks_to_db(
                     run_id=run_id,
-                    provider_name="test_provider",
+                    provider_name="openai",
                     dimension=768,  # Wrong dimension
                 )
 
@@ -84,7 +88,7 @@ def test_dimension_guard_rejects_wrong_dimension(mock_session_factory):
             assert "Dimension mismatch" in error_message
             assert "expected 1536, got 768" in error_message
             assert "Use --dimension 1536 (singular)" in error_message
-            assert "test_provider" in error_message
+            assert "openai" in error_message
             assert "test-model" in error_message
 
 
@@ -96,8 +100,13 @@ def test_dimension_guard_accepts_correct_dimension(mock_session_factory):
     mock_embedder = MagicMock()
     mock_embedder.provider_name = "openai"
     mock_embedder.dim = 1536  # Correct dimension
+    mock_embedder.dimension = (
+        1536  # Also set dimension property for loader compatibility
+    )
     mock_embedder.model = "text-embedding-3-small"
-    mock_embedder.embed_texts.return_value = [[0.1] * 1536]
+    mock_embedder.embed.return_value = [
+        0.1
+    ] * 1536  # Current API uses embed() for single texts
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -116,11 +125,12 @@ def test_dimension_guard_accepts_correct_dimension(mock_session_factory):
                 return_value=mock_factory,
             ),
             patch(
-                "trailblazer.pipeline.steps.embed.loader.get_embedding_provider",
+                "trailblazer.pipeline.steps.embed.provider.OpenAIEmbedder",
                 return_value=mock_embedder,
             ),
             patch("trailblazer.core.progress.get_progress") as mock_progress,
             patch("trailblazer.obs.events.EventEmitter") as mock_event_emitter,
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key-123"}),
         ):
             mock_progress.return_value.enabled = False
             mock_event_emitter_instance = MagicMock()
@@ -147,15 +157,15 @@ def test_dimension_guard_fallback_to_test_embedding(mock_session_factory):
 
     # Mock embedder without dim attribute
     mock_embedder = MagicMock()
-    mock_embedder.provider_name = "custom_provider"
+    mock_embedder.provider_name = "openai"  # Use valid provider name
     # No dim or dimension attribute
     del mock_embedder.dim
     del mock_embedder.dimension
 
     # But test embedding returns correct dimension
-    mock_embedder.embed_texts.return_value = [
-        [0.1] * 1536
-    ]  # Correct dimension
+    mock_embedder.embed.return_value = [
+        0.1
+    ] * 1536  # Current API uses embed() for single texts
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -174,7 +184,7 @@ def test_dimension_guard_fallback_to_test_embedding(mock_session_factory):
                 return_value=mock_factory,
             ),
             patch(
-                "trailblazer.pipeline.steps.embed.loader.get_embedding_provider",
+                "trailblazer.pipeline.steps.embed.provider.OpenAIEmbedder",
                 return_value=mock_embedder,
             ),
             patch("trailblazer.core.progress.get_progress") as mock_progress,
@@ -191,15 +201,13 @@ def test_dimension_guard_fallback_to_test_embedding(mock_session_factory):
             )
 
             # Should not raise exception (dimension detected via test embedding)
-            result = load_chunks_to_db(
-                run_id=run_id, provider_name="custom_provider"
-            )
+            result = load_chunks_to_db(run_id=run_id, provider_name="openai")
 
             # Should successfully process
             assert "chunks_embedded" in result
 
             # Verify test embedding was called for dimension detection
-            embed_calls = mock_embedder.embed_texts.call_args_list
+            embed_calls = mock_embedder.embed.call_args_list
             # Should have at least one call (for dimension detection)
             assert len(embed_calls) >= 1
 
@@ -210,12 +218,12 @@ def test_dimension_guard_fallback_wrong_dimension(mock_session_factory):
 
     # Mock embedder without dim attribute but wrong test embedding dimension
     mock_embedder = MagicMock()
-    mock_embedder.provider_name = "wrong_provider"
+    mock_embedder.provider_name = "openai"  # Use valid provider name
     del mock_embedder.dim
     del mock_embedder.dimension
 
     # Test embedding returns wrong dimension
-    mock_embedder.embed_texts.return_value = [[0.1] * 384]  # Wrong dimension
+    mock_embedder.embed.return_value = [0.1] * 384  # Wrong dimension
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -234,15 +242,13 @@ def test_dimension_guard_fallback_wrong_dimension(mock_session_factory):
                 return_value=mock_factory,
             ),
             patch(
-                "trailblazer.pipeline.steps.embed.loader.get_embedding_provider",
+                "trailblazer.pipeline.steps.embed.provider.OpenAIEmbedder",
                 return_value=mock_embedder,
             ),
         ):
             # Should raise ValueError after detecting wrong dimension
             with pytest.raises(ValueError) as exc_info:
-                load_chunks_to_db(
-                    run_id=run_id, provider_name="wrong_provider"
-                )
+                load_chunks_to_db(run_id=run_id, provider_name="openai")
 
             error_message = str(exc_info.value)
             assert "Dimension mismatch" in error_message
@@ -255,12 +261,12 @@ def test_dimension_guard_test_embedding_fails_gracefully(mock_session_factory):
 
     # Mock embedder without dim attribute and failing test embedding
     mock_embedder = MagicMock()
-    mock_embedder.provider_name = "failing_provider"
+    mock_embedder.provider_name = "openai"  # Use valid provider name
     del mock_embedder.dim
     del mock_embedder.dimension
 
     # Test embedding raises exception
-    mock_embedder.embed_texts.side_effect = Exception("Test embedding failed")
+    mock_embedder.embed.side_effect = Exception("Test embedding failed")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -279,7 +285,7 @@ def test_dimension_guard_test_embedding_fails_gracefully(mock_session_factory):
                 return_value=mock_factory,
             ),
             patch(
-                "trailblazer.pipeline.steps.embed.loader.get_embedding_provider",
+                "trailblazer.pipeline.steps.embed.provider.OpenAIEmbedder",
                 return_value=mock_embedder,
             ),
             patch("trailblazer.core.progress.get_progress") as mock_progress,
@@ -297,9 +303,7 @@ def test_dimension_guard_test_embedding_fails_gracefully(mock_session_factory):
 
             # Should not raise exception (dimension detection failed, but continues)
             # This is acceptable since we can't determine the dimension
-            result = load_chunks_to_db(
-                run_id=run_id, provider_name="failing_provider"
-            )
+            result = load_chunks_to_db(run_id=run_id, provider_name="openai")
 
             # Should process (dimension validation was skipped due to detection failure)
             assert "chunks_embedded" in result
@@ -313,10 +317,12 @@ def test_dimension_guard_uses_dimension_attribute_over_dim(
 
     # Mock embedder with both dim and dimension attributes (different values)
     mock_embedder = MagicMock()
-    mock_embedder.provider_name = "test_provider"
+    mock_embedder.provider_name = "openai"  # Use valid provider name
     mock_embedder.dim = 768  # Wrong
     mock_embedder.dimension = 1536  # Correct (should be preferred)
-    mock_embedder.embed_texts.return_value = [[0.1] * 1536]
+    mock_embedder.embed.return_value = [
+        0.1
+    ] * 1536  # Current API uses embed() for single texts
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -335,7 +341,7 @@ def test_dimension_guard_uses_dimension_attribute_over_dim(
                 return_value=mock_factory,
             ),
             patch(
-                "trailblazer.pipeline.steps.embed.loader.get_embedding_provider",
+                "trailblazer.pipeline.steps.embed.provider.OpenAIEmbedder",
                 return_value=mock_embedder,
             ),
             patch("trailblazer.core.progress.get_progress") as mock_progress,
@@ -352,9 +358,7 @@ def test_dimension_guard_uses_dimension_attribute_over_dim(
             )
 
             # Should not raise exception (dimension=1536 is correct)
-            result = load_chunks_to_db(
-                run_id=run_id, provider_name="test_provider"
-            )
+            result = load_chunks_to_db(run_id=run_id, provider_name="openai")
 
             # Should successfully process
             assert "chunks_embedded" in result
@@ -366,6 +370,9 @@ def test_dimension_guard_explicit_dimension_override():
     mock_embedder = MagicMock()
     mock_embedder.provider_name = "openai"
     mock_embedder.dim = 512  # Wrong dimension
+    mock_embedder.dimension = (
+        512  # Also set dimension property for consistency
+    )
     mock_embedder.model = "custom-model"
 
     with tempfile.TemporaryDirectory() as temp_dir:

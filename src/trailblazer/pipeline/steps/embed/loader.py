@@ -337,13 +337,18 @@ def load_chunks_to_db(
         embedder = get_embedding_provider(provider_name)
 
     # Hard guard: assert dimension=1536 at runtime (per requirements)
-    actual_dimension = getattr(embedder, "dim", None) or getattr(
-        embedder, "dimension", None
+    actual_dimension = getattr(embedder, "dimension", None) or getattr(
+        embedder, "dim", None
     )
     if actual_dimension is None:
         # Try to get dimension from a test embedding
         try:
-            if hasattr(embedder, "embed_texts"):
+            if hasattr(embedder, "embed"):
+                test_embedding = embedder.embed("test")
+                if test_embedding:
+                    actual_dimension = len(test_embedding)
+            elif hasattr(embedder, "embed_texts"):
+                # Fallback for legacy API
                 test_embedding = embedder.embed_texts(["test"])
                 if test_embedding:
                     actual_dimension = len(test_embedding[0])
@@ -392,7 +397,7 @@ def load_chunks_to_db(
             f"📁 Input: [cyan]{chunks_path.name}[/cyan]"
         )
         progress_renderer.console.print(
-            f"🧠 Provider: [green]{embedder.provider_name}[/green] (dim={embedder.dimension})"
+            f"🧠 Provider: [green]{embedder.provider_name}[/green] (dim={getattr(embedder, 'dimension', None) or getattr(embedder, 'dim', 'unknown')})"
         )
         progress_renderer.console.print(f"📦 Batch size: {batch_size}")
         progress_renderer.console.print("")
@@ -410,7 +415,8 @@ def load_chunks_to_db(
         event_emitter.embed_start(
             provider=embedder.provider_name,
             model=getattr(embedder, "model", "unknown"),
-            embedding_dims=embedder.dimension,
+            embedding_dims=getattr(embedder, "dimension", 0)
+            or getattr(embedder, "dim", 1536),
             chunks_file=str(chunks_path),
             batch_size=batch_size,
             max_docs=max_docs,
@@ -745,7 +751,8 @@ def load_chunks_to_db(
                         {
                             "chunk_id": chunk_id,
                             "provider": embedder.provider_name,
-                            "dim": embedder.dimension,
+                            "dim": getattr(embedder, "dimension", 0)
+                            or getattr(embedder, "dim", 1536),
                             "created_at": datetime.now(timezone.utc),
                         }
                     )
@@ -835,7 +842,8 @@ def load_chunks_to_db(
         "chunks_file": str(chunks_path),
         "provider": embedder.provider_name,
         "model": model_attr,
-        "dimension": embedder.dimension,
+        "dimension": getattr(embedder, "dimension", 0)
+        or getattr(embedder, "dim", 1536),
         "reembed_all": reembed_all,
         "docs_total": docs_total,
         "docs_skipped": docs_skipped,
@@ -897,7 +905,8 @@ def load_chunks_to_db(
                 run_id=run_id,
                 provider=embedder.provider_name,
                 model=getattr(embedder, "model", "unknown"),
-                dimension=embedder.dimension,
+                dimension=getattr(embedder, "dimension", 0)
+                or getattr(embedder, "dim", 1536),
                 chunks_embedded=chunks_embedded,
             )
             event_emitter.embed_tick(
@@ -946,7 +955,7 @@ def load_chunks_to_db(
             f"🧩 Chunks: [cyan]{chunks_embedded}[/cyan] embedded, [yellow]{chunks_skipped}[/yellow] skipped"
         )
         progress_renderer.console.print(
-            f"🧠 Provider: [green]{embedder.provider_name}[/green] (dim={embedder.dimension})"
+            f"🧠 Provider: [green]{embedder.provider_name}[/green] (dim={getattr(embedder, 'dimension', None) or getattr(embedder, 'dim', 'unknown')})"
         )
         progress_renderer.console.print(
             f"⏱️  Duration: [blue]{duration:.2f}s[/blue]"
@@ -1007,7 +1016,13 @@ def _process_embedding_batch(
                     "embed.load.single_embedding_error", error=str(embed_error)
                 )
                 # Use zero vector as fallback
-                embeddings.append([0.0] * embedder.dimension)
+                embeddings.append(
+                    [0.0]
+                    * (
+                        getattr(embedder, "dimension", 0)
+                        or getattr(embedder, "dim", 1536)
+                    )
+                )
 
     # Upsert embeddings
     for embedding, chunk_data in zip(embeddings, chunk_data_list):

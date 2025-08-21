@@ -303,7 +303,6 @@ class TestChunkerAssuranceSchema:
             "hard_max_tokens",
             "min_tokens",
             "overlap_tokens",
-            "model",
         ]
 
         for field in required_config_fields:
@@ -313,7 +312,7 @@ class TestChunkerAssuranceSchema:
         assert chunk_config["hard_max_tokens"] == 750
         assert chunk_config["min_tokens"] == 100
         assert chunk_config["overlap_tokens"] == 45
-        assert chunk_config["model"] == "text-embedding-3-small"
+        # Model field removed - chunking doesn't use embedding models
 
     def test_artifacts_tracking(self):
         """Test that artifacts are properly tracked."""
