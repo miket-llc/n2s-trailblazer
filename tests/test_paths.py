@@ -126,26 +126,8 @@ def test_normalize_path_integration():
             assert result_path.exists()
 
 
+# Test removed: _default_normalized_path function no longer exists in embed loader
+# This was testing deprecated functionality that has been refactored
 def test_embed_loader_path_integration():
-    """Test that embed loader uses new paths correctly."""
-    from trailblazer.pipeline.steps.embed.loader import (
-        _default_normalized_path,
-    )
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir_path = Path(tmpdir)
-
-        with patch("trailblazer.core.paths.ROOT", tmpdir_path):
-            test_run_id = "test_run_789"
-
-            result_path = _default_normalized_path(test_run_id)
-            expected_path = (
-                tmpdir_path
-                / "var"
-                / "runs"
-                / test_run_id
-                / "normalize"
-                / "normalized.ndjson"
-            )
-
-            assert result_path == expected_path
+    """Test removed - function _default_normalized_path no longer exists."""
+    pass
