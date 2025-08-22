@@ -54,15 +54,23 @@ class TestExpectationsIntegration:
                     }
                 },
                 {
-                    "require_by_query": {"lifecycle_overview": ["sprint0", "governance"]},
+                    "require_by_query": {
+                        "lifecycle_overview": ["sprint0", "governance"]
+                    },
                     "groups": {
-                        "sprint0": {"any_of": ["sprint 0", "architecture alignment", "aaw"]},
-                        "governance": {"any_of": ["governance", "raaci", "raci", "decision rights"]},
+                        "sprint0": {
+                            "any_of": ["sprint 0", "architecture alignment", "aaw"]
+                        },
+                        "governance": {
+                            "any_of": ["governance", "raaci", "raci", "decision rights"]
+                        },
                     },
                 },
             )
 
-            result = evaluate_query_expectations("lifecycle_overview", retrieved_items, top_k=12, threshold=0.7)
+            result = evaluate_query_expectations(
+                "lifecycle_overview", retrieved_items, top_k=12, threshold=0.7
+            )
 
             # Should pass: anchors hit (sprint 0 architecture)
             # and concepts hit (sprint0, governance groups)
@@ -75,7 +83,13 @@ class TestExpectationsIntegration:
     def test_with_missing_expectations(self):
         """Test behavior when expectation files are missing."""
         # Test with query that has no expectations defined
-        retrieved_items = [{"title": "Some Document", "url": "https://example.com/doc", "snippet": "Some content"}]
+        retrieved_items = [
+            {
+                "title": "Some Document",
+                "url": "https://example.com/doc",
+                "snippet": "Some content",
+            }
+        ]
 
         with patch("trailblazer.qa.expect.load_expectations") as mock_load:
             # Return empty expectations
@@ -93,17 +107,17 @@ class TestExpectationsIntegration:
         """Test that top_k properly limits items considered."""
         # Create more items than top_k
         retrieved_items = [
-            {"title": f"Document {i}", "url": f"https://example.com/doc{i}", "snippet": f"Content {i}"}
+            {
+                "title": f"Document {i}",
+                "url": f"https://example.com/doc{i}",
+                "snippet": f"Content {i}",
+            }
             for i in range(20)  # More than top_k=12
         ]
 
         with patch("trailblazer.qa.expect.load_expectations") as mock_load:
             mock_load.return_value = (
-                {
-                    "test_query": {
-                        "any_doc_slugs": ["doc15"]  # URL path component
-                    }
-                },
+                {"test_query": {"any_doc_slugs": ["doc15"]}},  # URL path component
                 {},
             )
 
@@ -114,7 +128,9 @@ class TestExpectationsIntegration:
             assert result["score"] == 0.4  # 0.6 * 0.0 + 0.4 * 1.0 (no concepts defined)
 
             # Test with top_k=20 (should find document 15)
-            result = evaluate_query_expectations("test_query", retrieved_items, top_k=20)
+            result = evaluate_query_expectations(
+                "test_query", retrieved_items, top_k=20
+            )
 
             assert result["anchors_score"] == 1.0
             assert result["score"] == 1.0
@@ -134,16 +150,24 @@ class TestExpectationsIntegration:
                 {},
                 {
                     "require_by_query": {"test_query": ["testing_strategy"]},
-                    "groups": {"testing_strategy": {"any_of": ["testing strategy", "test strategy"]}},
+                    "groups": {
+                        "testing_strategy": {
+                            "any_of": ["testing strategy", "test strategy"]
+                        }
+                    },
                 },
             )
 
             # Test with low threshold (0.3) - should pass
-            result = evaluate_query_expectations("test_query", retrieved_items, threshold=0.3)
+            result = evaluate_query_expectations(
+                "test_query", retrieved_items, threshold=0.3
+            )
 
             assert result["passed"]
 
             # Test with high threshold (0.9) - should fail
-            result = evaluate_query_expectations("test_query", retrieved_items, threshold=0.9)
+            result = evaluate_query_expectations(
+                "test_query", retrieved_items, threshold=0.9
+            )
 
             assert not result["passed"]

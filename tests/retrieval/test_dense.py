@@ -2,7 +2,12 @@
 
 from unittest.mock import Mock
 
+import pytest
+
 from trailblazer.retrieval.dense import DenseRetriever
+
+# Mark as unit test - this test mocks database operations
+pytestmark = pytest.mark.unit
 
 
 def test_dimension_filter_present():

@@ -1,8 +1,11 @@
 """Test process groups matching with hyphen/stem variants."""
 
-# pytest is used for test discovery and running
+import pytest
 
 from trailblazer.qa.expect import contains_any
+
+# Mark as unit test - tests pure string matching functions
+pytestmark = pytest.mark.unit
 
 
 class TestProcessGroupsMatch:

@@ -12,6 +12,9 @@ from src.trailblazer.retrieval.dense import (
     reciprocal_rank_fusion,
 )
 
+# Mark all tests as unit tests - these test pure functions and algorithms
+pytestmark = pytest.mark.unit
+
 
 class TestN2SQueryDetection:
     """Test N2S query detection and expansion."""
@@ -253,8 +256,8 @@ class TestHybridRetrieverIntegration:
         def mock_search_bm25(*args, **kwargs):
             return [{"chunk_id": "2", "score": 0.7, "title": "Test"}]
 
-        retriever.search_postgres = mock_search_postgres
-        retriever.search_bm25 = mock_search_bm25
+        retriever.search_postgres = mock_search_postgres  # type: ignore
+        retriever.search_bm25 = mock_search_bm25  # type: ignore
 
         # Test that N2S filter is applied for N2S queries
         n2s_filter_applied = retriever.enable_n2s_filter and is_n2s_query("N2S lifecycle")

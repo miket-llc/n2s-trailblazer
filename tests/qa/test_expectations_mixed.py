@@ -25,11 +25,17 @@ class TestMixedScenarios:
                 {"test_query": {"any_doc_slugs": ["sprint 0 architecture"]}},
                 {
                     "require_by_query": {"test_query": ["testing_strategy"]},
-                    "groups": {"testing_strategy": {"any_of": ["testing strategy", "test strategy"]}},
+                    "groups": {
+                        "testing_strategy": {
+                            "any_of": ["testing strategy", "test strategy"]
+                        }
+                    },
                 },
             )
 
-            result = evaluate_query_expectations("test_query", retrieved_items, mode="doc+concept")
+            result = evaluate_query_expectations(
+                "test_query", retrieved_items, mode="doc+concept"
+            )
 
             # Anchors should pass (1.0), concepts should fail (0.0)
             # Final score: 0.6 * 1.0 + 0.4 * 0.0 = 0.6
@@ -55,11 +61,17 @@ class TestMixedScenarios:
                 {"test_query": {"any_doc_slugs": ["sprint 0 architecture"]}},
                 {
                     "require_by_query": {"test_query": ["testing_strategy"]},
-                    "groups": {"testing_strategy": {"any_of": ["testing strategy", "test strategy"]}},
+                    "groups": {
+                        "testing_strategy": {
+                            "any_of": ["testing strategy", "test strategy"]
+                        }
+                    },
                 },
             )
 
-            result = evaluate_query_expectations("test_query", retrieved_items, mode="doc+concept")
+            result = evaluate_query_expectations(
+                "test_query", retrieved_items, mode="doc+concept"
+            )
 
             # Anchors should fail (0.0), concepts should pass (1.0)
             # Final score: 0.6 * 0.0 + 0.4 * 1.0 = 0.4
@@ -85,11 +97,17 @@ class TestMixedScenarios:
                 {"test_query": {"any_doc_slugs": ["sprint 0 architecture"]}},
                 {
                     "require_by_query": {"test_query": ["testing_strategy"]},
-                    "groups": {"testing_strategy": {"any_of": ["testing strategy", "test strategy"]}},
+                    "groups": {
+                        "testing_strategy": {
+                            "any_of": ["testing strategy", "test strategy"]
+                        }
+                    },
                 },
             )
 
-            result = evaluate_query_expectations("test_query", retrieved_items, mode="doc+concept")
+            result = evaluate_query_expectations(
+                "test_query", retrieved_items, mode="doc+concept"
+            )
 
             # Both should pass (1.0)
             # Final score: 0.6 * 1.0 + 0.4 * 1.0 = 1.0
@@ -115,11 +133,17 @@ class TestMixedScenarios:
                 {"test_query": {"any_doc_slugs": ["sprint 0 architecture"]}},
                 {
                     "require_by_query": {"test_query": ["testing_strategy"]},
-                    "groups": {"testing_strategy": {"any_of": ["testing strategy", "test strategy"]}},
+                    "groups": {
+                        "testing_strategy": {
+                            "any_of": ["testing strategy", "test strategy"]
+                        }
+                    },
                 },
             )
 
-            result = evaluate_query_expectations("test_query", retrieved_items, mode="doc+concept")
+            result = evaluate_query_expectations(
+                "test_query", retrieved_items, mode="doc+concept"
+            )
 
             # Both should fail (0.0)
             # Final score: 0.6 * 0.0 + 0.4 * 0.0 = 0.0
@@ -139,9 +163,14 @@ class TestMixedScenarios:
         ]
 
         with patch("trailblazer.qa.expect.load_expectations") as mock_load:
-            mock_load.return_value = ({"test_query": {"any_doc_slugs": ["sprint 0 architecture"]}}, {})
+            mock_load.return_value = (
+                {"test_query": {"any_doc_slugs": ["sprint 0 architecture"]}},
+                {},
+            )
 
-            result = evaluate_query_expectations("test_query", retrieved_items, mode="doc-only")
+            result = evaluate_query_expectations(
+                "test_query", retrieved_items, mode="doc-only"
+            )
 
             # Only anchors should be considered
             assert result["score"] == 1.0
@@ -162,11 +191,17 @@ class TestMixedScenarios:
                 {},
                 {
                     "require_by_query": {"test_query": ["testing_strategy"]},
-                    "groups": {"testing_strategy": {"any_of": ["testing strategy", "test strategy"]}},
+                    "groups": {
+                        "testing_strategy": {
+                            "any_of": ["testing strategy", "test strategy"]
+                        }
+                    },
                 },
             )
 
-            result = evaluate_query_expectations("test_query", retrieved_items, mode="concept-only")
+            result = evaluate_query_expectations(
+                "test_query", retrieved_items, mode="concept-only"
+            )
 
             # Only concepts should be considered
             assert result["score"] == 1.0

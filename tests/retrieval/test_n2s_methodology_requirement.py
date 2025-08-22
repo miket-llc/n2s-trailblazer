@@ -11,6 +11,9 @@ from src.trailblazer.retrieval.dense import (
     reciprocal_rank_fusion,
 )
 
+# Mark all tests as unit tests - these test pure functions and algorithms  
+pytestmark = pytest.mark.unit
+
 
 class TestN2SMethodologyRequirement:
     """Test that N2S queries return Methodology documents in top-5."""

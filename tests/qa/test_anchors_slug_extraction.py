@@ -1,6 +1,11 @@
 """Test anchors slug extraction functionality."""
 
+import pytest
+
 from trailblazer.qa.expect import doc_slug
+
+# Mark as unit test - tests pure URL/string parsing function
+pytestmark = pytest.mark.unit
 
 
 class TestAnchorsSlugExtraction:
@@ -88,7 +93,9 @@ class TestAnchorsSlugExtraction:
 
     def test_hyphen_variants_handling(self):
         """Test handling of hyphen variants."""
-        url = "https://confluence.example.com/pages/12345/DEV-Prepare-Discovery-Workshops"
+        url = (
+            "https://confluence.example.com/pages/12345/DEV-Prepare-Discovery-Workshops"
+        )
         title = "DEV-Prepare-Discovery-Workshops"
 
         slug = doc_slug(url, title)
@@ -98,7 +105,9 @@ class TestAnchorsSlugExtraction:
 
     def test_underscore_variants_handling(self):
         """Test handling of underscore variants."""
-        url = "https://confluence.example.com/pages/12345/DEV_Prepare_Discovery_Workshops"
+        url = (
+            "https://confluence.example.com/pages/12345/DEV_Prepare_Discovery_Workshops"
+        )
         title = "DEV_Prepare_Discovery_Workshops"
 
         slug = doc_slug(url, title)
