@@ -1,0 +1,39 @@
+# Concept Groups for N2S Query Expectations
+# Groups of any-of synonyms covering process language that drove false negatives
+
+groups:
+  runbook:
+    any_of: ["runbook", "playbook", "sop", "operational guide", "cutover plan", "deployment checklist"]
+  capability_driven:
+    any_of: ["capability-driven", "capability led", "capability-led", "capability based", "capability-based"]
+  plan_stage:
+    any_of: ["plan stage", "planning phase", "project planning", "plan-phase", "plan baseline"]
+  testing_strategy:
+    any_of: ["testing strategy", "test strategy", "qa strategy", "verification plan"]
+  continuous_testing:
+    any_of: ["continuous testing", "test automation", "shift-left", "ci testing"]
+  data_migration:
+    any_of: ["data migration", "cutover data load", "dm strategy", "etl plan", "trial conversion"]
+  integration_patterns:
+    any_of: ["integration patterns", "ethos", "api pattern", "event pattern", "batch interface"]
+  governance:
+    any_of: ["governance", "raaci", "raci", "decision rights", "steering", "stage gate"]
+  sprint0:
+    any_of: ["sprint 0", "architecture alignment", "aaw", "foundations sprint"]
+  deploy_cutover:
+    any_of: ["cutover", "go-live", "deployment", "hypercare"]
+  configuration:
+    any_of: ["configure", "configuration", "setup", "parameterization"]
+
+# Optional map of query_id → required group ids (kept small; any-of within each group)
+require_by_query:
+  lifecycle_overview: ["sprint0", "governance"]
+  plan_governance: ["governance", "plan_stage"]
+  data_migration: ["data_migration"]
+  test_strategy: ["testing_strategy"]
+  deploy_cutover: ["deploy_cutover", "runbook"]
+  integration_patterns: ["integration_patterns"]
+  sprint0_scope: ["sprint0"]
+  configure_runbook: ["configuration", "runbook"]
+  cap_vs_runbook: ["capability_driven", "runbook"]
+  continuous_testing: ["continuous_testing"]

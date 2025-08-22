@@ -724,6 +724,8 @@ def run_retrieval_qa(
     min_unique_docs: int = 3,
     max_tie_rate: float = 0.35,
     require_traceability: bool = True,
+    expect_mode: str = "doc+concept",
+    expect_threshold: float = 0.7,
 ) -> dict[str, Any]:
     """
     Run the complete retrieval QA harness.
@@ -739,6 +741,8 @@ def run_retrieval_qa(
         min_unique_docs: Minimum unique documents threshold
         max_tie_rate: Maximum tie rate threshold
         require_traceability: Whether to require traceability fields
+        expect_mode: Expectation scoring mode (doc+concept, doc-only, concept-only)
+        expect_threshold: Pass threshold for expectations (default: 0.7)
 
     Returns:
         Summary results dictionary
@@ -757,6 +761,7 @@ def run_retrieval_qa(
 
     # Process each query
     all_query_results = []
+    expectation_results = []
 
     for query in queries:
         log.info("qa.retrieval.query_start", query_id=query["id"])
@@ -776,6 +781,48 @@ def run_retrieval_qa(
             require_traceability,
         )
         all_query_results.append(health_result)
+
+        # Evaluate expectations using first budget's hits
+        if budgets and hits_by_budget:
+            first_budget = budgets[0]
+            first_hits = hits_by_budget.get(first_budget, [])
+
+            # Convert hits to expected format for expectation evaluation
+            retrieved_items = []
+            for hit in first_hits:
+                retrieved_items.append(
+                    {"url": hit.get("url", ""), "title": hit.get("title", ""), "snippet": hit.get("snippet", "")}
+                )
+
+            # Import expectation harness
+            from .harness import evaluate_expectations, create_explanation_file
+
+            expectation_result = evaluate_expectations(
+                query_id=query["id"],
+                retrieved_items=retrieved_items,
+                top_k=top_k,
+                threshold=expect_threshold,
+                mode=expect_mode,
+            )
+
+            # Add query info to result
+            expectation_result["query_id"] = query["id"]
+            expectation_result["query_text"] = query["text"]
+            expectation_results.append(expectation_result)
+
+            # Create explanation file for failed queries
+            if not expectation_result["passed"]:
+                create_explanation_file(output_dir, query["id"], expectation_result)
+
+            # Log expectation result
+            log.info(
+                "qa.retrieval.expectation_evaluated",
+                query_id=query["id"],
+                passed=expectation_result["passed"],
+                score=expectation_result["score"],
+                anchors_hit=expectation_result["anchors_hit"],
+                missing_groups=expectation_result["missing_groups"],
+            )
 
         log.info(
             "qa.retrieval.query_complete",
@@ -802,10 +849,19 @@ def run_retrieval_qa(
         "min_unique_docs": min_unique_docs,
         "max_tie_rate": max_tie_rate,
         "require_traceability": require_traceability,
+        "expect_mode": expect_mode,
+        "expect_threshold": expect_threshold,
     }
 
     # Create readiness report
     readiness_report = create_readiness_report(all_query_results, pack_stats, config)
+
+    # Extend readiness report with expectation results
+    from .harness import extend_readiness_report
+
+    readiness_report = extend_readiness_report(
+        readiness_report, expectation_results, mode=expect_mode, threshold=expect_threshold
+    )
 
     # Save readiness report
     readiness_file = output_dir / "readiness.json"

@@ -363,7 +363,7 @@ scripts/embed_dispatch.sh [OPTIONS]
 
 Options:
   --plan-preflight-dir <DIR>  Use plan from <DIR>/ready.txt
-  --plan-file <FILE>          Use specific plan file  
+  --plan-file <FILE>          Use specific plan file
   --qa-dir <DIR>              Archive QA results from directory
   --skip-unchanged            Use reembed-if-changed to skip unchanged runs (optional incremental mode)
   --notes "<TEXT>"            Add operator notes to manifest
@@ -492,6 +492,39 @@ trailblazer qa retrieval --no-require-traceability
 
 The system is marked **READY** if ≥80% of queries pass all health checks, otherwise **BLOCKED** with specific remediation guidance.
 
+## Expectation Harness v2
+
+The Expectation Harness v2 provides deterministic scoring for retrieval quality using **Doc Anchors** and **Concept Groups**:
+
+- **Doc Anchors**: Check if retrieved items contain expected document slugs (e.g., "sprint-0-architecture" from Confluence URLs)
+- **Concept Groups**: Verify that retrieved contexts contain expected terminology using synonym bundles (e.g., "runbook", "playbook", "sop" for operational guides)
+
+**Scoring System:**
+- **Doc Anchors Score (60%)**: 1.0 if any retrieved item's slug matches expected anchors, else 0.0
+- **Concept Groups Score (40%)**: Average across required concept groups, with 1.0 if no groups are required
+- **Final Score**: Weighted combination with configurable threshold (default: 0.7)
+
+**Configuration Files:**
+- `prompts/qa/expectations/anchors.yaml` - Maps query IDs to expected document slugs
+- `prompts/qa/expectations/concepts.yaml` - Defines synonym groups and query requirements
+
+**Usage:**
+```bash
+# Run QA with expectation scoring (default: doc+concept mode)
+trailblazer qa retrieval --expect-mode doc+concept --expect-threshold 0.7
+
+# Score only document anchors
+trailblazer qa retrieval --expect-mode doc-only
+
+# Score only concept groups
+trailblazer qa retrieval --expect-mode concept-only
+```
+
+**Generated Artifacts:**
+- Enhanced `readiness.json` with expectation pass rates and detailed scoring
+- `explain/<query_id>.md` files for failed queries showing missing anchors/groups
+- Event logs with `qa|verify|OK|FAIL` events for each query evaluation
+
 ## What You'll See
 
 **Rich Progress Output:**
@@ -566,7 +599,7 @@ trailblazer ingest confluence --space NONEXISTENT
 # → exits 4
 
 # Success even with no pages
-trailblazer ingest confluence --space NONEXISTENT --allow-empty  
+trailblazer ingest confluence --space NONEXISTENT --allow-empty
 # → exits 0 with warning log
 ```
 
@@ -770,7 +803,7 @@ trailblazer ingest confluence --space DEV --progress --quiet-pretty
 **Progress & Resume Features:**
 
 ```bash
-# Progress checkpoints saved every N pages 
+# Progress checkpoints saved every N pages
 trailblazer ingest confluence --space DEV --progress --progress-every 50
 # → writes progress.json with last page, counts, timestamps
 

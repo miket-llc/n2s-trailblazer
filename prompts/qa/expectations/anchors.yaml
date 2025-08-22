@@ -1,0 +1,53 @@
+# Doc Anchors for N2S Query Expectations
+# keys must match query_id used in ask_*.json artifacts
+
+lifecycle_overview:
+  any_doc_slugs:
+    - "sprint-0-architecture-alignment"
+    - "discovery-workshops"
+    - "navigate-to-saas-overview"
+
+plan_governance:
+  any_doc_slugs:
+    - "governance-model"
+    - "project-plan-stage"
+
+data_migration:
+  any_doc_slugs:
+    - "data-migration-strategy"
+    - "cutover-runbook"
+
+test_strategy:
+  any_doc_slugs:
+    - "testing-strategy"
+    - "continuous-testing"
+
+deploy_cutover:
+  any_doc_slugs:
+    - "deployment-cutover"
+    - "runbook"
+
+integration_patterns:
+  any_doc_slugs:
+    - "integration-patterns"
+    - "ethos"
+
+sprint0_scope:
+  any_doc_slugs:
+    - "sprint-0"
+    - "architecture-alignment"
+
+configure_runbook:
+  any_doc_slugs:
+    - "runbook"
+    - "configuration-steps"
+
+cap_vs_runbook:
+  any_doc_slugs:
+    - "capability-model"
+    - "runbook"
+
+continuous_testing:
+  any_doc_slugs:
+    - "continuous-testing"
+    - "test-automation"

@@ -47,6 +47,8 @@ def main():
             min_unique_docs=6,  # Pass criteria: ≥6 unique docs in top-12
             max_tie_rate=0.35,
             require_traceability=True,
+            expect_mode="doc+concept",  # Expectation scoring mode
+            expect_threshold=0.7,  # Expectation pass threshold
         )
 
         print("\n✅ QA harness completed successfully!")
