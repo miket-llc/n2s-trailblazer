@@ -70,7 +70,7 @@ def expand_n2s_query(query: str) -> str:
     # Concept terms (placeholder for future phrase matching enhancement)
     # concepts = [
     #     "capability-driven iterations",
-    #     "cross-cutting", 
+    #     "cross-cutting",
     #     "Testing & QA",
     #     "Data Migration",
     #     "Integration",
@@ -472,7 +472,7 @@ class DenseRetriever:
                     CREATE INDEX IF NOT EXISTS idx_chunks_content_tsvector
                     ON chunks USING GIN (to_tsvector('english', text_md))
                 """)
-                
+
                 # Also keep trigram index for fallback compatibility
                 session.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
                 session.execute("""
