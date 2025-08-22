@@ -41,7 +41,7 @@ def test_auto_since_reads_and_updates_state(tmp_path):
         mock_client.site_base = "https://example.com"
 
         # Mock confluence API
-        def mock_search_cql(cql, _start=0, _limit=50):
+        def mock_search_cql(cql, start=0, limit=50):
             # Should be called with the timestamp from state file
             assert "2025-01-01T12:00:00Z" in cql
             return {"results": [{"id": "123"}, {"id": "456"}]}
@@ -49,7 +49,7 @@ def test_auto_since_reads_and_updates_state(tmp_path):
         mock_client.search_cql.side_effect = mock_search_cql
 
         # Mock page retrieval
-        def mock_get_page_by_id(page_id, _body_format="storage"):
+        def mock_get_page_by_id(page_id, body_format="storage"):
             if page_id == "123":
                 return {
                     "id": "123",

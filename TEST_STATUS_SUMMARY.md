@@ -100,16 +100,16 @@
 
 ## 📊 **Test Coverage Summary**
 
-| Category        | Total   | Passing | Failing | Success Rate |
+| Category | Total | Passing | Failing | Success Rate |
 | --------------- | ------- | ------- | ------- | ------------ |
-| QA Tests        | 78      | 78      | 0       | 100%         |
-| Retrieval Tests | 21      | 21      | 0       | 100%         |
-| Embed Tests     | 71      | 70      | 1       | 98.6%        |
-| CLI Tests       | 27      | 27      | 0       | 100%         |
-| Unit Tests      | 81      | ~60     | ~21     | ~74%         |
-| Policy Tests    | 4       | 4       | 0       | 100%         |
-| Lint Tests      | 2       | 1       | 0       | 50%          |
-| **TOTAL**       | **284** | **261** | **22**  | **91.9%**    |
+| QA Tests | 78 | 78 | 0 | 100% |
+| Retrieval Tests | 21 | 21 | 0 | 100% |
+| Embed Tests | 71 | 70 | 1 | 98.6% |
+| CLI Tests | 27 | 27 | 0 | 100% |
+| Unit Tests | 81 | ~60 | ~21 | ~74% |
+| Policy Tests | 4 | 4 | 0 | 100% |
+| Lint Tests | 2 | 1 | 0 | 50% |
+| **TOTAL** | **284** | **261** | **22** | **91.9%** |
 
 ## 🎉 **Key Achievements**
 

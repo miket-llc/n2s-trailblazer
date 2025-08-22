@@ -281,7 +281,7 @@ def split_with_layered_strategy(
             current_text = ""
             text_start_pos = 0
 
-            for para_text, strategy in paragraph_chunks:
+            for para_text, _strategy in paragraph_chunks:
                 test_text = current_text + "\n\n" + para_text if current_text else para_text
                 if count_tokens(test_text, model) > hard_max_tokens and current_text:
                     # Emit current chunk with position
@@ -339,7 +339,7 @@ def split_with_layered_strategy(
             current_text = ""
             text_start_pos = 0
 
-            for sentence_text, strategy in sentence_chunks:
+            for sentence_text, _strategy in sentence_chunks:
                 test_text = current_text + " " + sentence_text if current_text else sentence_text
                 if count_tokens(test_text, model) > hard_max_tokens and current_text:
                     # Emit current chunk

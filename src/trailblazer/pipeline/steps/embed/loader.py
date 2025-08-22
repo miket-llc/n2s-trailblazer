@@ -78,7 +78,7 @@ def _validate_materialized_chunks(run_id: str) -> None:
                     f"empty chunks file: {chunks_file}"
                 )
     except Exception as e:
-        if isinstance(e, (FileNotFoundError, ValueError)):
+        if isinstance(e, FileNotFoundError | ValueError):
             raise
         raise RuntimeError(
             f"embed requires materialized chunks; run 'trailblazer chunk run {run_id}' first; "
