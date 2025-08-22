@@ -72,7 +72,7 @@ def test_utility_function():
 ### **Automatic Database Tests** (No marker needed)
 These directories automatically run with PostgreSQL + pgvector:
 - `tests/qa/` - QA evaluation tests
-- `tests/retrieval/` - Vector retrieval tests  
+- `tests/retrieval/` - Vector retrieval tests
 - `tests/embed/` - Embedding pipeline tests
 - `tests/cli/` - Command-line interface tests
 

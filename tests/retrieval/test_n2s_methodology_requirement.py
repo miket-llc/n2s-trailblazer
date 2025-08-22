@@ -11,7 +11,7 @@ from src.trailblazer.retrieval.dense import (
     reciprocal_rank_fusion,
 )
 
-# Mark all tests as unit tests - these test pure functions and algorithms  
+# Mark all tests as unit tests - these test pure functions and algorithms
 pytestmark = pytest.mark.unit
 
 
