@@ -149,9 +149,7 @@ def apply_domain_boosts(
         if re.search(
             r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\b",
             title,
-        ) or re.search(
-            r"\b(20\d{2})\b", title
-        ):  # Year patterns
+        ) or re.search(r"\b(20\d{2})\b", title):  # Year patterns
             boost -= 0.10
 
         # Apply boost
@@ -459,9 +457,7 @@ class DenseRetriever:
                 )
 
                 if embedding_record:
-                    embedding_vec = np.array(
-                        deserialize_embedding(embedding_record.embedding)
-                    )
+                    embedding_vec = np.array(deserialize_embedding(embedding_record.embedding))
                     score = cosine_sim(query_vec, embedding_vec)
 
                     candidates.append(
@@ -487,21 +483,27 @@ class DenseRetriever:
 
         with self.session_factory() as session:
             try:
+                from sqlalchemy import text
+
                 # Create GIN index on tsvector for proper BM25
                 session.execute(
-                    """
+                    text(
+                        """
                     CREATE INDEX IF NOT EXISTS idx_chunks_content_tsvector
                     ON chunks USING GIN (to_tsvector('english', text_md))
                 """
+                    )
                 )
 
                 # Also keep trigram index for fallback compatibility
-                session.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+                session.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
                 session.execute(
-                    """
+                    text(
+                        """
                     CREATE INDEX IF NOT EXISTS idx_chunks_content_gin
                     ON chunks USING GIN (text_md gin_trgm_ops)
                 """
+                    )
                 )
 
                 session.commit()
@@ -573,9 +575,7 @@ class DenseRetriever:
 
             # Add space whitelist filter if provided
             if space_whitelist:
-                placeholders = ",".join(
-                    [f":space_{i}" for i in range(len(space_whitelist))]
-                )
+                placeholders = ",".join([f":space_{i}" for i in range(len(space_whitelist))])
                 sql_query += f" AND d.space_key IN ({placeholders})"
                 for i, space_key in enumerate(space_whitelist):
                     params[f"space_{i}"] = space_key
@@ -668,9 +668,7 @@ class DenseRetriever:
 
             # Add space whitelist filter if provided
             if space_whitelist:
-                placeholders = ",".join(
-                    [f":space_{i}" for i in range(len(space_whitelist))]
-                )
+                placeholders = ",".join([f":space_{i}" for i in range(len(space_whitelist))])
                 sql_query += f" AND d.space_key IN ({placeholders})"
                 for i, space_key in enumerate(space_whitelist):
                     params[f"space_{i}"] = space_key
@@ -768,31 +766,23 @@ class DenseRetriever:
         try:
             # Dense retrieval
             query_vec = self.embed_query(query)
-            dense_results = self.search_postgres(
-                query_vec, self.provider_name, self.topk_dense, space_whitelist
-            )
+            dense_results = self.search_postgres(query_vec, self.provider_name, self.topk_dense, space_whitelist)
 
             # Mark as dense
             for r in dense_results:
                 r["search_type"] = "dense"
 
             # BM25 retrieval
-            bm25_results = self.search_bm25(
-                query, self.topk_bm25, space_whitelist, n2s_filter, expand_query=True
-            )
+            bm25_results = self.search_bm25(query, self.topk_bm25, space_whitelist, n2s_filter, expand_query=True)
 
             # Apply RRF fusion
-            fused_results = reciprocal_rank_fusion(
-                dense_results, bm25_results, self.rrf_k
-            )
+            fused_results = reciprocal_rank_fusion(dense_results, bm25_results, self.rrf_k)
 
             # Apply domain boosts
             boosted_results = apply_domain_boosts(fused_results, self.enable_boosts)
 
             # Sort by final score (RRF + boosts)
-            final_results = sorted(
-                boosted_results, key=lambda x: (-x["score"], x["chunk_id"])
-            )[:top_k]
+            final_results = sorted(boosted_results, key=lambda x: (-x["score"], x["chunk_id"]))[:top_k]
 
             # Update trace data
             trace_data.update(
@@ -816,9 +806,7 @@ class DenseRetriever:
         except Exception as e:
             print(f"Warning: Hybrid retrieval failed: {e}")
             # Fall back to legacy search
-            return self._search_legacy(
-                query, top_k, space_whitelist, n2s_filter, trace_data, export_trace_dir
-            )
+            return self._search_legacy(query, top_k, space_whitelist, n2s_filter, trace_data, export_trace_dir)
 
     def _search_legacy(
         self,
@@ -833,9 +821,7 @@ class DenseRetriever:
         # Try dense retrieval first
         try:
             query_vec = self.embed_query(query)
-            candidates = self.search_postgres(
-                query_vec, self.provider_name, top_k, space_whitelist
-            )
+            candidates = self.search_postgres(query_vec, self.provider_name, top_k, space_whitelist)
 
             if candidates:
                 # Mark as dense and apply boosts
@@ -862,12 +848,8 @@ class DenseRetriever:
 
         # If dense retrieval returned no results or failed, try BM25 fallback
         if self.enable_bm25_fallback:
-            print(
-                f"Dense retrieval returned 0 results, falling back to BM25 for query: {query[:50]}..."
-            )
-            fallback_results = self.search_bm25_fallback(
-                query, top_k, space_whitelist, n2s_filter
-            )
+            print(f"Dense retrieval returned 0 results, falling back to BM25 for query: {query[:50]}...")
+            fallback_results = self.search_bm25_fallback(query, top_k, space_whitelist, n2s_filter)
 
             trace_data.update(
                 {

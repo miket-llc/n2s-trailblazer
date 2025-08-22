@@ -26,6 +26,7 @@ RRF_score = 1/(k + dense_rank) + 1/(k + bm25_rank)
 Where `k=60` by default (configurable with `--rrf-k`).
 
 **Benefits:**
+
 - Combines semantic similarity (dense) with keyword matching (BM25)
 - Handles both conceptual queries and specific term searches
 - Mathematically principled ranking fusion
@@ -44,17 +45,19 @@ Automatic scoring adjustments based on document type:
 Queries containing N2S-related terms are automatically:
 
 1. **Detected** using pattern matching for terms like:
+
    - `n2s`, `navigate to saas`, `lifecycle`, `methodology`
    - `sprint 0`, `discovery`, `build`, `optimize`
 
-2. **Expanded** with relevant synonyms and terms:
+1. **Expanded** with relevant synonyms and terms:
+
    - **Synonyms**: N2S, Navigate to SaaS, Navigate-to-SaaS, N-2-S
    - **Phases**: Discovery, Build, Optimize
    - **Stages**: Start, Prepare, Sprint 0, Plan, Configure, Test, Deploy, Go-Live
    - **Governance**: governance checkpoints, entry criteria, exit criteria
    - **Concepts**: capability-driven iterations, cross-cutting, Testing & QA
 
-3. **Filtered** to prioritize N2S-related documents (when `--filter-n2s` is enabled)
+1. **Filtered** to prioritize N2S-related documents (when `--filter-n2s` is enabled)
 
 ## CLI Usage
 
@@ -125,16 +128,16 @@ trailblazer ask "N2S lifecycle overview" --export-trace ./traces/
 
 ## Complete Flag Reference
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--hybrid` / `--no-hybrid` | `True` | Enable hybrid retrieval (dense + BM25) |
-| `--topk-dense` | `200` | Top-k candidates from dense retrieval |
-| `--topk-bm25` | `200` | Top-k candidates from BM25 retrieval |
-| `--rrf-k` | `60` | RRF parameter k (lower = more aggressive fusion) |
-| `--boosts` / `--no-boosts` | `True` | Enable domain-aware scoring boosts |
-| `--filter-n2s` / `--no-filter-n2s` | `True` | Enable N2S query detection/filtering |
-| `--server-side` | `False` | Use server-side RRF SQL function |
-| `--export-trace` | `None` | Export trace JSON to directory |
+| Flag                               | Default | Description                                      |
+| ---------------------------------- | ------- | ------------------------------------------------ |
+| `--hybrid` / `--no-hybrid`         | `True`  | Enable hybrid retrieval (dense + BM25)           |
+| `--topk-dense`                     | `200`   | Top-k candidates from dense retrieval            |
+| `--topk-bm25`                      | `200`   | Top-k candidates from BM25 retrieval             |
+| `--rrf-k`                          | `60`    | RRF parameter k (lower = more aggressive fusion) |
+| `--boosts` / `--no-boosts`         | `True`  | Enable domain-aware scoring boosts               |
+| `--filter-n2s` / `--no-filter-n2s` | `True`  | Enable N2S query detection/filtering             |
+| `--server-side`                    | `False` | Use server-side RRF SQL function                 |
+| `--export-trace`                   | `None`  | Export trace JSON to directory                   |
 
 ## Examples
 
@@ -145,13 +148,15 @@ trailblazer ask "N2S lifecycle overview" --export-trace ./traces/
 ```
 
 **Query Processing:**
+
 1. Detected as N2S query ✓
-2. Expanded with: "Discovery", "Build", "Optimize", "Sprint 0", etc.
-3. N2S document filtering applied
-4. Domain boosts applied (+0.20 for Methodology docs)
-5. Results fused with RRF
+1. Expanded with: "Discovery", "Build", "Optimize", "Sprint 0", etc.
+1. N2S document filtering applied
+1. Domain boosts applied (+0.20 for Methodology docs)
+1. Results fused with RRF
 
 **Expected Results:**
+
 - At least one Methodology document in top-5
 - Higher ranking for N2S-specific content
 - Balanced semantic + keyword matching
@@ -163,10 +168,11 @@ trailblazer ask "How to configure SSO integration?" --no-filter-n2s
 ```
 
 **Query Processing:**
+
 1. Not detected as N2S query
-2. No query expansion applied
-3. No N2S document filtering
-4. Standard hybrid retrieval with domain boosts
+1. No query expansion applied
+1. No N2S document filtering
+1. Standard hybrid retrieval with domain boosts
 
 ### Performance Optimized Query
 
@@ -178,9 +184,10 @@ trailblazer ask "N2S governance checkpoints" \
 ```
 
 **Query Processing:**
+
 1. Uses server-side SQL RRF function
-2. Reduced candidate pool for faster processing
-3. All processing done in PostgreSQL
+1. Reduced candidate pool for faster processing
+1. All processing done in PostgreSQL
 
 ## Performance Tuning
 
@@ -225,6 +232,7 @@ ON chunks USING GIN (text_md gin_trgm_ops);
 ### Schema Compatibility
 
 The hybrid system requires no schema changes and works with existing:
+
 - `documents` table (title, meta, space_key fields)
 - `chunks` table (text_md field)
 - `chunk_embeddings` table (embedding field with pgvector)
@@ -234,16 +242,19 @@ The hybrid system requires no schema changes and works with existing:
 ### Common Issues
 
 **No results returned:**
+
 - Check that embeddings exist for the provider
 - Verify database connectivity
 - Try `--no-hybrid` to test dense-only retrieval
 
 **Poor N2S query results:**
+
 - Ensure `--filter-n2s` is enabled for N2S queries
 - Check that Methodology/Playbook documents exist in corpus
 - Use `--export-trace` to analyze query expansion
 
 **Performance issues:**
+
 - Use `--server-side` for large datasets
 - Reduce `--topk-dense` and `--topk-bm25` values
 - Check database index status with `trailblazer db doctor`

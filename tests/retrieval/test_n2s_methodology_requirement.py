@@ -70,9 +70,7 @@ class TestN2SMethodologyRequirement:
         ]
 
         # Apply RRF fusion
-        fused_results = reciprocal_rank_fusion(
-            mock_dense_results, mock_bm25_results, k=60
-        )
+        fused_results = reciprocal_rank_fusion(mock_dense_results, mock_bm25_results, k=60)
 
         # Apply domain boosts (Methodology gets +0.20)
         boosted_results = apply_domain_boosts(fused_results, enable_boosts=True)
@@ -82,14 +80,12 @@ class TestN2SMethodologyRequirement:
 
         # Check that at least one result in top-5 has doctype=Methodology
         methodology_in_top_5 = any(
-            result.get("meta", {}).get("doctype") == "Methodology"
-            or "methodology" in result.get("title", "").lower()
+            result.get("meta", {}).get("doctype") == "Methodology" or "methodology" in result.get("title", "").lower()
             for result in top_5
         )
 
         assert methodology_in_top_5, (
-            f"Expected at least one Methodology document in top-5 results. "
-            f"Got: {[r.get('title', '') for r in top_5]}"
+            f"Expected at least one Methodology document in top-5 results. Got: {[r.get('title', '') for r in top_5]}"
         )
 
         # Verify the Methodology document got the expected boost
@@ -148,27 +144,17 @@ class TestN2SMethodologyRequirement:
         ]
 
         # Test with boosts enabled
-        fused_with_boosts = reciprocal_rank_fusion(
-            mock_dense_results, mock_bm25_results, k=60
-        )
+        fused_with_boosts = reciprocal_rank_fusion(mock_dense_results, mock_bm25_results, k=60)
         boosted_with_boosts = apply_domain_boosts(fused_with_boosts, enable_boosts=True)
 
         # Test with boosts disabled
-        fused_no_boosts = reciprocal_rank_fusion(
-            mock_dense_results, mock_bm25_results, k=60
-        )
+        fused_no_boosts = reciprocal_rank_fusion(mock_dense_results, mock_bm25_results, k=60)
         boosted_no_boosts = apply_domain_boosts(fused_no_boosts, enable_boosts=False)
 
         # Find methodology document scores
-        methodology_with_boosts = next(
-            r
-            for r in boosted_with_boosts
-            if "methodology" in r.get("title", "").lower()
-        )
+        methodology_with_boosts = next(r for r in boosted_with_boosts if "methodology" in r.get("title", "").lower())
 
-        methodology_no_boosts = next(
-            r for r in boosted_no_boosts if "methodology" in r.get("title", "").lower()
-        )
+        methodology_no_boosts = next(r for r in boosted_no_boosts if "methodology" in r.get("title", "").lower())
 
         # With boosts, methodology should have higher score
         assert methodology_with_boosts["score"] > methodology_no_boosts["score"], (

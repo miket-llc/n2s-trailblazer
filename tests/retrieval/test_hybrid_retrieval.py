@@ -257,18 +257,12 @@ class TestHybridRetrieverIntegration:
         retriever.search_bm25 = mock_search_bm25
 
         # Test that N2S filter is applied for N2S queries
-        trace_data = {"query": "N2S lifecycle", "candidates": []}
-        n2s_filter_applied = retriever.enable_n2s_filter and is_n2s_query(
-            "N2S lifecycle"
-        )
+        n2s_filter_applied = retriever.enable_n2s_filter and is_n2s_query("N2S lifecycle")
 
         assert n2s_filter_applied is True
 
         # Test that N2S filter is not applied for non-N2S queries
-        trace_data = {"query": "SSO configuration", "candidates": []}
-        n2s_filter_applied = retriever.enable_n2s_filter and is_n2s_query(
-            "SSO configuration"
-        )
+        n2s_filter_applied = retriever.enable_n2s_filter and is_n2s_query("SSO configuration")
 
         assert n2s_filter_applied is False
 

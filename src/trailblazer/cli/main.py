@@ -77,7 +77,7 @@ def _run_db_preflight_check() -> None:
                     "Only PostgreSQL is supported; use 'make db.up' + 'trailblazer db init' + 'trailblazer db doctor'",
                     err=True,
                 )
-                raise typer.Exit(1) from e
+                raise typer.Exit(1)
 
         # For PostgreSQL, require pgvector
         if health_info["dialect"] == "postgresql" and not health_info["pgvector"]:
@@ -89,7 +89,7 @@ def _run_db_preflight_check() -> None:
                 "Use 'make db.up' then 'trailblazer db doctor' to get started",
                 err=True,
             )
-            raise typer.Exit(1) from e
+            raise typer.Exit(1)
 
     except Exception as e:
         typer.echo(f"❌ Database preflight failed: {e}", err=True)
@@ -97,7 +97,7 @@ def _run_db_preflight_check() -> None:
             "Use 'make db.up' then 'trailblazer db doctor' to get started",
             err=True,
         )
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @app.callback()
@@ -144,7 +144,7 @@ def run(
         log.info("config.loaded", config_file=config_file or "auto-discovered")
     except Exception as e:
         typer.echo(f"❌ Config error: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     # Override settings with CLI flags (highest precedence)
     if phases:
@@ -203,7 +203,7 @@ def _handle_reset(reset_scope: str, settings: Settings, yes: bool, dry_run: bool
             f"❌ Invalid reset scope: {reset_scope}. Use: {', '.join(valid_scopes)}",
             err=True,
         )
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     # Prepare reset report
     reset_id = new_run_id()
@@ -302,7 +302,7 @@ def _handle_reset(reset_scope: str, settings: Settings, yes: bool, dry_run: bool
 
     except Exception as e:
         typer.echo(f"❌ Reset failed: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 def _find_resumable_run(settings: Settings) -> str | None:
@@ -458,7 +458,7 @@ def ingest_confluence_cmd(
         if any(keyword in error_str for keyword in ["auth", "unauthorized", "forbidden", "401", "403"]):
             log.error("cli.ingest.confluence.auth_error", error=str(e))
             typer.echo(f"❌ Authentication error: {e}", err=True)
-            raise typer.Exit(2) from e
+            raise typer.Exit(2)
         elif any(keyword in error_str for keyword in ["connection", "timeout", "network", "api", "http"]):
             log.error("cli.ingest.confluence.api_error", error=str(e))
             typer.echo(f"❌ API/Network error: {e}", err=True)
@@ -466,7 +466,7 @@ def ingest_confluence_cmd(
         else:
             log.error("cli.ingest.confluence.unknown_error", error=str(e))
             typer.echo(f"❌ Unexpected error: {e}", err=True)
-            raise typer.Exit(1) from e
+            raise typer.Exit(1)
 
 
 @ingest_app.command("dita")
@@ -530,7 +530,7 @@ def ingest_dita_cmd(
 
     except Exception as e:
         log.error("cli.ingest.dita.error", run_id=rid, error=str(e))
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @confluence_app.command("spaces")
@@ -602,7 +602,7 @@ def ingest_diff_deletions_cmd(
     baseline_file = runs_base / baseline_run / "ingest" / f"{space}_seen_page_ids.json"
     if not baseline_file.exists():
         typer.echo(f"❌ Baseline file not found: {baseline_file}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     with open(baseline_file) as f:
         baseline_ids = set(json.load(f))
@@ -611,7 +611,7 @@ def ingest_diff_deletions_cmd(
     current_file = runs_base / current_run / "ingest" / f"{space}_seen_page_ids.json"
     if not current_file.exists():
         typer.echo(f"❌ Current file not found: {current_file}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     with open(current_file) as f:
         current_ids = set(json.load(f))
@@ -703,11 +703,11 @@ def db_check_cmd() -> None:
                 err=True,
             )
             typer.echo("    psql -d your_db -c 'CREATE EXTENSION vector;'", err=True)
-            raise typer.Exit(1) from e
+            raise typer.Exit(1)
 
     except Exception as e:
         typer.echo(f"❌ Database check failed: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @db_app.command("doctor")
@@ -765,13 +765,13 @@ def db_doctor_cmd() -> None:
                 typer.echo("   ❌ pgvector extension: NOT available")
                 typer.echo("      Run 'trailblazer db init' or manually:")
                 typer.echo("      psql -d your_db -c 'CREATE EXTENSION vector;'")
-                raise typer.Exit(1) from e
+                raise typer.Exit(1)
         else:
             # Non-PostgreSQL database - not supported
             typer.echo(f"\n❌ Unsupported database: {health_info['dialect']}")
             typer.echo("   Only PostgreSQL is supported.")
             typer.echo("   Run 'make db.up' then 'trailblazer db doctor'")
-            raise typer.Exit(1) from e
+            raise typer.Exit(1)
 
         # Final summary
         typer.echo("\n🎉 Database health check completed successfully!")
@@ -784,7 +784,7 @@ def db_doctor_cmd() -> None:
         typer.echo("   2. Ensure PostgreSQL is running: make db.up")
         typer.echo("   3. Initialize database: trailblazer db init")
         typer.echo("   4. Verify pgvector extension is installed")
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @db_app.command("init")
@@ -832,7 +832,7 @@ def db_init_cmd() -> None:
 
     except Exception as e:
         typer.echo(f"❌ Error initializing database: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 def _check_dimension_compatibility(provider: str, requested_dim: int | None) -> None:
@@ -879,7 +879,7 @@ def _check_dimension_compatibility(provider: str, requested_dim: int | None) -> 
                     "Re-run with '--changed-only=false' and '--reembed-all' (or purge embeddings).",
                     err=True,
                 )
-                raise typer.Exit(1) from e
+                raise typer.Exit(1)
         except Exception:
             # If we can't check, continue (might be empty database)
             pass
@@ -994,7 +994,7 @@ def embed_load_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Error loading embeddings: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -1016,7 +1016,11 @@ def ask(
     topk_bm25: int = typer.Option(200, "--topk-bm25", help="Top-k for BM25 retrieval in hybrid mode"),
     rrf_k: int = typer.Option(60, "--rrf-k", help="RRF parameter k (typically 60)"),
     boosts: bool = typer.Option(True, "--boosts/--no-boosts", help="Enable domain-aware boosts"),
-    filter_n2s: bool = typer.Option(True, "--filter-n2s/--no-filter-n2s", help="Enable N2S query detection and filtering"),
+    filter_n2s: bool = typer.Option(
+        True,
+        "--filter-n2s/--no-filter-n2s",
+        help="Enable N2S query detection and filtering",
+    ),
     server_side: bool = typer.Option(False, "--server-side", help="Use server-side RRF SQL function"),
     export_trace: str | None = typer.Option(None, "--export-trace", help="Export trace JSON to directory"),
 ) -> None:
@@ -1049,7 +1053,7 @@ def ask(
     final_db_url = db_url or os.getenv("TRAILBLAZER_DB_URL")
     if not final_db_url:
         typer.echo("❌ TRAILBLAZER_DB_URL required", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     # NDJSON event emitter - outputs to stdout
     def emit_event(event_type: str, **kwargs):
@@ -1099,7 +1103,7 @@ def ask(
         if not hits:
             typer.echo("❌ No results found", err=True)
             emit_event("ask.no_results")
-            raise typer.Exit(1) from e
+            raise typer.Exit(1)
 
         # Group and pack results
         pack_start = time.time()
@@ -1192,7 +1196,7 @@ def ask(
     except Exception as e:
         emit_event("ask.error", error=str(e))
         typer.echo(f"❌ Error during retrieval: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @ops_app.command("prune-runs")
@@ -1388,7 +1392,7 @@ def _validate_workspace_only() -> None:
                 "Please run 'trailblazer paths ensure' and migrate data to var/",
                 err=True,
             )
-            raise typer.Exit(1) from e
+            raise typer.Exit(1)
 
 
 def _get_confluence_spaces() -> list[str]:
@@ -1438,7 +1442,7 @@ def _get_confluence_spaces() -> list[str]:
         typer.echo("   1. Check Confluence credentials in .env file", err=True)
         typer.echo("   2. Test connection: trailblazer confluence spaces", err=True)
         typer.echo("   3. Verify CONFLUENCE_BASE_URL format", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 def _get_runs_needing_normalization() -> list[str]:
@@ -1789,12 +1793,12 @@ def enrich(
             f"❌ Run {run_id} not found or normalize phase not completed",
             err=True,
         )
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     normalized_file = normalize_dir / "normalized.ndjson"
     if not normalized_file.exists():
         typer.echo(f"❌ Normalized file not found: {normalized_file}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     # Setup output directory
     enrich_dir = phase_dir(run_id, "enrich")
@@ -1880,7 +1884,7 @@ def enrich(
     except Exception as e:
         emit_event("enrich.error", error=str(e))
         typer.echo(f"❌ Enrichment failed: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 def _generate_enrichment_assurance_md(stats: dict, output_path: Path) -> None:
@@ -1978,7 +1982,7 @@ def chunk(
     run_dir = phase_dir(run_id, "").parent
     if not run_dir.exists():
         typer.echo(f"❌ Run {run_id} not found", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     # Check for input files
     enrich_dir = phase_dir(run_id, "enrich")
@@ -1998,7 +2002,7 @@ def chunk(
             f"❌ No input files found. Run 'trailblazer enrich {run_id}' or 'trailblazer normalize {run_id}' first",
             err=True,
         )
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     # Create chunk directory
     chunk_dir = phase_dir(run_id, "chunk")
@@ -2062,7 +2066,7 @@ def chunk(
 
     except Exception as e:
         typer.echo(f"❌ Chunking failed: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -2167,7 +2171,7 @@ def enrich_all(
     base_dir = runs_dir()
     if not base_dir.exists():
         typer.echo("❌ No runs directory found", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
         # Find runs that need enrichment
     runs_to_enrich = []
@@ -2254,7 +2258,7 @@ def ops_monitor_cmd(
 
     if not progress_file.exists():
         typer.echo(f"❌ {progress_file} not found", err=True)
-        raise typer.Exit(2) from e
+        raise typer.Exit(2)
 
     def iso_to_epoch(iso_str: str) -> int:
         """Convert ISO 8601 string to epoch timestamp."""
@@ -2402,7 +2406,7 @@ def ops_dispatch_cmd(
     runs_path = Path(runs_file)
     if not runs_path.exists() or runs_path.stat().st_size == 0:
         typer.echo(f"❌ {runs_file} missing or empty", err=True)
-        raise typer.Exit(2) from e
+        raise typer.Exit(2)
 
     typer.echo(f"🚀 Dispatching {workers} parallel embedding workers")
     typer.echo(f"📁 Runs file: {runs_file}")
@@ -2414,7 +2418,7 @@ def ops_dispatch_cmd(
 
         if not lines:
             typer.echo("❌ No valid runs found in file", err=True)
-            raise typer.Exit(1) from e
+            raise typer.Exit(1)
 
         typer.echo(f"📊 Found {len(lines)} runs to embed")
 
@@ -2453,7 +2457,7 @@ def ops_dispatch_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Dispatch error: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @ops_app.command("track-pages")
@@ -2571,7 +2575,7 @@ def ops_kill_cmd() -> None:
 
     except Exception as e:
         typer.echo(f"❌ Error killing processes: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @runs_app.command("reset")
@@ -2598,7 +2602,7 @@ def runs_reset_cmd(
             f"❌ Invalid scope: {scope}. Use: {', '.join(valid_scopes)}",
             err=True,
         )
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     # Show what would be affected
     if not dry_run and not yes and scope in ("embeddings", "all"):
@@ -2634,7 +2638,7 @@ def runs_reset_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Reset failed: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @runs_app.command("status")
@@ -2677,7 +2681,7 @@ def runs_status_cmd() -> None:
 
     except Exception as e:
         typer.echo(f"❌ Failed to get status: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 # Add logs management subcommands
@@ -2723,7 +2727,7 @@ def logs_index():
 
     except Exception as e:
         typer.echo(f"❌ Failed to get log index: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @logs_app.command("prune")
@@ -2806,7 +2810,7 @@ def logs_prune(
 
     except Exception as e:
         typer.echo(f"❌ Failed to prune logs: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @logs_app.command("doctor")
@@ -2834,11 +2838,11 @@ def logs_doctor():
 
         # Exit with error if unfixable issues
         if result["health"] != "healthy":
-            raise typer.Exit(1) from e
+            raise typer.Exit(1)
 
     except Exception as e:
         typer.echo(f"❌ Log doctor failed: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @embed_app.command("run")
@@ -2871,11 +2875,11 @@ def embed_run_cmd(
 
     if provider != "openai":
         typer.echo("❌ Only OpenAI provider is supported", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     if dimension != 1536:
         typer.echo("❌ Only 1536 dimensions supported", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     try:
         from ..pipeline.steps.embed.simple_loader import simple_embed_run
@@ -2898,7 +2902,7 @@ def embed_run_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Embed failed: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @embed_app.command("corpus")
@@ -2966,11 +2970,11 @@ def embed_corpus_cmd(
     # Validate provider
     if provider != "openai":
         typer.echo("❌ Only OpenAI provider is supported", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     if dimension != 1536:
         typer.echo("❌ Only 1536 dimensions supported", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     from datetime import datetime, timezone
 
@@ -2997,7 +3001,7 @@ def embed_corpus_cmd(
             typer.echo(f"📍 Resuming from: {resume_from}")
         except ValueError:
             typer.echo(f"❌ Resume run '{resume_from}' not found", err=True)
-            raise typer.Exit(1) from e
+            raise typer.Exit(1)
 
     if max_runs:
         runs_with_chunks = runs_with_chunks[:max_runs]
@@ -3007,7 +3011,7 @@ def embed_corpus_cmd(
 
     if total_runs == 0:
         typer.echo("❌ No runs with chunks found", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     # Process each run using our simple working approach
     success_count = 0
@@ -3052,7 +3056,7 @@ def embed_corpus_cmd(
 
     if failure_count > 0:
         typer.echo(f"⚠️  {failure_count} runs failed", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @embed_app.command("reembed-if-changed")
@@ -3105,7 +3109,7 @@ def embed_reembed_if_changed_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Re-embedding failed: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 # OLD PREFLIGHT COMMAND REMOVED - USE plan-preflight INSTEAD
@@ -3157,12 +3161,12 @@ def embed_dispatch_cmd(
     plan_dir = Path(plan_preflight_dir)
     if not plan_dir.exists():
         typer.echo(f"❌ Plan directory not found: {plan_preflight_dir}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     ready_file = plan_dir / "ready.txt"
     if not ready_file.exists():
         typer.echo(f"❌ ready.txt not found in {plan_preflight_dir}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
     # Read runs from ready.txt (these are already validated by plan-preflight)
     runs = []
@@ -3363,7 +3367,7 @@ def embed_plan_preflight_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Plan preflight failed: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @embed_app.command("plan-diagnose")
@@ -3397,14 +3401,14 @@ def embed_plan_diagnose_cmd(
     if plan_dir:
         if not Path(plan_dir).exists():
             typer.echo(f"❌ Plan directory not found: {plan_dir}", err=True)
-            raise typer.Exit(1) from e
+            raise typer.Exit(1)
         target_plan_dir = plan_dir
     else:
         # Auto-find latest plan bundle
         plan_dirs = glob.glob("var/plan_preflight*/*/")
         if not plan_dirs:
             typer.echo("❌ No plan preflight directories found", err=True)
-            raise typer.Exit(1) from e
+            raise typer.Exit(1)
         target_plan_dir = sorted(plan_dirs)[-1].rstrip("/")
 
     typer.echo(f"🔍 Diagnosing plan bundle: {target_plan_dir}", err=True)
@@ -3432,7 +3436,7 @@ def embed_plan_diagnose_cmd(
 
     except Exception as e:
         typer.echo(f"❌ Diagnosis failed: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @embed_app.command("status")
@@ -3525,7 +3529,7 @@ def embed_status_cmd() -> None:
 
     except Exception as e:
         typer.echo(f"❌ Error getting status: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise typer.Exit(1)
 
 
 @embed_app.command("clean-preflight")
@@ -3629,7 +3633,7 @@ def embed_clean_preflight_cmd(
 
     if bad_bundles:
         typer.echo("\n🚨 Bad bundles found:", err=True)
-        for plan_dir, reasons in bad_bundles:
+        for plan_dir, _reasons in bad_bundles:
             typer.echo(f"   - {plan_dir.name}: {', '.join(reasons)}", err=True)
 
     if stray_files:
@@ -3650,7 +3654,7 @@ def embed_clean_preflight_cmd(
         archive_base.mkdir(parents=True, exist_ok=True)
 
         # Archive bad bundles
-        for plan_dir, reasons in bad_bundles:
+        for plan_dir, _reasons in bad_bundles:
             archive_dest = archive_base / plan_dir.name
             typer.echo(f"📦 Archiving {plan_dir.name} -> {archive_dest}", err=True)
             shutil.copytree(plan_dir, archive_dest)
