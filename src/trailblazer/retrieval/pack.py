@@ -6,7 +6,9 @@ import re
 from typing import Any
 
 
-def group_by_doc(hits: list[dict[str, Any]], max_chunks_per_doc: int) -> list[dict[str, Any]]:
+def group_by_doc(
+    hits: list[dict[str, Any]], max_chunks_per_doc: int
+) -> list[dict[str, Any]]:
     """
     Group hits by document and limit chunks per document.
 
@@ -118,7 +120,9 @@ def pack_context(hits: list[dict[str, Any]], max_chars: int = 6000) -> str:
 
                 # Add truncated content if meaningful
                 if len(truncated_text.strip()) > 20:
-                    context_parts.append(safe_separator + truncated_text + "\n[... truncated]")
+                    context_parts.append(
+                        safe_separator + truncated_text + "\n[... truncated]"
+                    )
 
             break
 

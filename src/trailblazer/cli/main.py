@@ -1011,6 +1011,14 @@ def ask(
     format_output: str = typer.Option("text", "--format", help="Output format (text, json)"),
     out_dir: str | None = typer.Option(None, "--out", help="Output directory (default: runs/<run_id>/ask/)"),
     db_url: str | None = typer.Option(None, "--db-url", help="Database URL override"),
+    hybrid: bool = typer.Option(True, "--hybrid/--no-hybrid", help="Enable hybrid retrieval (dense + BM25)"),
+    topk_dense: int = typer.Option(200, "--topk-dense", help="Top-k for dense retrieval in hybrid mode"),
+    topk_bm25: int = typer.Option(200, "--topk-bm25", help="Top-k for BM25 retrieval in hybrid mode"),
+    rrf_k: int = typer.Option(60, "--rrf-k", help="RRF parameter k (typically 60)"),
+    boosts: bool = typer.Option(True, "--boosts/--no-boosts", help="Enable domain-aware boosts"),
+    filter_n2s: bool = typer.Option(True, "--filter-n2s/--no-filter-n2s", help="Enable N2S query detection and filtering"),
+    server_side: bool = typer.Option(False, "--server-side", help="Use server-side RRF SQL function"),
+    export_trace: str | None = typer.Option(None, "--export-trace", help="Export trace JSON to directory"),
 ) -> None:
     """Ask a question using dense retrieval over embedded chunks."""
     # Run database preflight check only if not using custom db_url
@@ -1069,12 +1077,22 @@ def ask(
     try:
         # Create retriever
         start_time = time.time()
-        retriever = create_retriever(db_url=final_db_url, provider_name=provider)
+        retriever = create_retriever(
+            db_url=final_db_url,
+            provider_name=provider,
+            enable_hybrid=hybrid,
+            topk_dense=topk_dense,
+            topk_bm25=topk_bm25,
+            rrf_k=rrf_k,
+            enable_boosts=boosts,
+            enable_n2s_filter=filter_n2s,
+            server_side=server_side,
+        )
 
         # Perform search with event logging
         search_start = time.time()
         emit_event("search.begin", query=question, top_k=top_k, provider=provider)
-        hits = retriever.search(question, top_k=top_k)
+        hits = retriever.search(question, top_k=top_k, export_trace_dir=export_trace)
         emit_event("search.end", total_hits=len(hits))
         search_time = time.time() - search_start
 

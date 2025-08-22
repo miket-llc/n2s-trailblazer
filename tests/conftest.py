@@ -16,8 +16,10 @@ def test_db_url():
     import os
 
     # Check if we need pgvector (full PostgreSQL)
-    if os.environ.get("TB_TESTING_PGVECTOR") == "1" or os.environ.get("TB_TESTING_INTEGRATION") == "1":
-        return "postgresql+psycopg2://trailblazer:trailblazer_dev_password@localhost:5432/trailblazer"
+    if (os.environ.get("TB_TESTING_PGVECTOR") == "1" or
+            os.environ.get("TB_TESTING_INTEGRATION") == "1"):
+        return ("postgresql://trailblazer:trailblazer_dev_password@"
+                "localhost:5432/trailblazer")
 
     # Default to SQLite for fast unit tests
     else:

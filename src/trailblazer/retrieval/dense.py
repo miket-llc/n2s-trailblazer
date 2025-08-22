@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -62,7 +64,17 @@ def expand_n2s_query(query: str) -> str:
 
     # Phase and stage terms
     phases = ["Discovery", "Build", "Optimize"]
-    stages = ["Start", "Prepare", "Sprint 0", "Plan", "Configure", "Test", "Deploy", "Go-Live", "Post Go-Live"]
+    stages = [
+        "Start",
+        "Prepare",
+        "Sprint 0",
+        "Plan",
+        "Configure",
+        "Test",
+        "Deploy",
+        "Go-Live",
+        "Post Go-Live",
+    ]
 
     # Governance terms
     governance = ["governance checkpoints", "entry criteria", "exit criteria"]
@@ -135,8 +147,11 @@ def apply_domain_boosts(
 
         # Apply negative boost for monthly pages
         if re.search(
-            r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\b", title
-        ) or re.search(r"\b(20\d{2})\b", title):  # Year patterns
+            r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\b",
+            title,
+        ) or re.search(
+            r"\b(20\d{2})\b", title
+        ):  # Year patterns
             boost -= 0.10
 
         # Apply boost
@@ -275,6 +290,7 @@ class DenseRetriever:
         rrf_k: int = 60,
         enable_boosts: bool = True,
         enable_n2s_filter: bool = True,
+        server_side: bool = False,
     ):
         """
         Initialize dense retriever.
@@ -290,6 +306,7 @@ class DenseRetriever:
             rrf_k: RRF parameter k (typically 60)
             enable_boosts: Enable domain-aware boosts
             enable_n2s_filter: Enable N2S query detection and filtering
+            server_side: Use server-side RRF SQL function
         """
         self.db_url = db_url
         self.provider_name = provider_name
@@ -301,6 +318,7 @@ class DenseRetriever:
         self.rrf_k = rrf_k
         self.enable_boosts = enable_boosts
         self.enable_n2s_filter = enable_n2s_filter
+        self.server_side = server_side
         self._provider = None
         self._session_factory = None
         self._bm25_index_created = False
@@ -441,7 +459,9 @@ class DenseRetriever:
                 )
 
                 if embedding_record:
-                    embedding_vec = np.array(deserialize_embedding(embedding_record.embedding))
+                    embedding_vec = np.array(
+                        deserialize_embedding(embedding_record.embedding)
+                    )
                     score = cosine_sim(query_vec, embedding_vec)
 
                     candidates.append(
@@ -468,17 +488,21 @@ class DenseRetriever:
         with self.session_factory() as session:
             try:
                 # Create GIN index on tsvector for proper BM25
-                session.execute("""
+                session.execute(
+                    """
                     CREATE INDEX IF NOT EXISTS idx_chunks_content_tsvector
                     ON chunks USING GIN (to_tsvector('english', text_md))
-                """)
+                """
+                )
 
                 # Also keep trigram index for fallback compatibility
                 session.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
-                session.execute("""
+                session.execute(
+                    """
                     CREATE INDEX IF NOT EXISTS idx_chunks_content_gin
                     ON chunks USING GIN (text_md gin_trgm_ops)
-                """)
+                """
+                )
 
                 session.commit()
                 self._bm25_index_created = True
@@ -486,6 +510,107 @@ class DenseRetriever:
                 # Index creation failed, but continue - BM25 will be disabled
                 print(f"Warning: Could not create BM25 index: {e}")
                 self.enable_bm25_fallback = False
+
+    def search_bm25(
+        self,
+        query: str,
+        top_k: int = 200,
+        space_whitelist: list[str] | None = None,
+        n2s_filter: bool = False,
+        expand_query: bool = True,
+    ) -> list[dict[str, Any]]:
+        """
+        BM25 full-text search using PostgreSQL tsvector.
+
+        Args:
+            query: Search query
+            top_k: Number of top results to return
+            space_whitelist: Optional list of space keys to filter documents
+            n2s_filter: Filter to N2S-related documents
+            expand_query: Whether to expand N2S queries
+
+        Returns:
+            List of chunk results with BM25 scores
+        """
+        self._ensure_bm25_index()
+
+        # Apply query expansion if enabled
+        final_query = expand_n2s_query(query) if expand_query else query
+
+        with self.session_factory() as session:
+            from sqlalchemy import text
+
+            # Build BM25 query using ts_rank_cd for better ranking
+            sql_query = """
+                SELECT
+                    c.chunk_id,
+                    c.doc_id,
+                    c.text_md,
+                    d.title,
+                    d.url,
+                    d.source_system,
+                    d.meta,
+                    ts_rank_cd(to_tsvector('english', c.text_md), plainto_tsquery('english', :query)) as score
+                FROM chunks c
+                JOIN documents d ON c.doc_id = d.doc_id
+                WHERE to_tsvector('english', c.text_md) @@ plainto_tsquery('english', :query)
+            """
+
+            params = {"query": final_query}
+
+            # Add N2S filter if requested
+            if n2s_filter:
+                sql_query += """
+                    AND (d.title ILIKE '%N2S%'
+                         OR d.title ILIKE '%Navigate to SaaS%'
+                         OR d.title ILIKE '%Methodology%'
+                         OR d.title ILIKE '%Playbook%'
+                         OR d.title ILIKE '%Runbook%'
+                         OR d.meta::text ILIKE '%doctype%methodology%'
+                         OR d.meta::text ILIKE '%doctype%playbook%'
+                         OR d.meta::text ILIKE '%doctype%runbook%')
+                """
+
+            # Add space whitelist filter if provided
+            if space_whitelist:
+                placeholders = ",".join(
+                    [f":space_{i}" for i in range(len(space_whitelist))]
+                )
+                sql_query += f" AND d.space_key IN ({placeholders})"
+                for i, space_key in enumerate(space_whitelist):
+                    params[f"space_{i}"] = space_key
+
+            # Add ordering and limit
+            sql_query += """
+                ORDER BY score DESC, d.doc_id ASC, c.chunk_id ASC
+                LIMIT :top_k
+            """
+            params["top_k"] = top_k
+
+            try:
+                result = session.execute(text(sql_query), params)
+
+                candidates = []
+                for row in result:
+                    candidates.append(
+                        {
+                            "chunk_id": row[0],
+                            "doc_id": row[1],
+                            "text_md": row[2],
+                            "title": row[3] or "",
+                            "url": row[4] or "",
+                            "source_system": row[5],
+                            "meta": row[6],
+                            "score": float(row[7]),
+                            "search_type": "bm25",
+                        }
+                    )
+
+                return candidates
+
+            except Exception as e:
+                print(f"Warning: BM25 search failed: {e}")
+                return []
 
     def search_bm25_fallback(
         self,
@@ -543,7 +668,9 @@ class DenseRetriever:
 
             # Add space whitelist filter if provided
             if space_whitelist:
-                placeholders = ",".join([f":space_{i}" for i in range(len(space_whitelist))])
+                placeholders = ",".join(
+                    [f":space_{i}" for i in range(len(space_whitelist))]
+                )
                 sql_query += f" AND d.space_key IN ({placeholders})"
                 for i, space_key in enumerate(space_whitelist):
                     params[f"space_{i}"] = space_key
@@ -585,40 +712,196 @@ class DenseRetriever:
         query: str,
         top_k: int = 8,
         space_whitelist: list[str] | None = None,
+        export_trace_dir: str | None = None,
     ) -> list[dict[str, Any]]:
         """
-        Search for similar chunks using dense retrieval with BM25 fallback.
+        Search for similar chunks using hybrid retrieval or dense with BM25 fallback.
 
         Args:
             query: Query text
             top_k: Number of top results to return
             space_whitelist: Optional list of space keys to filter documents
+            export_trace_dir: Optional directory to export trace JSON
 
         Returns:
             List of dicts with chunk info and similarity scores
         """
+        trace_data = {
+            "query": query,
+            "is_n2s_query": is_n2s_query(query),
+            "hybrid_enabled": self.enable_hybrid,
+            "candidates": [],
+        }
+
+        # Determine if we should apply N2S filtering
+        apply_n2s_filter = self.enable_n2s_filter and is_n2s_query(query)
+
+        if self.enable_hybrid:
+            return self._search_hybrid(
+                query,
+                top_k,
+                space_whitelist,
+                apply_n2s_filter,
+                trace_data,
+                export_trace_dir,
+            )
+        else:
+            return self._search_legacy(
+                query,
+                top_k,
+                space_whitelist,
+                apply_n2s_filter,
+                trace_data,
+                export_trace_dir,
+            )
+
+    def _search_hybrid(
+        self,
+        query: str,
+        top_k: int,
+        space_whitelist: list[str] | None,
+        n2s_filter: bool,
+        trace_data: dict[str, Any],
+        export_trace_dir: str | None,
+    ) -> list[dict[str, Any]]:
+        """Perform hybrid search with dense + BM25 and RRF fusion."""
+        try:
+            # Dense retrieval
+            query_vec = self.embed_query(query)
+            dense_results = self.search_postgres(
+                query_vec, self.provider_name, self.topk_dense, space_whitelist
+            )
+
+            # Mark as dense
+            for r in dense_results:
+                r["search_type"] = "dense"
+
+            # BM25 retrieval
+            bm25_results = self.search_bm25(
+                query, self.topk_bm25, space_whitelist, n2s_filter, expand_query=True
+            )
+
+            # Apply RRF fusion
+            fused_results = reciprocal_rank_fusion(
+                dense_results, bm25_results, self.rrf_k
+            )
+
+            # Apply domain boosts
+            boosted_results = apply_domain_boosts(fused_results, self.enable_boosts)
+
+            # Sort by final score (RRF + boosts)
+            final_results = sorted(
+                boosted_results, key=lambda x: (-x["score"], x["chunk_id"])
+            )[:top_k]
+
+            # Update trace data
+            trace_data.update(
+                {
+                    "dense_results": len(dense_results),
+                    "bm25_results": len(bm25_results),
+                    "fused_results": len(fused_results),
+                    "final_results": len(final_results),
+                    "n2s_filter_applied": n2s_filter,
+                    "boosts_applied": self.enable_boosts,
+                    "candidates": final_results[:5],  # Top 5 for trace
+                }
+            )
+
+            # Export trace if requested
+            if export_trace_dir:
+                self._export_trace(trace_data, export_trace_dir)
+
+            return final_results
+
+        except Exception as e:
+            print(f"Warning: Hybrid retrieval failed: {e}")
+            # Fall back to legacy search
+            return self._search_legacy(
+                query, top_k, space_whitelist, n2s_filter, trace_data, export_trace_dir
+            )
+
+    def _search_legacy(
+        self,
+        query: str,
+        top_k: int,
+        space_whitelist: list[str] | None,
+        n2s_filter: bool,
+        trace_data: dict[str, Any],
+        export_trace_dir: str | None,
+    ) -> list[dict[str, Any]]:
+        """Perform legacy dense retrieval with BM25 fallback."""
         # Try dense retrieval first
         try:
-            # Embed the query
             query_vec = self.embed_query(query)
+            candidates = self.search_postgres(
+                query_vec, self.provider_name, top_k, space_whitelist
+            )
 
-            # Use PostgreSQL + pgvector search (only supported database)
-            candidates = self.search_postgres(query_vec, self.provider_name, top_k, space_whitelist)
-
-            # If we got results, return them
             if candidates:
-                return candidates
+                # Mark as dense and apply boosts
+                for r in candidates:
+                    r["search_type"] = "dense"
+
+                boosted_results = apply_domain_boosts(candidates, self.enable_boosts)
+
+                trace_data.update(
+                    {
+                        "search_method": "dense_only",
+                        "results": len(boosted_results),
+                        "candidates": boosted_results[:5],
+                    }
+                )
+
+                if export_trace_dir:
+                    self._export_trace(trace_data, export_trace_dir)
+
+                return boosted_results
 
         except Exception as e:
             print(f"Warning: Dense retrieval failed: {e}")
 
         # If dense retrieval returned no results or failed, try BM25 fallback
         if self.enable_bm25_fallback:
-            print(f"Dense retrieval returned 0 results, falling back to BM25 for query: {query[:50]}...")
-            return self.search_bm25_fallback(query, top_k, space_whitelist)
+            print(
+                f"Dense retrieval returned 0 results, falling back to BM25 for query: {query[:50]}..."
+            )
+            fallback_results = self.search_bm25_fallback(
+                query, top_k, space_whitelist, n2s_filter
+            )
+
+            trace_data.update(
+                {
+                    "search_method": "bm25_fallback",
+                    "results": len(fallback_results),
+                    "candidates": fallback_results[:5],
+                }
+            )
+
+            if export_trace_dir:
+                self._export_trace(trace_data, export_trace_dir)
+
+            return fallback_results
 
         # No fallback available, return empty results
         return []
+
+    def _export_trace(self, trace_data: dict[str, Any], export_dir: str) -> None:
+        """Export trace data to JSON file."""
+        try:
+            trace_dir = Path(export_dir)
+            trace_dir.mkdir(parents=True, exist_ok=True)
+
+            from datetime import datetime
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            trace_file = trace_dir / f"trace_{timestamp}.json"
+
+            with open(trace_file, "w") as f:
+                json.dump(trace_data, f, indent=2)
+
+            print(f"Trace exported to: {trace_file}")
+        except Exception as e:
+            print(f"Warning: Failed to export trace: {e}")
 
 
 def create_retriever(
@@ -626,6 +909,13 @@ def create_retriever(
     provider_name: str = "dummy",
     dim: int | None = None,
     enable_bm25_fallback: bool = True,
+    enable_hybrid: bool = True,
+    topk_dense: int = 200,
+    topk_bm25: int = 200,
+    rrf_k: int = 60,
+    enable_boosts: bool = True,
+    enable_n2s_filter: bool = True,
+    server_side: bool = False,
 ) -> DenseRetriever:
     """
     Factory function to create a DenseRetriever.
@@ -635,10 +925,27 @@ def create_retriever(
         provider_name: Embedding provider name
         dim: Embedding dimension (auto-detected if None)
         enable_bm25_fallback: Enable BM25 full-text fallback
+        enable_hybrid: Enable hybrid retrieval (dense + BM25 with RRF)
+        topk_dense: Top-k for dense retrieval in hybrid mode
+        topk_bm25: Top-k for BM25 retrieval in hybrid mode
+        rrf_k: RRF parameter k (typically 60)
+        enable_boosts: Enable domain-aware boosts
+        enable_n2s_filter: Enable N2S query detection and filtering
+        server_side: Use server-side RRF SQL function
 
     Returns:
         DenseRetriever instance
     """
     return DenseRetriever(
-        db_url=db_url, provider_name=provider_name, dim=dim, enable_bm25_fallback=enable_bm25_fallback
+        db_url=db_url,
+        provider_name=provider_name,
+        dim=dim,
+        enable_bm25_fallback=enable_bm25_fallback,
+        enable_hybrid=enable_hybrid,
+        topk_dense=topk_dense,
+        topk_bm25=topk_bm25,
+        rrf_k=rrf_k,
+        enable_boosts=enable_boosts,
+        enable_n2s_filter=enable_n2s_filter,
+        server_side=server_side,
     )
