@@ -25,6 +25,31 @@ groups:
   configuration:
     any_of: ["configure", "configuration", "setup", "parameterization"]
 
+# Process concept groups for N2S/Ellucian queries
+process_groups:
+  runbook_process:
+    any_of: ["runbook", "playbook", "sop", "operational guide", "cutover plan", "deployment checklist", "procedure", "workflow"]
+  capability_driven_process:
+    any_of: ["capability-driven", "capability led", "capability-led", "capability based", "capability-based", "capability focused", "capability centric"]
+  plan_stage_process:
+    any_of: ["plan stage", "planning phase", "project planning", "plan-phase", "plan baseline", "planning milestone", "plan checkpoint"]
+  testing_strategy_process:
+    any_of: ["testing strategy", "test strategy", "qa strategy", "verification plan", "test approach", "quality assurance plan"]
+  continuous_testing_process:
+    any_of: ["continuous testing", "test automation", "shift-left", "ci testing", "automated testing", "continuous quality"]
+  data_migration_process:
+    any_of: ["data migration", "cutover data load", "dm strategy", "etl plan", "trial conversion", "data conversion", "migration wave"]
+  integration_patterns_process:
+    any_of: ["integration patterns", "ethos", "api pattern", "event pattern", "batch interface", "integration strategy", "connectivity pattern"]
+  governance_process:
+    any_of: ["governance", "raaci", "raci", "decision rights", "steering", "stage gate", "approval process", "decision framework"]
+  sprint0_process:
+    any_of: ["sprint 0", "architecture alignment", "aaw", "foundations sprint", "initial sprint", "setup sprint"]
+  deploy_cutover_process:
+    any_of: ["cutover", "go-live", "deployment", "hypercare", "production deployment", "live deployment"]
+  configuration_process:
+    any_of: ["configure", "configuration", "setup", "parameterization", "environment setup", "system configuration"]
+
 # Optional map of query_id → required group ids (kept small; any-of within each group)
 require_by_query:
   lifecycle_overview: ["sprint0", "governance"]
@@ -37,3 +62,16 @@ require_by_query:
   configure_runbook: ["configuration", "runbook"]
   cap_vs_runbook: ["capability_driven", "runbook"]
   continuous_testing: ["continuous_testing"]
+
+# Process group requirements for N2S queries
+process_require_by_query:
+  n2s_lifecycle_overview: ["sprint0_process", "governance_process"]
+  n2s_sprint0_scope: ["sprint0_process", "capability_driven_process"]
+  n2s_plan_governance: ["governance_process", "plan_stage_process"]
+  n2s_configure_runbook: ["configuration_process", "runbook_process"]
+  n2s_test_strategy: ["testing_strategy_process", "continuous_testing_process"]
+  n2s_deploy_cutover: ["deploy_cutover_process", "runbook_process"]
+  n2s_cap_vs_runbook: ["capability_driven_process", "runbook_process"]
+  n2s_continuous_testing: ["continuous_testing_process", "testing_strategy_process"]
+  n2s_data_migration: ["data_migration_process", "deploy_cutover_process"]
+  n2s_integration_patterns: ["integration_patterns_process", "governance_process"]

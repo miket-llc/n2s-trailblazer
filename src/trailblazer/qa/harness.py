@@ -16,6 +16,7 @@ def evaluate_expectations(
     top_k: int = 12,
     threshold: float = 0.7,
     mode: str = "doc+concept",
+    expect_profile: str = "default",
 ) -> dict[str, Any]:
     """
     Evaluate query expectations using the Expectation Harness v2.
@@ -26,13 +27,19 @@ def evaluate_expectations(
         top_k: Number of top items to consider (default: 12)
         threshold: Pass threshold for final score (default: 0.7)
         mode: Scoring mode: "doc+concept", "doc-only", or "concept-only"
+        expect_profile: Expectation profile to use (default: "default")
 
     Returns:
         Dictionary with evaluation results including passed, score, anchors_hit,
         missing_groups, etc.
     """
     return evaluate_query_expectations(
-        query_id=query_id, retrieved_items=retrieved_items, top_k=top_k, threshold=threshold, mode=mode
+        query_id=query_id,
+        retrieved_items=retrieved_items,
+        top_k=top_k,
+        threshold=threshold,
+        mode=mode,
+        expect_profile=expect_profile,
     )
 
 

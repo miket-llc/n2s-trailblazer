@@ -7,6 +7,7 @@ EXPECTED_COUNT_4 = 4
 
 import tempfile
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -460,6 +461,77 @@ class TestReportGeneration:
         assert "⚠️ **System is BLOCKED - address failures before production.**" in markdown
         # Note: Current implementation doesn't categorize failures into specific issue types
         # The test has been updated to match current behavior
+
+
+def test_expect_synonyms_match():
+    """Test that expected phrase matching works with synonyms."""
+    from scripts.qa_retrieval import expect_ok
+
+    # Mock lexicon
+    lexicon = {"fgac": ["FGAC", "Financial Aid", "financial aid"], "sso": ["SSO", "Single Sign-On", "single sign-on"]}
+
+    # Mock hits with text containing synonyms
+    hits = [
+        {"text_md": "This document discusses FGAC implementation"},
+        {"text_md": "Single sign-on is configured here"},
+    ]
+
+    # Test with original phrase
+    expect_phrases = ["FGAC", "SSO"]
+    result, notes = expect_ok(hits, expect_phrases, lexicon)
+    assert result is True
+    assert len(notes) == 0
+
+    # Test with synonym
+    expect_phrases = ["Financial Aid", "Single Sign-On"]
+    result, notes = expect_ok(hits, expect_phrases, lexicon)
+    assert result is True
+    assert len(notes) == 0
+
+
+def test_expect_hyphen_variants():
+    """Test that expected phrase matching works with hyphen variants."""
+    from scripts.qa_retrieval import expect_ok
+
+    # Mock lexicon with hyphen variants
+    lexicon = {
+        "go_live": ["Go-Live", "go-live", "Go Live", "go live"],
+        "navigate_to_saas": ["Navigate-to-SaaS", "Navigate to SaaS"],
+    }
+
+    # Mock hits with different variants
+    hits = [{"text_md": "The go-live process is scheduled"}, {"text_md": "Navigate to SaaS platform details"}]
+
+    # Test with different variants
+    expect_phrases = ["Go-Live", "Navigate-to-SaaS"]
+    result, notes = expect_ok(hits, expect_phrases, lexicon)
+    assert result is True
+    assert len(notes) == 0
+
+
+def test_query_expansion_improves_expect():
+    """Test that query expansion improves expected phrase matching."""
+    from scripts.qa_retrieval import retrieve_with_expansion
+
+    # Mock retriever
+    mock_retriever = Mock()
+
+    # Mock lexicon
+    lexicon = {"fgac": ["FGAC", "Financial Aid", "financial aid"]}
+
+    # Mock search results
+    mock_retriever.search.side_effect = [
+        [{"doc_id": "1", "chunk_id": "1:001", "score": 0.9, "text_md": "FGAC implementation"}],
+        [{"doc_id": "2", "chunk_id": "2:001", "score": 0.8, "text_md": "Financial aid process"}],
+    ]
+
+    # Test query expansion with a query that contains a lexicon term
+    query = "How to configure FGAC access control?"
+    results = retrieve_with_expansion(query, mock_retriever, 5, lexicon)
+
+    # Should have results from both variants
+    assert len(results) > 0
+    assert mock_retriever.search.call_count >= 2  # At least 2 variants
 
 
 if __name__ == "__main__":

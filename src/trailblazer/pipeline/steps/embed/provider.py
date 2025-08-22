@@ -117,6 +117,131 @@ class OpenAIEmbedder(EmbeddingProvider):
         return "openai"
 
 
+class AzureOpenAIEmbedder(EmbeddingProvider):
+    """Azure OpenAI embedding provider (requires Azure credentials)."""
+
+    def __init__(self, model: str = "text-embedding-3-small", dim: int = 1536):
+        self.model = model
+        self.dim = dim
+        self.api_key = os.getenv("AZURE_OPENAI_API_KEY")
+        self.endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        self.deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+
+        if not self.api_key:
+            raise ValueError("AZURE_OPENAI_API_KEY environment variable is required")
+        if not self.endpoint:
+            raise ValueError("AZURE_OPENAI_ENDPOINT environment variable is required")
+        if not self.deployment:
+            raise ValueError("AZURE_OPENAI_DEPLOYMENT environment variable is required")
+
+    def embed(self, text: str) -> list[float]:
+        """Generate embedding using Azure OpenAI API."""
+        try:
+            import openai  # type: ignore[import-not-found]
+        except ImportError:
+            raise ImportError("openai package required for Azure OpenAI embeddings: pip install openai") from None
+
+        client = openai.AzureOpenAI(
+            api_key=self.api_key,
+            api_version="2024-02-01",
+            azure_endpoint=self.endpoint,
+        )
+        response = client.embeddings.create(
+            model=self.deployment,  # Use deployment name for Azure
+            input=text,
+            dimensions=(self.dim if self.model.startswith("text-embedding-3") else openai.NOT_GIVEN),
+        )
+        return response.data[0].embedding
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for batch of texts."""
+        try:
+            import openai  # type: ignore[import-not-found]
+        except ImportError:
+            raise ImportError("openai package required for Azure OpenAI embeddings: pip install openai") from None
+
+        client = openai.AzureOpenAI(
+            api_key=self.api_key,
+            api_version="2024-02-01",
+            azure_endpoint=self.endpoint,
+        )
+        response = client.embeddings.create(
+            model=self.deployment,  # Use deployment name for Azure
+            input=texts,
+            dimensions=(self.dim if self.model.startswith("text-embedding-3") else openai.NOT_GIVEN),
+        )
+        return [data.embedding for data in response.data]
+
+    @property
+    def dimension(self) -> int:
+        return self.dim
+
+    @property
+    def provider_name(self) -> str:
+        return "azure_openai"
+
+
+class LocalMiniLMEmbedder(EmbeddingProvider):
+    """Local MiniLM embedding provider with 1536 dimensions."""
+
+    def __init__(self, dim: int = 1536):
+        self.dim = dim
+        if dim != 1536:
+            raise ValueError("LocalMiniLMEmbedder only supports 1536 dimensions")
+        self._model = None
+
+    @property
+    def model(self):
+        """Lazy load the model."""
+        if self._model is None:
+            try:
+                from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
+            except ImportError:
+                raise ImportError("sentence-transformers package required: pip install sentence-transformers") from None
+
+            # Use a model that can be configured to output 1536 dimensions
+            # This is a placeholder - you'd need a specific model or approach for 1536-dim
+            self._model = SentenceTransformer("all-MiniLM-L12-v2")
+        return self._model
+
+    def embed(self, text: str) -> list[float]:
+        """Generate embedding using local model, padded/truncated to 1536 dims."""
+        embedding = self.model.encode(text, convert_to_numpy=True)
+
+        # Pad or truncate to 1536 dimensions
+        if len(embedding) < self.dim:
+            # Pad with zeros
+            padded = np.zeros(self.dim)
+            padded[: len(embedding)] = embedding
+            return padded.tolist()
+        else:
+            # Truncate
+            return embedding[: self.dim].tolist()
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for batch of texts."""
+        embeddings = self.model.encode(texts, convert_to_numpy=True)
+
+        # Pad or truncate each embedding to 1536 dimensions
+        result = []
+        for embedding in embeddings:
+            if len(embedding) < self.dim:
+                padded = np.zeros(self.dim)
+                padded[: len(embedding)] = embedding
+                result.append(padded.tolist())
+            else:
+                result.append(embedding[: self.dim].tolist())
+        return result
+
+    @property
+    def dimension(self) -> int:
+        return self.dim
+
+    @property
+    def provider_name(self) -> str:
+        return "local_mini_lm_1536"
+
+
 class SentenceTransformerEmbedder(EmbeddingProvider):
     """Sentence Transformers local model embedder."""
 
@@ -172,22 +297,30 @@ def get_embedding_provider(
     Get embedding provider based on configuration.
 
     Args:
-        provider_name: Provider name ("dummy", "openai", "sentencetransformers")
-                      or None to use EMBED_PROVIDER env var (default: "dummy")
+        provider_name: Provider name ("dummy", "openai", "azure_openai", "local_mini_lm_1536", "sentencetransformers")
+                      or None to use EMBEDDINGS_PROVIDER env var (default: "dummy")
 
     Returns:
         EmbeddingProvider instance
     """
-    provider_name = provider_name or os.getenv("EMBED_PROVIDER", "dummy")
+    # Support both old and new env var names for backwards compatibility
+    provider_name = provider_name or os.getenv("EMBEDDINGS_PROVIDER") or os.getenv("EMBED_PROVIDER", "dummy")
     assert provider_name  # Ensure it's not None after fallback
 
     if provider_name == "dummy":
         dim = int(os.getenv("EMBED_DUMMY_DIM", "384"))
         return DummyEmbedder(dim=dim)
     elif provider_name == "openai":
-        model = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+        # Support both old and new env var names
+        model = os.getenv("EMBEDDINGS_MODEL") or os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
         dim = int(os.getenv("OPENAI_EMBED_DIM", "1536"))
         return OpenAIEmbedder(model=model, dim=dim)
+    elif provider_name == "azure_openai":
+        model = os.getenv("EMBEDDINGS_MODEL", "text-embedding-3-small")
+        dim = int(os.getenv("AZURE_OPENAI_EMBED_DIM", "1536"))
+        return AzureOpenAIEmbedder(model=model, dim=dim)
+    elif provider_name == "local_mini_lm_1536":
+        return LocalMiniLMEmbedder(dim=1536)
     elif provider_name == "sentencetransformers":
         st_model: str | None = os.getenv("SENTENCE_TRANSFORMER_MODEL")
         return SentenceTransformerEmbedder(model_name=st_model)

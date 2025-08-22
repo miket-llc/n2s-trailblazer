@@ -51,3 +51,77 @@ continuous_testing:
   any_doc_slugs:
     - "continuous-testing"
     - "test-automation"
+
+# N2S-specific doc anchors for ask_n2s_* queries
+ask_n2s_lifecycle_overview:
+  any_doc_slugs:
+    - "sprint-0-architecture-alignment"
+    - "discovery-workshops"
+    - "navigate-to-saas-overview"
+    - "n2s-lifecycle"
+    - "discovery-workshops"
+    - "sprint-0"
+
+ask_n2s_sprint0_scope:
+  any_doc_slugs:
+    - "sprint-0"
+    - "architecture-alignment"
+    - "capability-driven"
+    - "aaw"
+    - "foundations-sprint"
+
+ask_n2s_plan_governance:
+  any_doc_slugs:
+    - "governance-model"
+    - "project-plan-stage"
+    - "plan-stage"
+    - "governance-checkpoints"
+
+ask_n2s_configure_runbook:
+  any_doc_slugs:
+    - "runbook"
+    - "configuration-steps"
+    - "configure-stage"
+    - "environment-setup"
+
+ask_n2s_test_strategy:
+  any_doc_slugs:
+    - "testing-strategy"
+    - "continuous-testing"
+    - "test-strategy"
+    - "qa-strategy"
+
+ask_n2s_deploy_cutover:
+  any_doc_slugs:
+    - "deployment-cutover"
+    - "runbook"
+    - "deploy-stage"
+    - "cutover-plan"
+
+ask_n2s_cap_vs_runbook:
+  any_doc_slugs:
+    - "capability-model"
+    - "runbook"
+    - "capability-guides"
+    - "acm-documents"
+
+ask_n2s_continuous_testing:
+  any_doc_slugs:
+    - "continuous-testing"
+    - "test-automation"
+    - "bdd"
+    - "ci-testing"
+
+ask_n2s_data_migration:
+  any_doc_slugs:
+    - "data-migration-strategy"
+    - "cutover-runbook"
+    - "data-migration"
+    - "wave-plan"
+
+ask_n2s_integration_patterns:
+  any_doc_slugs:
+    - "integration-patterns"
+    - "ethos"
+    - "edc"
+    - "api-strategy"

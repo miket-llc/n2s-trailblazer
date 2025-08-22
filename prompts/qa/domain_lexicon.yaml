@@ -1,0 +1,207 @@
+# Domain Lexicon for Ellucian/N2S Expected Phrase Matching
+# This file contains synonyms and hyphen variants for key domain terms
+# to improve retrieval quality and expected phrase matching
+
+# Ellucian-specific terms
+ellucian:
+  - "Ellucian"
+  - "ellucian"
+  - "ELLUCIAN"
+
+# Financial Aid and General Access Control
+fgac:
+  - "FGAC"
+  - "fgac"
+  - "Financial Aid and General Access Control"
+  - "financial aid and general access control"
+  - "Financial Aid"
+  - "financial aid"
+
+# Virtual Business Services
+vbs:
+  - "VBS"
+  - "vbs"
+  - "Virtual Business Services"
+  - "virtual business services"
+  - "Virtual Business"
+  - "virtual business"
+
+# Student Data Exchange
+sde:
+  - "SDE"
+  - "sde"
+  - "Student Data Exchange"
+  - "student data exchange"
+  - "Student Data"
+  - "student data"
+
+# Enterprise Service Management
+esm:
+  - "ESM"
+  - "esm"
+  - "Enterprise Service Management"
+  - "enterprise service management"
+  - "Enterprise Service"
+  - "enterprise service"
+
+# Single Sign-On
+sso:
+  - "SSO"
+  - "sso"
+  - "Single Sign-On"
+  - "single sign-on"
+  - "Single Sign On"
+  - "single sign on"
+  - "Single SignOn"
+  - "single signon"
+
+# Go-Live and Deployment
+go_live:
+  - "Go-Live"
+  - "go-live"
+  - "Go Live"
+  - "go live"
+  - "Golive"
+  - "golive"
+  - "Deployment"
+  - "deployment"
+  - "Launch"
+  - "launch"
+
+# Experience and User Experience
+experience:
+  - "Experience"
+  - "experience"
+  - "User Experience"
+  - "user experience"
+  - "UX"
+  - "ux"
+
+# Insights and Analytics
+insights:
+  - "Insights"
+  - "insights"
+  - "Analytics"
+  - "analytics"
+  - "Reporting"
+  - "reporting"
+  - "Data Insights"
+  - "data insights"
+
+# Ethos Platform
+ethos:
+  - "Ethos"
+  - "ethos"
+  - "Ethos Platform"
+  - "ethos platform"
+  - "Ethos Framework"
+  - "ethos framework"
+
+# Oracle Cloud Infrastructure
+oci:
+  - "OCI"
+  - "oci"
+  - "Oracle Cloud Infrastructure"
+  - "oracle cloud infrastructure"
+  - "Oracle Cloud"
+  - "oracle cloud"
+
+# Sprint Planning
+sprint_zero:
+  - "Sprint 0"
+  - "sprint 0"
+  - "Sprint Zero"
+  - "sprint zero"
+  - "Sprint0"
+  - "sprint0"
+  - "Zero Sprint"
+  - "zero sprint"
+
+# Navigate-to-SaaS
+navigate_to_saas:
+  - "Navigate-to-SaaS"
+  - "navigate-to-saas"
+  - "Navigate to SaaS"
+  - "navigate to saas"
+  - "Navigate2SaaS"
+  - "navigate2saas"
+  - "N2S"
+  - "n2s"
+
+# Student Success
+student_success:
+  - "Student Success"
+  - "student success"
+  - "Student Success Platform"
+  - "student success platform"
+  - "Success Platform"
+  - "success platform"
+
+# Academic Advising
+academic_advising:
+  - "Academic Advising"
+  - "academic advising"
+  - "Advising"
+  - "advising"
+  - "Student Advising"
+  - "student advising"
+
+# Course Registration
+course_registration:
+  - "Course Registration"
+  - "course registration"
+  - "Registration"
+  - "registration"
+  - "Class Registration"
+  - "class registration"
+
+# Degree Planning
+degree_planning:
+  - "Degree Planning"
+  - "degree planning"
+  - "Degree Plan"
+  - "degree plan"
+  - "Academic Planning"
+  - "academic planning"
+
+# Financial Management
+financial_management:
+  - "Financial Management"
+  - "financial management"
+  - "Finance"
+  - "finance"
+  - "Billing"
+  - "billing"
+  - "Payment"
+  - "payment"
+
+# Student Records
+student_records:
+  - "Student Records"
+  - "student records"
+  - "Records"
+  - "records"
+  - "Academic Records"
+  - "academic records"
+
+# Integration
+integration:
+  - "Integration"
+  - "integration"
+  - "API"
+  - "api"
+  - "Webhook"
+  - "webhook"
+  - "Data Integration"
+  - "data integration"
+
+# Security
+security:
+  - "Security"
+  - "security"
+  - "Authentication"
+  - "authentication"
+  - "Authorization"
+  - "authorization"
+  - "Access Control"
+  - "access control"

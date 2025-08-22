@@ -500,15 +500,18 @@ The Expectation Harness v2 provides deterministic scoring for retrieval quality 
 - **Concept Groups**: Verify that retrieved contexts contain expected terminology using synonym bundles (e.g., "runbook", "playbook", "sop" for operational guides)
 
 **Scoring System:**
+
 - **Doc Anchors Score (60%)**: 1.0 if any retrieved item's slug matches expected anchors, else 0.0
 - **Concept Groups Score (40%)**: Average across required concept groups, with 1.0 if no groups are required
 - **Final Score**: Weighted combination with configurable threshold (default: 0.7)
 
 **Configuration Files:**
+
 - `prompts/qa/expectations/anchors.yaml` - Maps query IDs to expected document slugs
 - `prompts/qa/expectations/concepts.yaml` - Defines synonym groups and query requirements
 
 **Usage:**
+
 ```bash
 # Run QA with expectation scoring (default: doc+concept mode)
 trailblazer qa retrieval --expect-mode doc+concept --expect-threshold 0.7
@@ -521,6 +524,7 @@ trailblazer qa retrieval --expect-mode concept-only
 ```
 
 **Generated Artifacts:**
+
 - Enhanced `readiness.json` with expectation pass rates and detailed scoring
 - `explain/<query_id>.md` files for failed queries showing missing anchors/groups
 - Event logs with `qa|verify|OK|FAIL` events for each query evaluation

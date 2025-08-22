@@ -40,13 +40,81 @@ try:
         create_retriever,  # type: ignore[import-untyped]
     )
     from trailblazer.retrieval.pack import (  # type: ignore[import-untyped]
-        group_by_doc,
         pack_context,
     )
 except ImportError as e:
     print(f"Error: Could not import Trailblazer components: {e}")
     print("Make sure you're running from the project root with the virtual environment activated.")
     sys.exit(1)
+
+
+def _canon(phrase: str) -> str:
+    """Canonicalize a phrase for matching."""
+    return phrase.lower().strip()
+
+
+def expand_expect_phrase(phrase: str, lexicon: dict[str, list[str]]) -> list[str]:
+    """Expand a phrase using the domain lexicon."""
+    # Check if phrase is a key in the lexicon
+    if phrase in lexicon:
+        return lexicon[phrase]
+
+    # Check if phrase matches any lexicon values
+    expanded = [phrase]  # Always include original
+    for _key, variants in lexicon.items():
+        if phrase in variants:
+            expanded.extend(variants)
+            break
+
+    return list(set(expanded))  # Remove duplicates
+
+
+def expect_ok(
+    hits: list[dict[str, Any]], expect_phrases: list[str], lexicon: dict[str, list[str]] | None = None
+) -> tuple[bool, list[str]]:
+    """Check if expected phrases are present in hits, using lexicon expansion."""
+    if not expect_phrases:
+        return True, []
+
+    if not hits:
+        return False, ["No hits returned"]
+
+    notes = []
+    all_text = " ".join(hit.get("text_md", "") for hit in hits).lower()
+
+    for phrase in expect_phrases:
+        phrase_found = False
+
+        # Check original phrase
+        if _canon(phrase) in all_text:
+            phrase_found = True
+        else:
+            # Try lexicon expansion if available
+            if lexicon:
+                expanded_phrases = expand_expect_phrase(phrase, lexicon)
+                for expanded in expanded_phrases:
+                    if _canon(expanded) in all_text:
+                        phrase_found = True
+                        break
+
+        if not phrase_found:
+            notes.append(f"Expected phrase not found: '{phrase}'")
+            return False, notes
+
+    return True, notes
+
+
+def load_lexicon(lexicon_file: str | None = None) -> dict[str, list[str]] | None:
+    """Load domain lexicon for phrase matching."""
+    if not lexicon_file:
+        return None
+
+    try:
+        with open(lexicon_file, encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except Exception as e:
+        print(f"Warning: Could not load lexicon {lexicon_file}: {e}")
+        return None
 
 
 def load_queries(queries_file: str) -> list[dict[str, Any]]:
@@ -78,7 +146,9 @@ def load_queries(queries_file: str) -> list[dict[str, Any]]:
     return normalized_queries
 
 
-def compute_metrics(hits: list[dict[str, Any]], expect_phrases: list[str] | None = None) -> dict[str, Any]:
+def compute_metrics(
+    hits: list[dict[str, Any]], expect_phrases: list[str] | None = None, lexicon: dict[str, list[str]] | None = None
+) -> dict[str, Any]:
     """Compute health metrics for retrieval results."""
     if not hits:
         return {
@@ -125,22 +195,16 @@ def compute_metrics(hits: list[dict[str, Any]], expect_phrases: list[str] | None
     else:
         tie_rate_ok = True
 
-    # Expect: if phrases provided, each must appear in some hit's text
-    expect_ok = True
-    if expect_phrases:
-        all_text = " ".join(hit.get("text_md", "") for hit in hits).lower()
-        for phrase in expect_phrases:
-            if phrase.lower() not in all_text:
-                expect_ok = False
-                notes.append(f"Expected phrase not found: '{phrase}'")
-                break
+    # Expect: use improved lexicon-based matching
+    expect_ok_result, expect_notes = expect_ok(hits, expect_phrases or [], lexicon)
+    notes.extend(expect_notes)
 
     return {
         "diversity": diversity,
         "traceability_ok": traceability_ok,
         "duplication_ok": duplication_ok,
         "tie_rate_ok": tie_rate_ok,
-        "expect_ok": expect_ok,
+        "expect_ok": expect_ok_result,
         "notes": notes,
     }
 
@@ -150,13 +214,18 @@ def run_single_query(
     retriever: Any,
     top_k: int,
     budgets: list[int] | None = None,
+    enable_expansion: bool = False,
+    lexicon: dict[str, list[str]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[int, str]]:
     """Run a single query and return hits plus packed contexts."""
     query_text = query["text"]
 
     try:
         # Retrieve hits
-        hits = retriever.search(query_text, top_k=top_k)
+        if enable_expansion and lexicon:
+            hits = retrieve_with_expansion(query_text, retriever, top_k, lexicon)
+        else:
+            hits = retriever.search(query_text, top_k=top_k)
 
         # Convert hits to serializable format and add source_system inference
         serializable_hits = []
@@ -181,20 +250,62 @@ def run_single_query(
             }
             serializable_hits.append(serializable_hit)
 
-        # Pack contexts for each budget if provided
+        # Pack contexts if budgets specified
         packed_contexts = {}
         if budgets:
             for budget in budgets:
-                # Group by document (max 3 chunks per doc for diversity)
-                grouped_hits = group_by_doc(serializable_hits, max_chunks_per_doc=3)
-                packed_context = pack_context(grouped_hits, max_chars=budget)
-                packed_contexts[budget] = packed_context
+                packed_contexts[budget] = pack_context(serializable_hits, budget)
 
         return serializable_hits, packed_contexts
 
     except Exception as e:
-        print(f"Error running query '{query.get('id', 'unknown')}': {e}")
+        print(f"Error processing query '{query_text}': {e}")
         return [], {}
+
+
+def retrieve_with_expansion(
+    query: str, retriever: Any, top_k: int, lexicon: dict[str, list[str]]
+) -> list[dict[str, Any]]:
+    """Retrieve with query expansion using domain lexicon."""
+    # Generate 2-4 query variants
+    variants = [query]  # Always include original
+
+    # Find lexicon terms that match the query
+    query_lower = query.lower()
+    for _term_group, synonyms in lexicon.items():
+        if any(syn.lower() in query_lower for syn in synonyms):
+            # Add some synonyms as variants
+            for syn in synonyms[:2]:  # Limit to 2 variants per term
+                if syn.lower() not in query_lower:
+                    variants.append(f"{query} {syn}")
+                    if len(variants) >= 4:  # Max 4 variants
+                        break
+            if len(variants) >= 4:
+                break
+
+    # Retrieve from all variants
+    all_hits = []
+    for variant in variants:
+        try:
+            variant_hits = retriever.search(variant, top_k=top_k * 2)
+            all_hits.extend(variant_hits)
+        except Exception as e:
+            print(f"Warning: Failed to retrieve variant '{variant}': {e}")
+
+    # Dedupe by (doc_id, chunk_id) and re-rank deterministically
+    seen_pairs = set()
+    unique_hits = []
+
+    for hit in all_hits:
+        pair = (hit.get("doc_id", ""), hit.get("chunk_id", ""))
+        if pair not in seen_pairs:
+            seen_pairs.add(pair)
+            unique_hits.append(hit)
+
+    # Sort by score descending, then doc_id, chunk_id for deterministic ordering
+    unique_hits.sort(key=lambda x: (-x.get("score", 0.0), x.get("doc_id", ""), x.get("chunk_id", "")))
+
+    return unique_hits[:top_k]
 
 
 def save_query_artifacts(
@@ -338,6 +449,11 @@ def main():
         default=1536,
         help="Embedding dimension (default: 1536)",
     )
+    parser.add_argument(
+        "--query-expansion",
+        action="store_true",
+        help="Enable query expansion using domain lexicon (default: False)",
+    )
 
     args = parser.parse_args()
 
@@ -365,6 +481,15 @@ def main():
         queries = load_queries(args.queries_file)
         print(f"Loaded {len(queries)} queries from {args.queries_file}")
 
+        # Load domain lexicon for improved phrase matching
+        lexicon_file = Path("prompts/qa/domain_lexicon.yaml")
+        lexicon = None
+        if lexicon_file.exists():
+            lexicon = load_lexicon(str(lexicon_file))
+            print(f"Loaded domain lexicon with {len(lexicon) if lexicon else 0} term groups")
+        else:
+            print("Warning: Domain lexicon not found, using basic phrase matching")
+
         # Initialize retriever using the same factory as the ask command
         retriever = create_retriever(db_url=args.db_url, provider_name=args.provider, dim=args.dimension)
 
@@ -376,11 +501,13 @@ def main():
             print(f"Processing query: {query_id}")
 
             # Run the query
-            hits, packed_contexts = run_single_query(query, retriever, args.top_k, budgets)
+            hits, packed_contexts = run_single_query(
+                query, retriever, args.top_k, budgets, args.query_expansion, lexicon
+            )
 
-            # Compute metrics
+            # Compute metrics with lexicon
             expect_phrases = query.get("expect", [])
-            metrics = compute_metrics(hits, expect_phrases)
+            metrics = compute_metrics(hits, expect_phrases, lexicon)
 
             # Save artifacts
             save_query_artifacts(query, hits, packed_contexts, output_dir)

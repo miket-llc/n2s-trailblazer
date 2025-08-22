@@ -282,6 +282,8 @@ def run_single_query(
     budgets: list[int],
     retriever: DenseRetriever,
     top_k: int,
+    space_whitelist: list[str] | None = None,
+    trace_dir: Path | None = None,
 ) -> tuple[dict[int, list[dict[str, Any]]], dict[int, str]]:
     """
     Run a single query across multiple budgets.
@@ -291,6 +293,7 @@ def run_single_query(
         budgets: List of character budgets
         retriever: Dense retriever instance
         top_k: Number of top results to retrieve
+        space_whitelist: Optional list of space keys to filter documents
 
     Returns:
         Tuple of (hits_by_budget, packed_contexts_by_budget)
@@ -298,7 +301,7 @@ def run_single_query(
     query_text = query["text"]
 
     # Retrieve hits once
-    hits = retriever.search(query_text, top_k=top_k)
+    hits = retriever.search(query_text, top_k=top_k, space_whitelist=space_whitelist)
 
     # Add source_system field (inferred from URL or set default)
     for hit in hits:
@@ -324,7 +327,111 @@ def run_single_query(
         hits_by_budget[budget] = grouped_hits
         packed_contexts_by_budget[budget] = packed_context
 
+    # Save trace if trace_dir is provided
+    if trace_dir:
+        save_query_trace(
+            query=query,
+            hits=hits,
+            retriever=retriever,
+            top_k=top_k,
+            space_whitelist=space_whitelist,
+            trace_dir=trace_dir,
+        )
+
     return hits_by_budget, packed_contexts_by_budget
+
+
+def save_query_trace(
+    query: dict[str, Any],
+    hits: list[dict[str, Any]],
+    retriever: DenseRetriever,
+    top_k: int,
+    space_whitelist: list[str] | None,
+    trace_dir: Path,
+) -> None:
+    """
+    Save per-query JSON trace for debugging and analysis.
+
+    Args:
+        query: Query dictionary with id, text, and expectations
+        hits: Retrieved hits from the query
+        retriever: Dense retriever instance used
+        top_k: Number of top results requested
+        space_whitelist: Space keys filter used
+        trace_dir: Directory to save trace files
+    """
+    query_slug = create_query_slug(query["id"])
+    trace_file = trace_dir / f"trace_{query_slug}.json"
+
+    # Extract provider info from retriever
+    provider_info = {
+        "provider": retriever.provider_name,
+        "model": getattr(retriever.provider, "model", "unknown"),
+        "top_k": top_k,
+        "threshold": 0.0,  # Default threshold
+        "fallback": "bm25" if retriever.enable_bm25_fallback else "none",
+    }
+
+    # Check if any hits came from BM25 fallback
+    has_fallback_hits = any(hit.get("fallback") == "bm25" for hit in hits)
+    if has_fallback_hits:
+        provider_info["fallback_used"] = True
+
+    # Build candidates list with matched phrases (placeholder for now)
+    candidates = []
+    for hit in hits:
+        candidate = {
+            "chunk_id": hit["chunk_id"],
+            "doc_id": hit["doc_id"],
+            "title": hit.get("title", ""),
+            "sim": hit.get("score", 0.0),
+            "matched_phrases": [],  # TODO: Implement phrase matching
+            "fallback": hit.get("fallback", "vector"),
+        }
+        candidates.append(candidate)
+
+    # Build group scores (placeholder for now)
+    group_scores = {}
+    missing_groups = []
+
+    # Extract expected groups from query if available
+    if "expectations" in query:
+        expectations = query["expectations"]
+        if isinstance(expectations, dict):
+            for group_name, group_data in expectations.items():
+                if isinstance(group_data, dict) and "phrases" in group_data:
+                    phrases = group_data["phrases"]
+                    # Placeholder: count how many phrases we found
+                    hits_count = 0  # TODO: Implement actual phrase matching
+                    total_phrases = len(phrases) if isinstance(phrases, list) else 1
+
+                    group_scores[group_name] = {"hits": hits_count, "of": total_phrases}
+
+                    if hits_count == 0:
+                        missing_groups.append(group_name)
+
+    # Determine overall status
+    status = "pass" if not missing_groups else "fail"
+
+    # Build trace structure
+    trace = {
+        "query": query["id"],
+        "query_text": query["text"],
+        "profile": query.get("profile", "N2S"),
+        "required_groups": list(group_scores.keys()),
+        "retrieval": provider_info,
+        "space_whitelist": space_whitelist,
+        "candidates": candidates,
+        "group_scores": group_scores,
+        "missing_groups": missing_groups,
+        "status": status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Save trace file
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    with open(trace_file, "w", encoding="utf-8") as f:
+        json.dump(trace, f, indent=2, ensure_ascii=False)
 
 
 def save_query_artifacts(
@@ -726,6 +833,9 @@ def run_retrieval_qa(
     require_traceability: bool = True,
     expect_mode: str = "doc+concept",
     expect_threshold: float = 0.7,
+    space_whitelist: list[str] | None = None,
+    expect_profile: str = "default",
+    trace_dir: Path | None = None,
 ) -> dict[str, Any]:
     """
     Run the complete retrieval QA harness.
@@ -743,6 +853,8 @@ def run_retrieval_qa(
         require_traceability: Whether to require traceability fields
         expect_mode: Expectation scoring mode (doc+concept, doc-only, concept-only)
         expect_threshold: Pass threshold for expectations (default: 0.7)
+        space_whitelist: Optional list of space keys to filter documents
+        expect_profile: Expectation profile to use (default: "default")
 
     Returns:
         Summary results dictionary
@@ -767,7 +879,9 @@ def run_retrieval_qa(
         log.info("qa.retrieval.query_start", query_id=query["id"])
 
         # Run query across budgets
-        hits_by_budget, packed_contexts_by_budget = run_single_query(query, budgets, retriever, top_k)
+        hits_by_budget, packed_contexts_by_budget = run_single_query(
+            query, budgets, retriever, top_k, space_whitelist, trace_dir
+        )
 
         # Save query artifacts
         save_query_artifacts(query, hits_by_budget, packed_contexts_by_budget, output_dir)
@@ -795,7 +909,7 @@ def run_retrieval_qa(
                 )
 
             # Import expectation harness
-            from .harness import evaluate_expectations, create_explanation_file
+            from .harness import create_explanation_file, evaluate_expectations
 
             expectation_result = evaluate_expectations(
                 query_id=query["id"],
@@ -803,6 +917,7 @@ def run_retrieval_qa(
                 top_k=top_k,
                 threshold=expect_threshold,
                 mode=expect_mode,
+                expect_profile=expect_profile,
             )
 
             # Add query info to result
@@ -851,6 +966,8 @@ def run_retrieval_qa(
         "require_traceability": require_traceability,
         "expect_mode": expect_mode,
         "expect_threshold": expect_threshold,
+        "space_whitelist": space_whitelist,
+        "expect_profile": expect_profile,
     }
 
     # Create readiness report
