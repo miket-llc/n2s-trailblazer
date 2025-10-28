@@ -74,6 +74,49 @@ def test_paginate_with_links_next(mock_http_client):
     assert second_call[1]["params"] is None
 
 
+def test_paginate_with_links_next_wiki_in_hostname(mock_http_client):
+    """Ensure pagination works when hostname already contains 'wiki'."""
+
+    client = ConfluenceClient(
+        base_url="https://wiki.example.com/wiki",
+        email="test@example.com",
+        token="dummy",
+    )
+    client._client = mock_http_client
+
+    response1 = Mock()
+    response1.raise_for_status.return_value = None
+    response1.json.return_value = {
+        "results": [
+            {"id": "1", "title": "Page 1"},
+        ],
+        "_links": {"next": "/api/v2/pages?cursor=next1"},
+    }
+    response1.headers = {}
+
+    response2 = Mock()
+    response2.raise_for_status.return_value = None
+    response2.json.return_value = {
+        "results": [
+            {"id": "2", "title": "Page 2"},
+        ],
+        "_links": {},
+    }
+    response2.headers = {}
+
+    mock_http_client.get.side_effect = [response1, response2]
+
+    results = list(client._paginate("/api/v2/pages", {"limit": 1}))
+
+    assert len(results) == EXPECTED_COUNT_2
+    assert results[0]["id"] == "1"
+    assert results[1]["id"] == "2"
+
+    second_call = mock_http_client.get.call_args_list[1]
+    assert second_call[0][0] == "https://wiki.example.com/api/v2/pages?cursor=next1"
+    assert second_call[1]["params"] is None
+
+
 def test_paginate_with_link_header(mock_http_client):
     """Test pagination using Link header as fallback."""
 
@@ -117,6 +160,48 @@ def test_paginate_with_link_header(mock_http_client):
     # Second call should use the URL from Link header (fixed to remove double /wiki)
     second_call = mock_http_client.get.call_args_list[1]
     assert second_call[0][0] == "https://example.atlassian.net/api/v2/pages?cursor=abc123"
+
+
+def test_paginate_with_link_header_wiki_in_hostname(mock_http_client):
+    """Ensure Link header pagination works when hostname contains 'wiki'."""
+
+    client = ConfluenceClient(
+        base_url="https://docs.wiki-hosting.net/wiki",
+        email="test@example.com",
+        token="dummy",
+    )
+    client._client = mock_http_client
+
+    response1 = Mock()
+    response1.raise_for_status.return_value = None
+    response1.json.return_value = {
+        "results": [
+            {"id": "1", "title": "Page 1"},
+        ],
+        "_links": {},
+    }
+    response1.headers = {"Link": '</api/v2/pages?cursor=next1>; rel="next"'}
+
+    response2 = Mock()
+    response2.raise_for_status.return_value = None
+    response2.json.return_value = {
+        "results": [
+            {"id": "2", "title": "Page 2"},
+        ],
+        "_links": {},
+    }
+    response2.headers = {}
+
+    mock_http_client.get.side_effect = [response1, response2]
+
+    results = list(client._paginate("/api/v2/pages", {"limit": 1}))
+
+    assert len(results) == EXPECTED_COUNT_2
+    assert results[0]["id"] == "1"
+    assert results[1]["id"] == "2"
+
+    second_call = mock_http_client.get.call_args_list[1]
+    assert second_call[0][0] == "https://docs.wiki-hosting.net/api/v2/pages?cursor=next1"
 
 
 def test_paginate_single_page(mock_http_client):
