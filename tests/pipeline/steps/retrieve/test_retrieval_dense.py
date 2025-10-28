@@ -142,6 +142,46 @@ def test_pack_context_includes_media_placeholder(sample_hits):
     assert "![media: image.png]" in context_str
 
 
+def test_pack_context_inserts_media_placeholder_with_space():
+    """Test placeholder insertion when media tag includes a space."""
+    hits = [
+        SearchHit(
+            chunk_id="docspace:0000",
+            doc_id="docspace",
+            title="Doc With Space",
+            url="",
+            text_md="![media: space.png]\n\nContent",
+            score=0.5,
+            source_system="test",
+        )
+    ]
+
+    context_str, _ = pack_context(hits, max_chars=6000)
+
+    # One from original text and one prepended placeholder
+    assert context_str.count("![media: space.png]") == 2
+
+
+def test_pack_context_inserts_media_placeholder_without_space():
+    """Test placeholder insertion when media tag omits whitespace."""
+    hits = [
+        SearchHit(
+            chunk_id="docnospace:0000",
+            doc_id="docnospace",
+            title="Doc Without Space",
+            url="",
+            text_md="![media:nospace.png]\n\nContent",
+            score=0.5,
+            source_system="test",
+        )
+    ]
+
+    context_str, _ = pack_context(hits, max_chars=6000)
+
+    # One from original text and one prepended placeholder
+    assert context_str.count("![media:nospace.png]") == 2
+
+
 def test_pack_context_empty_hits():
     """Test context packing with empty hits list."""
     context_str, selected_hits = pack_context([], max_chars=1000)
