@@ -224,9 +224,10 @@ def pack_context(
             # Find first media placeholder
             import re
 
-            media_match = re.search(r"!\[media: ([^\]]+)\]", hit_text)
+            media_match = re.search(r"!\[media:\s*([^\]]+)\]", hit_text)
             if media_match:
-                hit_text = f"![media: {media_match.group(1)}]\n\n{hit_text}"
+                placeholder = media_match.group(0)
+                hit_text = f"{placeholder}\n\n{hit_text}"
 
         docs_seen.add(hit.doc_id)
 
