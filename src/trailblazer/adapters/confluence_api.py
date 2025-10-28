@@ -43,7 +43,7 @@ class ConfluenceClient:
             else:
                 # Handle relative URLs properly - nxt should be like "/wiki/api/v2/pages?..."
                 # Don't double-add /wiki since it's already in the relative path
-                base_without_wiki = self.api_base.replace("/wiki", "")
+                base_without_wiki = self.api_base.removesuffix("/wiki")
                 return urljoin(base_without_wiki + "/", nxt.lstrip("/"))
 
         # fallback: Link header
@@ -56,7 +56,7 @@ class ConfluenceClient:
                     return url
                 else:
                     # Handle relative URLs properly
-                    base_without_wiki = self.api_base.replace("/wiki", "")
+                    base_without_wiki = self.api_base.removesuffix("/wiki")
                     return urljoin(base_without_wiki + "/", url.lstrip("/"))
         return None
 
